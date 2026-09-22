@@ -31,7 +31,7 @@ export async function getUsersCollection(): Promise<Collection<IUser>> {
 }
 
 /**
- * Initialize MongoDB Indexes for spatial queries and fast lookups.
+ * Initialize MongoDB Indexes for spatial queries, TTL auto-expiration, and fast lookups.
  */
 export async function initializeIndexes() {
   try {
@@ -40,11 +40,12 @@ export async function initializeIndexes() {
     await hospitals.createIndex({ code: 1 }, { unique: true });
 
     const resources = await getResourcesCollection();
-    await resources.createIndex({ hospitalId: 1, type: 1, category: 1 });
+    await resources.createIndex({ hospitalId: 1, type: 1, category: 1, status: 1 });
 
     const holds = await getHoldsCollection();
     await holds.createIndex({ hospitalId: 1, status: 1 });
-    await holds.createIndex({ expiresAt: 1 });
+    // Native MongoDB TTL index: automatically deletes document when current time >= expiresAt
+    await holds.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
     await holds.createIndex({ requestedByUserId: 1 });
 
     console.log("CareLink MongoDB indexes successfully initialized.");
