@@ -1,29 +1,26 @@
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
-import clientPromise from "./mongodb";
+import { client } from "./mongodb";
 
-export type UserRole = "patient" | "hospital_staff" | "ambulance_driver" | "pharmacy";
-
-let adapter;
-try {
-  const client = await clientPromise;
-  adapter = mongodbAdapter(client.db(), { client });
-} catch {
-  // Safe fallback during build evaluation if MONGODB_URI is not set
-  adapter = undefined as any;
-}
+export type UserRole =
+  | "patient"
+  | "hospital_staff"
+  | "ambulance_driver"
+  | "driver"
+  | "dispatcher"
+  | "pharmacy";
 
 export const auth = betterAuth({
-  database: adapter,
-  secret: process.env.BETTER_AUTH_SECRET,
-  baseURL: process.env.BETTER_AUTH_URL,
+  database: mongodbAdapter(client.db(), { client }),
+  secret: process.env.BETTER_AUTH_SECRET || "carelink_default_secret_key_change_in_production",
+  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
   emailAndPassword: {
     enabled: true,
   },
   socialProviders: {
     google: {
-      clientId: process.env.GOOGLE_CLIENT_ID as string,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+      clientId: process.env.GOOGLE_CLIENT_ID || "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
     },
   },
   user: {
@@ -32,7 +29,7 @@ export const auth = betterAuth({
         type: "string",
         defaultValue: "patient",
         required: false,
-        input: true, // Allow passing role during sign up
+        input: true,
       },
     },
   },
