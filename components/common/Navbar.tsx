@@ -7,8 +7,6 @@ import {
   Bell,
   Activity,
   Sliders,
-  AlertTriangle,
-  Clock,
   RotateCcw,
   ShieldCheck,
   ChevronDown,
@@ -31,15 +29,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenNewEmergency, onOpenLogin 
     activeTab,
     setActiveTab,
     emergencies,
-    isSimulationActive,
-    toggleSimulation,
-    triggerConflictDemo,
-    triggerStaleDataDemo,
     resetAllData,
   } = useCareLink();
 
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
-  const [isDemoControlsOpen, setIsDemoControlsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const activeEmergenciesCount = emergencies.filter(
@@ -88,16 +81,16 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenNewEmergency, onOpenLogin 
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-xs">
-      {/* Judge Hackathon Quick Bar */}
+      {/* Operational Quick Bar */}
       <div className="bg-slate-900 text-slate-200 px-4 py-1.5 text-xs flex flex-wrap items-center justify-between gap-2 border-b border-slate-800">
         <div className="flex items-center gap-2">
           <span className="flex h-2 w-2 relative">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
           </span>
-          <span className="font-semibold text-white tracking-wide">JUDGE / DEMO BAR:</span>
+          <span className="font-semibold text-white tracking-wide">OPERATIONS:</span>
           <span className="hidden sm:inline text-slate-400">
-            Simulated live engine active
+            Live emergency coordination
           </span>
         </div>
 
@@ -105,45 +98,16 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenNewEmergency, onOpenLogin 
           <button
             onClick={() => onOpenNewEmergency()}
             className="px-2.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-medium flex items-center gap-1 transition-colors"
-            title="Simulate incoming SOS patient"
+            title="Create an emergency request"
           >
             <PlusCircle className="w-3.5 h-3.5" />
             <span>+ SOS Call</span>
           </button>
 
           <button
-            onClick={triggerConflictDemo}
-            className="px-2 py-0.5 rounded bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/40 flex items-center gap-1 transition-colors"
-            title="Simulate Screen 9 double booking conflict"
-          >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Test Double Booking</span>
-          </button>
-
-          <button
-            onClick={triggerStaleDataDemo}
-            className="px-2 py-0.5 rounded bg-yellow-600/30 hover:bg-yellow-600/50 text-yellow-300 border border-yellow-500/40 flex items-center gap-1 transition-colors"
-            title="Simulate Screen 8 stale hospital bed data"
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Test Stale Warning</span>
-          </button>
-
-          <button
-            onClick={toggleSimulation}
-            className={`px-2 py-0.5 rounded font-mono text-[11px] border transition-colors ${
-              isSimulationActive
-                ? 'bg-emerald-950 text-emerald-400 border-emerald-600/60'
-                : 'bg-slate-800 text-slate-400 border-slate-700'
-            }`}
-          >
-            {isSimulationActive ? 'GPS SIM: ON' : 'GPS SIM: PAUSED'}
-          </button>
-
-          <button
             onClick={resetAllData}
             className="px-1.5 py-0.5 text-slate-400 hover:text-white transition-colors"
-            title="Reset simulation data to default"
+            title="Restore sample data"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { Role } from '../../types';
+import { createAuthClient } from 'better-auth/react';
 import {
   Heart,
   Mail,
@@ -23,8 +24,10 @@ interface LoginModalProps {
 export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
   const { role, setRole, setActiveTab } = useCareLink();
   const [email, setEmail] = useState('dispatcher@carelink.health');
-  const [password, setPassword] = useState('••••••••••••');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [isSigningIn, setIsSigningIn] = useState(false);
 
   if (!isOpen) return null;
 
@@ -40,9 +43,29 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
     onClose();
   };
 
-  const handleStandardLogin = (e: React.FormEvent) => {
+  const handleStandardLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    onClose();
+    setLoginError('');
+    setIsSigningIn(true);
+    try {
+      const authClient = createAuthClient();
+      const result = await authClient.signIn.email({ email, password });
+      if (result.error) throw new Error(result.error.message || 'Unable to sign in.');
+      const accountRole = (result.data?.user as { role?: string } | undefined)?.role;
+      const appRole: Role = accountRole === 'hospital_staff' ? 'hospital'
+        : accountRole === 'pharmacy' ? 'pharmacy'
+        : accountRole === 'ambulance_driver' || accountRole === 'driver' ? 'paramedic'
+        : accountRole === 'patient' ? 'patient'
+        : 'dispatcher';
+      setRole(appRole);
+      setActiveTab(appRole === 'hospital' ? 'hospital-portal' : appRole === 'pharmacy' ? 'pharmacy' : 'dashboard');
+      window.dispatchEvent(new Event('carelink-authenticated'));
+      onClose();
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'Unable to sign in. Check your credentials and database configuration.');
+    } finally {
+      setIsSigningIn(false);
+    }
   };
 
   return (
@@ -144,6 +167,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
               </div>
             </div>
 
+            {loginError && <p role="alert" className="text-sm text-rose-600">{loginError}</p>}
+
             {/* Password Field */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -172,7 +197,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
               type="submit"
               className="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white font-semibold rounded-xl shadow-lg shadow-sky-600/20 transition-all text-sm mt-2"
             >
-              Login
+              {isSigningIn ? 'Signing in…' : 'Login'}
             </button>
           </form>
 
@@ -231,7 +256,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
           </div>
 
           <p className="text-center text-xs text-slate-400 mt-6">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <span className="text-sky-600 font-semibold cursor-pointer hover:underline">
               Contact your administrator
             </span>

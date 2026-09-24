@@ -1,6 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+'use client';
+
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
-import L from 'leaflet';
+import type * as Leaflet from 'leaflet';
 
 interface MapViewProps {
   center?: [number, number];
@@ -11,225 +13,139 @@ interface MapViewProps {
   showRouteLine?: boolean;
 }
 
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[char] as string));
+
 export const MapView: React.FC<MapViewProps> = ({
-  center = [28.618, 77.215],
+  center,
   zoom = 13,
   height = '360px',
   focusAmbulanceId,
   focusHospitalId,
   showRouteLine = false,
 }) => {
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
-  const markersLayerRef = useRef<L.LayerGroup | null>(null);
-  const routeLineRef = useRef<L.Polyline | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<Leaflet.Map | null>(null);
+  const leafletRef = useRef<typeof Leaflet | null>(null);
+  const layersRef = useRef<Leaflet.LayerGroup | null>(null);
+  const routeRef = useRef<Leaflet.Polyline | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState('');
+  const { ambulances, hospitals, emergencies, selectedEmergencyId, setSelectedEmergencyId } = useCareLink();
 
-  const { ambulances, hospitals, emergencies, setSelectedEmergencyId, setActiveTab } =
-    useCareLink();
+  const emergency = emergencies.find((item) => item.id === selectedEmergencyId) ?? emergencies[0];
+  const ambulance = ambulances.find((item) => item.id === (focusAmbulanceId ?? emergency?.assignedAmbulanceId))
+    ?? ambulances.find((item) => item.status === 'Available' || item.status === 'On Duty');
+  const hospital = hospitals.find((item) => item.id === (focusHospitalId ?? emergency?.assignedHospitalId))
+    ?? hospitals.find((item) => item.status === 'Available');
+  const mapCenter = useMemo<[number, number] | null>(() => {
+    if (center) return center;
+    const point = emergency?.location ?? ambulance?.location ?? hospital?.location;
+    return point ? [point.lat, point.lng] : null;
+  }, [center, emergency?.location.lat, emergency?.location.lng, ambulance?.location.lat, ambulance?.location.lng, hospital?.location.lat, hospital?.location.lng]);
 
-  // Initialize Map
   useEffect(() => {
-    if (!mapContainerRef.current) return;
-    if (mapInstanceRef.current) return;
+    let active = true;
+    let map: Leaflet.Map | null = null;
 
-    const map = L.map(mapContainerRef.current, {
-      center,
-      zoom,
-      zoomControl: true,
-      attributionControl: false,
+    if (!mapCenter) {
+      setMapReady(false);
+      return;
+    }
+
+    void import('leaflet').then(({ default: L }) => {
+      if (!active || !containerRef.current) return;
+      leafletRef.current = L;
+      map = L.map(containerRef.current, { center: mapCenter, zoom, scrollWheelZoom: true });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>',
+      }).addTo(map);
+      layersRef.current = L.layerGroup().addTo(map);
+      mapRef.current = map;
+      setMapError('');
+      setMapReady(true);
+    }).catch((error: unknown) => {
+      if (active) setMapError(error instanceof Error ? error.message : 'The map could not be loaded.');
     });
-
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
-      subdomains: 'abcd',
-    }).addTo(map);
-
-    const markersLayer = L.layerGroup().addTo(map);
-    markersLayerRef.current = markersLayer;
-    mapInstanceRef.current = map;
-
-    // Fix map size after mounting
-    setTimeout(() => {
-      map.invalidateSize();
-    }, 200);
 
     return () => {
-      map.remove();
-      mapInstanceRef.current = null;
+      active = false;
+      map?.remove();
+      mapRef.current = null;
+      layersRef.current = null;
+      routeRef.current = null;
+      leafletRef.current = null;
+      setMapReady(false);
     };
-  }, []);
+  }, [mapCenter, zoom]);
 
-  // Update Markers and Route Lines
   useEffect(() => {
-    if (!mapInstanceRef.current || !markersLayerRef.current) return;
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    const layers = layersRef.current;
+    if (!mapReady || !L || !map || !layers || !mapCenter) return;
 
-    const map = mapInstanceRef.current;
-    const markersLayer = markersLayerRef.current;
-    markersLayer.clearLayers();
+    layers.clearLayers();
+    routeRef.current?.removeFrom(map);
+    routeRef.current = null;
 
-    if (routeLineRef.current) {
-      routeLineRef.current.remove();
-      routeLineRef.current = null;
-    }
-
-    // 1. Hospital Markers (Blue with 'H')
-    hospitals.forEach((hosp) => {
-      const isSelected = hosp.id === focusHospitalId;
-      const customIcon = L.divIcon({
-        className: 'custom-map-icon',
-        html: `
-          <div class="relative flex items-center justify-center cursor-pointer group">
-            <div class="w-8 h-8 rounded-full ${
-              isSelected ? 'bg-sky-600 ring-4 ring-sky-300' : 'bg-sky-500'
-            } text-white font-extrabold text-sm flex items-center justify-center shadow-lg border-2 border-white">
-              H
-            </div>
-            <div class="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap opacity-90 group-hover:opacity-100 pointer-events-none">
-              ${hosp.name.split(' ')[0]}
-            </div>
-          </div>
-        `,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
+    const addMarker = (point: [number, number], letter: string, color: string, title: string, html: string, onClick?: () => void) => {
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="width:30px;height:30px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 8px #0f172a66;color:white;font:bold 13px Arial;display:grid;place-items:center">${letter}</div>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
       });
+      const marker = L.marker(point, { icon, title }).bindPopup(html).addTo(layers);
+      if (onClick) marker.on('click', onClick);
+    };
 
-      const marker = L.marker([hosp.location.lat, hosp.location.lng], { icon: customIcon });
-      marker.bindPopup(`
-        <div style="font-family: sans-serif; padding: 4px;">
-          <h4 style="margin: 0 0 4px; font-size: 14px; font-weight: 700; color: #0f172a;">${hosp.name}</h4>
-          <p style="margin: 0 0 6px; font-size: 11px; color: #64748b;">${hosp.location.address}</p>
-          <div style="display: flex; gap: 6px; font-size: 11px; margin-bottom: 6px;">
-            <span style="background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">Gen: ${hosp.beds.general.available}/${hosp.beds.general.total}</span>
-            <span style="background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 4px; font-weight: 600;">ICU: ${hosp.beds.icu.available}/${hosp.beds.icu.total}</span>
-            <span style="background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-weight: 600;">Trauma: ${hosp.beds.trauma.available}/${hosp.beds.trauma.total}</span>
-          </div>
-          <div style="font-size: 11px; font-weight: 600; color: ${hosp.status === 'Available' ? '#16a34a' : hosp.status === 'Limited' ? '#d97706' : '#dc2626'};">
-            Status: ${hosp.status} • ETA: ${hosp.etaMin} min
-          </div>
-        </div>
-      `);
-      markersLayer.addLayer(marker);
+    hospitals.forEach((item) => {
+      const selected = item.id === hospital?.id;
+      const color = item.status === 'Available' ? '#0284c7' : item.status === 'Limited' ? '#d97706' : '#dc2626';
+      addMarker(
+        [item.location.lat, item.location.lng], 'H', selected ? '#0369a1' : color, item.name,
+        `<div style="font:13px Arial,sans-serif;max-width:280px"><strong>${escapeHtml(item.name)}</strong><p>${escapeHtml(item.location.address)}</p><p>General ${item.beds.general.available}/${item.beds.general.total} · ICU ${item.beds.icu.available}/${item.beds.icu.total} · Trauma ${item.beds.trauma.available}/${item.beds.trauma.total}</p><b>Status: ${escapeHtml(item.status)} · ETA: ${item.etaMin} min</b></div>`,
+      );
     });
 
-    // 2. Ambulance Markers (Red/Cyan flashing)
-    ambulances.forEach((amb) => {
-      const isEnRoute = amb.status === 'En Route';
-      const customIcon = L.divIcon({
-        className: 'custom-ambulance-icon',
-        html: `
-          <div class="relative flex items-center justify-center cursor-pointer">
-            ${
-              isEnRoute
-                ? '<div class="absolute -inset-1 rounded-full bg-rose-500 animate-ping opacity-60"></div>'
-                : ''
-            }
-            <div class="w-8 h-8 rounded-full ${
-              isEnRoute ? 'bg-rose-600' : 'bg-amber-500'
-            } text-white flex items-center justify-center shadow-lg border-2 border-white text-base">
-              🚑
-            </div>
-          </div>
-        `,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-      });
+    ambulances.forEach((item) => addMarker(
+      [item.location.lat, item.location.lng], 'A', item.status === 'En Route' ? '#e11d48' : '#f59e0b', `Ambulance ${item.id}`,
+      `<div style="font:13px Arial,sans-serif"><strong>Ambulance ${escapeHtml(item.id)} (${escapeHtml(item.vehicleNumber)})</strong><p>Driver: ${escapeHtml(item.driverName)} · ${escapeHtml(item.phone)}</p><b>${escapeHtml(item.status)}</b></div>`,
+    ));
 
-      const marker = L.marker([amb.location.lat, amb.location.lng], { icon: customIcon });
-      marker.bindPopup(`
-        <div style="font-family: sans-serif; padding: 4px;">
-          <h4 style="margin: 0 0 2px; font-size: 13px; font-weight: 700; color: #0f172a;">Ambulance ${amb.id} (${amb.vehicleNumber})</h4>
-          <p style="margin: 0 0 4px; font-size: 11px; color: #64748b;">Driver: ${amb.driverName} • ${amb.phone}</p>
-          <span style="display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; background: ${
-            amb.status === 'En Route' ? '#ffe4e6' : '#fef3c7'
-          }; color: ${amb.status === 'En Route' ? '#be123c' : '#b45309'};">
-            ${amb.status.toUpperCase()}
-          </span>
-        </div>
-      `);
-      markersLayer.addLayer(marker);
-    });
+    emergencies.filter((item) => item.status !== 'Completed').forEach((item) => addMarker(
+      [item.location.lat, item.location.lng], '!', item.priority === 'High' || item.priority === 'Critical' ? '#e11d48' : '#f59e0b', `Emergency ${item.id}`,
+      `<div style="font:13px Arial,sans-serif"><strong>${escapeHtml(item.id)} · ${escapeHtml(item.priority)} Priority</strong><p>${escapeHtml(item.condition)}</p><p>${escapeHtml(item.location.address)}</p><b>Status: ${escapeHtml(item.status)}</b></div>`,
+      () => setSelectedEmergencyId(item.id),
+    ));
 
-    // 3. Patient Requests Markers (Orange/Red alert pins)
-    emergencies
-      .filter((req) => req.status !== 'Completed')
-      .forEach((req) => {
-        const isHigh = req.priority === 'High' || req.priority === 'Critical';
-        const customIcon = L.divIcon({
-          className: 'custom-patient-icon',
-          html: `
-            <div class="relative flex items-center justify-center cursor-pointer group">
-              <div class="w-7 h-7 rounded-full ${
-                isHigh ? 'bg-rose-500' : 'bg-amber-500'
-              } text-white flex items-center justify-center shadow-lg border-2 border-white font-bold text-xs">
-                ⚠️
-              </div>
-              <div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-rose-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
-                ${req.id}
-              </div>
-            </div>
-          `,
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
-        });
-
-        const marker = L.marker([req.location.lat, req.location.lng], { icon: customIcon });
-        marker.on('click', () => {
-          setSelectedEmergencyId(req.id);
-        });
-        marker.bindPopup(`
-          <div style="font-family: sans-serif; padding: 4px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <span style="font-weight: 800; color: #e11d48; font-size: 12px;">${req.id} • ${req.priority} Priority</span>
-            </div>
-            <h4 style="margin: 0 0 2px; font-size: 13px; font-weight: 700;">${req.condition}</h4>
-            <p style="margin: 0 0 6px; font-size: 11px; color: #64748b;">📍 ${req.location.address}</p>
-            <div style="font-size: 11px; font-weight: 600; color: #2563eb;">Status: ${req.status}</div>
-          </div>
-        `);
-        markersLayer.addLayer(marker);
-      });
-
-    // 4. Draw route line if requested (e.g. from P-1023 to City Care Hospital)
-    if (showRouteLine) {
-      const activeEmergency = emergencies.find((e) => e.id === 'P-1023');
-      const targetHospital = hospitals.find((h) => h.id === 'hosp-1');
-      if (activeEmergency && targetHospital) {
-        const polyline = L.polyline(
-          [
-            [activeEmergency.location.lat, activeEmergency.location.lng],
-            [28.619, 77.214], // Ambulance A-12 midway
-            [targetHospital.location.lat, targetHospital.location.lng],
-          ],
-          {
-            color: '#2563eb',
-            weight: 4,
-            dashArray: '8, 8',
-            opacity: 0.8,
-          }
-        ).addTo(map);
-        routeLineRef.current = polyline;
-      }
+    if (showRouteLine && ambulance && hospital) {
+      routeRef.current = L.polyline([
+        [ambulance.location.lat, ambulance.location.lng],
+        [hospital.location.lat, hospital.location.lng],
+      ], { color: '#2563eb', weight: 5, opacity: 0.85, dashArray: '8 8' }).addTo(map);
     }
-  }, [ambulances, hospitals, emergencies, focusHospitalId, showRouteLine]);
+
+    const focusedPoint = showRouteLine && ambulance && hospital
+      ? [[ambulance.location.lat, ambulance.location.lng], [hospital.location.lat, hospital.location.lng]] as [number, number][]
+      : null;
+    if (focusedPoint) map.fitBounds(focusedPoint, { padding: [40, 40], maxZoom: 14 });
+    else map.setView(mapCenter, zoom);
+  }, [mapReady, mapCenter, zoom, ambulances, hospitals, emergencies, hospital, showRouteLine, ambulance, setSelectedEmergencyId]);
+
+  if (!mapCenter) {
+    return <div className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-500" style={{ height }}>No location records to show.</div>;
+  }
 
   return (
-    <div className="relative w-full rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100" style={{ height }}>
-      <div ref={mapContainerRef} className="w-full h-full" />
-
-      {/* Legend matching Screen 2 mockup */}
-      <div className="absolute bottom-3 left-3 z-[1000] bg-white/95 backdrop-blur-sm px-3.5 py-2 rounded-xl shadow-md border border-slate-200/80 flex items-center gap-4 text-xs font-medium text-slate-700">
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-rose-600 flex items-center justify-center text-[8px] text-white">🚑</span>
-          <span>Ambulance</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-sky-600 flex items-center justify-center text-[8px] font-bold text-white">H</span>
-          <span>Hospital</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-amber-500 flex items-center justify-center text-[8px] text-white">⚠️</span>
-          <span>Patient Request</span>
-        </div>
+    <div className="relative w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm" style={{ height }}>
+      <div ref={containerRef} className="h-full w-full" aria-label="Map showing ambulances, hospitals, and emergency requests" />
+      {mapError && <div role="status" className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-rose-700 shadow">{mapError}</div>}
+      <div className="absolute bottom-3 left-3 z-[1000] flex items-center gap-4 rounded-xl border border-slate-200/80 bg-white/95 px-3.5 py-2 text-xs font-medium text-slate-700 shadow-md backdrop-blur-sm">
+        <span>🚑 Ambulance</span><span><b className="text-sky-600">H</b> Hospital</span><span><b className="text-rose-600">!</b> Patient Request</span>
       </div>
     </div>
   );

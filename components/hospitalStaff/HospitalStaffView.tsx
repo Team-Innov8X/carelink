@@ -36,6 +36,10 @@ export const HospitalStaffView: React.FC = () => {
   const currentHospital =
     hospitals.find((h) => h.id === selectedHospitalId) || hospitals[0];
 
+  if (!currentHospital) {
+    return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No hospital records are available.</div>;
+  }
+
   // Filter requests destined for or pending with this hospital
   const pendingRequests = emergencies.filter(
     (e) =>
@@ -322,7 +326,7 @@ export const HospitalStaffView: React.FC = () => {
                         </span>
                       </div>
                       <div className="text-xs text-slate-600">
-                        {req.condition} • Ambulance: {req.assignedAmbulanceId || 'A-12'}
+                        {req.condition} • Ambulance: {req.assignedAmbulanceId || 'Not assigned'}
                       </div>
                     </div>
                   </div>

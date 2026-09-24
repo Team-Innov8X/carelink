@@ -21,13 +21,19 @@ interface NewEmergencyModalProps {
 export const NewEmergencyModal: React.FC<NewEmergencyModalProps> = ({ isOpen, onClose }) => {
   const { createNewEmergency, setActiveTab } = useCareLink();
 
-  const [patientName, setPatientName] = useState('Arjun Mehta');
-  const [age, setAge] = useState(48);
-  const [gender, setGender] = useState('Male');
-  const [condition, setCondition] = useState('High-Velocity Blunt Polytrauma');
-  const [priority, setPriority] = useState<PriorityLevel>('High');
-  const [locationAddress, setLocationAddress] = useState('Outer Ring Road, Flyover Exit 4');
-  const [facilities, setFacilities] = useState<string[]>(['Trauma Care', 'ICU', 'Ventilator']);
+  const [patientName, setPatientName] = useState('');
+  const [age, setAge] = useState<number | ''>('');
+  const [gender, setGender] = useState('');
+  const [condition, setCondition] = useState('');
+  const [priority, setPriority] = useState<PriorityLevel>('Medium');
+  const [locationAddress, setLocationAddress] = useState('');
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
+  const [bloodPressure, setBloodPressure] = useState('');
+  const [heartRate, setHeartRate] = useState('');
+  const [oxygenSaturation, setOxygenSaturation] = useState('');
+  const [conditionNotes, setConditionNotes] = useState('');
+  const [facilities, setFacilities] = useState<string[]>([]);
   const [etaLimit, setEtaLimit] = useState(15);
 
   if (!isOpen) return null;
@@ -40,24 +46,24 @@ export const NewEmergencyModal: React.FC<NewEmergencyModalProps> = ({ isOpen, on
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const newId = createNewEmergency({
+    createNewEmergency({
       patientName,
       age: Number(age),
       gender,
       condition,
       priority,
       location: {
-        lat: 28.625 + (Math.random() - 0.5) * 0.02,
-        lng: 77.21 + (Math.random() - 0.5) * 0.02,
+        lat: Number(latitude),
+        lng: Number(longitude),
         address: locationAddress,
       },
       requiredFacilities: facilities,
       etaLimitMin: Number(etaLimit),
       vitals: {
-        bp: '85/55 mmHg',
-        heartRate: 122,
-        spO2: 90,
-        conditionNotes: 'Paramedic field report: multiple injuries, active oxygen resuscitation.',
+        bp: bloodPressure,
+        heartRate: Number(heartRate),
+        spO2: Number(oxygenSaturation),
+        conditionNotes,
       },
     });
 
@@ -119,8 +125,10 @@ export const NewEmergencyModal: React.FC<NewEmergencyModalProps> = ({ isOpen, on
                 </label>
                 <input
                   type="number"
+                  required
+                  min="0"
                   value={age}
-                  onChange={(e) => setAge(Number(e.target.value))}
+                  onChange={(e) => setAge(e.target.value === '' ? '' : Number(e.target.value))}
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold text-slate-800 outline-none focus:border-rose-500"
                 />
               </div>
@@ -129,10 +137,12 @@ export const NewEmergencyModal: React.FC<NewEmergencyModalProps> = ({ isOpen, on
                   Gender
                 </label>
                 <select
+                  required
                   value={gender}
                   onChange={(e) => setGender(e.target.value)}
                   className="w-full px-2 py-2 rounded-xl border border-slate-200 font-semibold text-slate-800 outline-none focus:border-rose-500"
                 >
+                  <option value="" disabled>Select</option>
                   <option>Male</option>
                   <option>Female</option>
                   <option>Other</option>
@@ -184,6 +194,17 @@ export const NewEmergencyModal: React.FC<NewEmergencyModalProps> = ({ isOpen, on
               onChange={(e) => setLocationAddress(e.target.value)}
               className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold text-slate-800 outline-none focus:border-rose-500"
             />
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <input type="number" required step="any" placeholder="Latitude" value={latitude} onChange={(e) => setLatitude(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold text-slate-800 outline-none focus:border-rose-500" />
+              <input type="number" required step="any" placeholder="Longitude" value={longitude} onChange={(e) => setLongitude(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold text-slate-800 outline-none focus:border-rose-500" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <input type="text" required placeholder="Blood pressure" value={bloodPressure} onChange={(e) => setBloodPressure(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-800" />
+            <input type="number" required min="1" placeholder="Heart rate" value={heartRate} onChange={(e) => setHeartRate(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-800" />
+            <input type="number" required min="1" max="100" placeholder="SpO₂" value={oxygenSaturation} onChange={(e) => setOxygenSaturation(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-800" />
+            <textarea placeholder="Patient notes" value={conditionNotes} onChange={(e) => setConditionNotes(e.target.value)} className="col-span-3 w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-800" />
           </div>
 
           {/* Required Facilities Chips */}
