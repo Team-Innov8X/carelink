@@ -3,6 +3,8 @@ import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import { client } from "./mongodb";
 
 export type UserRole =
+  | "admin"
+  | "hospital"
   | "patient"
   | "hospital_staff"
   | "ambulance_driver"
