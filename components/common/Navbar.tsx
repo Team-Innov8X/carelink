@@ -1,157 +1,27 @@
 import React, { useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
-import { Role } from '../../types';
 import {
   Heart,
   Search,
   Bell,
-  Activity,
-  Sliders,
-  AlertTriangle,
-  Clock,
-  RotateCcw,
-  ShieldCheck,
-  ChevronDown,
-  PlusCircle,
-  Stethoscope,
-  Pill,
-  Radio,
-  User,
 } from 'lucide-react';
 
-interface NavbarProps {
-  onOpenNewEmergency: () => void;
-  onOpenLogin: () => void;
-}
-
-export const Navbar: React.FC<NavbarProps> = ({ onOpenNewEmergency, onOpenLogin }) => {
+export const Navbar: React.FC = () => {
   const {
-    role,
-    setRole,
-    activeTab,
     setActiveTab,
     emergencies,
-    isSimulationActive,
-    toggleSimulation,
-    triggerConflictDemo,
-    triggerStaleDataDemo,
-    resetAllData,
   } = useCareLink();
 
-  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
-  const [isDemoControlsOpen, setIsDemoControlsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const activeEmergenciesCount = emergencies.filter(
     (e) => e.status !== 'Completed' && e.status !== 'Rejected'
   ).length;
 
-  const roleLabels: Record<Role, { label: string; icon: React.ReactNode; color: string }> = {
-    dispatcher: {
-      label: 'Dispatcher',
-      icon: <Radio className="w-4 h-4 text-sky-500" />,
-      color: 'bg-sky-50 text-sky-700 border-sky-200',
-    },
-    hospital: {
-      label: 'Hospital Staff',
-      icon: <Stethoscope className="w-4 h-4 text-emerald-500" />,
-      color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    },
-    pharmacy: {
-      label: 'Pharmacy',
-      icon: <Pill className="w-4 h-4 text-purple-500" />,
-      color: 'bg-purple-50 text-purple-700 border-purple-200',
-    },
-    paramedic: {
-      label: 'Paramedic / Ambulance',
-      icon: <Activity className="w-4 h-4 text-amber-500" />,
-      color: 'bg-amber-50 text-amber-700 border-amber-200',
-    },
-    patient: {
-      label: 'Patient / Citizen',
-      icon: <User className="w-4 h-4 text-slate-500" />,
-      color: 'bg-slate-50 text-slate-700 border-slate-200',
-    },
-  };
-
-  const handleRoleSelect = (newRole: Role) => {
-    setRole(newRole);
-    setIsRoleDropdownOpen(false);
-    if (newRole === 'hospital') {
-      setActiveTab('hospital-portal');
-    } else if (newRole === 'pharmacy') {
-      setActiveTab('pharmacy');
-    } else {
-      setActiveTab('dashboard');
-    }
-  };
-
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-xs">
-      {/* Judge Hackathon Quick Bar */}
-      <div className="bg-slate-900 text-slate-200 px-4 py-1.5 text-xs flex flex-wrap items-center justify-between gap-2 border-b border-slate-800">
-        <div className="flex items-center gap-2">
-          <span className="flex h-2 w-2 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          <span className="font-semibold text-white tracking-wide">JUDGE / DEMO BAR:</span>
-          <span className="hidden sm:inline text-slate-400">
-            Simulated live engine active
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onOpenNewEmergency()}
-            className="px-2.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-medium flex items-center gap-1 transition-colors"
-            title="Simulate incoming SOS patient"
-          >
-            <PlusCircle className="w-3.5 h-3.5" />
-            <span>+ SOS Call</span>
-          </button>
-
-          <button
-            onClick={triggerConflictDemo}
-            className="px-2 py-0.5 rounded bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/40 flex items-center gap-1 transition-colors"
-            title="Simulate Screen 9 double booking conflict"
-          >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Test Double Booking</span>
-          </button>
-
-          <button
-            onClick={triggerStaleDataDemo}
-            className="px-2 py-0.5 rounded bg-yellow-600/30 hover:bg-yellow-600/50 text-yellow-300 border border-yellow-500/40 flex items-center gap-1 transition-colors"
-            title="Simulate Screen 8 stale hospital bed data"
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Test Stale Warning</span>
-          </button>
-
-          <button
-            onClick={toggleSimulation}
-            className={`px-2 py-0.5 rounded font-mono text-[11px] border transition-colors ${
-              isSimulationActive
-                ? 'bg-emerald-950 text-emerald-400 border-emerald-600/60'
-                : 'bg-slate-800 text-slate-400 border-slate-700'
-            }`}
-          >
-            {isSimulationActive ? 'GPS SIM: ON' : 'GPS SIM: PAUSED'}
-          </button>
-
-          <button
-            onClick={resetAllData}
-            className="px-1.5 py-0.5 text-slate-400 hover:text-white transition-colors"
-            title="Reset simulation data to default"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
       {/* Main Navbar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <div className="w-full px-5 sm:px-8 lg:px-10 h-16 flex items-center justify-between gap-4">
         {/* Logo & Brand */}
         <div className="flex items-center gap-3">
           <div
@@ -191,7 +61,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenNewEmergency, onOpenLogin 
           </div>
         </div>
 
-        {/* Right Section: Role Switcher, Notification, Profile */}
+        {/* Right Section: Notification and account */}
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Active Emergency Alert Badge */}
           <button
@@ -207,66 +77,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenNewEmergency, onOpenLogin 
             )}
           </button>
 
-          {/* Quick Role Switcher */}
-          <div className="relative">
-            <button
-              onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-sm font-semibold transition-all ${roleLabels[role].color}`}
-            >
-              {roleLabels[role].icon}
-              <span className="hidden sm:inline">{roleLabels[role].label}</span>
-              <ChevronDown className="w-3.5 h-3.5 opacity-60" />
-            </button>
-
-            {isRoleDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-                <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                  Switch Active Role
-                </div>
-                {(Object.keys(roleLabels) as Role[]).map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => handleRoleSelect(r)}
-                    className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-slate-50 transition-colors ${
-                      role === r ? 'bg-sky-50 font-semibold' : ''
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      {roleLabels[r].icon}
-                      <span className="text-sm text-slate-700">{roleLabels[r].label}</span>
-                    </div>
-                    {role === r && (
-                      <span className="w-2 h-2 rounded-full bg-sky-600"></span>
-                    )}
-                  </button>
-                ))}
-                <div className="border-t border-slate-100 mt-1 pt-1 px-2">
-                  <button
-                    onClick={() => {
-                      setIsRoleDropdownOpen(false);
-                      onOpenLogin();
-                    }}
-                    className="w-full text-center py-1 text-xs text-sky-600 hover:text-sky-700 font-medium"
-                  >
-                    Open Login Portal
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Profile Button */}
-          <button
-            onClick={onOpenLogin}
-            className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl hover:bg-slate-100 transition-colors border border-transparent hover:border-slate-200"
-          >
-            <div className="w-7 h-7 rounded-lg bg-sky-600 text-white font-bold text-xs flex items-center justify-center">
-              DP
-            </div>
-            <span className="text-xs font-semibold text-slate-700 hidden lg:inline">
-              Officer V. Roy
-            </span>
-          </button>
         </div>
       </div>
     </header>

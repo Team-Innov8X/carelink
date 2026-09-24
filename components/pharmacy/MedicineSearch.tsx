@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
-import { Medicine } from '../../types';
 import confetti from 'canvas-confetti';
 import {
   Search,
@@ -11,30 +10,24 @@ import {
   AlertCircle,
   CheckCircle2,
   Bell,
-  ArrowLeft,
-  Sparkles,
-  MapPin,
-  Clock,
   Check,
   PackageCheck,
-  TrendingDown,
   Plus,
   Minus,
 } from 'lucide-react';
 
-export const MedicineSearch: React.FC = () => {
+export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mode = 'pharmacy' }) => {
   const {
     medicines,
     pharmacies,
     orderMedicine,
     updateMedicineStock,
     medicineOrders,
-    setActiveTab,
   } = useCareLink();
 
   const [searchQuery, setSearchQuery] = useState('Amoxicillin');
   const [selectedMedicineId, setSelectedMedicineId] = useState<string>('med-1');
-  const [activeSubTab, setActiveSubTab] = useState<'search' | 'manage' | 'orders'>('search');
+  const [activeSubTab, setActiveSubTab] = useState<'search' | 'manage' | 'orders'>(mode === 'pharmacy' ? 'orders' : 'search');
   const [orderConfirmation, setOrderConfirmation] = useState<string | null>(null);
 
   const selectedMed =
@@ -76,39 +69,10 @@ export const MedicineSearch: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Header with Navigation */}
-      <div className="flex items-center justify-between">
-        <button
-          onClick={() => setActiveTab('dashboard')}
-          className="flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Dashboard</span>
-        </button>
-
-        {/* Sub-tabs: Search, Pharmacy Portal, Active Orders */}
+      {/* Pharmacy workspace navigation */}
+      <div className="flex items-center justify-end">
         <div className="flex items-center bg-slate-100 p-1 rounded-xl">
-          <button
-            onClick={() => setActiveSubTab('search')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeSubTab === 'search'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            Check Availability
-          </button>
-          <button
-            onClick={() => setActiveSubTab('manage')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeSubTab === 'manage'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            Pharmacy Stock Portal
-          </button>
-          <button
+          {mode === 'pharmacy' && <button
             onClick={() => setActiveSubTab('orders')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               activeSubTab === 'orders'
@@ -117,13 +81,23 @@ export const MedicineSearch: React.FC = () => {
             }`}
           >
             Orders ({medicineOrders.length})
-          </button>
+          </button>}
+          {mode === 'pharmacy' && <button
+            onClick={() => setActiveSubTab('manage')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              activeSubTab === 'manage'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            Pharmacy Stock Portal
+          </button>}
         </div>
       </div>
 
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-          Check Medicine Availability
+          {mode === 'pharmacy' ? 'Pharmacy dashboard' : 'Check Medicine Availability'}
         </h1>
         <p className="text-xs text-slate-500 mt-0.5">
           Connect directly to certified local pharmacies to check live critical drug inventory
@@ -340,7 +314,7 @@ export const MedicineSearch: React.FC = () => {
       )}
 
       {/* Sub-tab 2: Pharmacy Stock Portal (for Pharmacists) */}
-      {activeSubTab === 'manage' && (
+      {mode === 'pharmacy' && activeSubTab === 'manage' && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
           <div>
             <h3 className="font-bold text-base text-slate-900">
@@ -387,13 +361,13 @@ export const MedicineSearch: React.FC = () => {
       )}
 
       {/* Sub-tab 3: Active Orders */}
-      {activeSubTab === 'orders' && (
+      {mode === 'pharmacy' && activeSubTab === 'orders' && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
           <h3 className="font-bold text-base text-slate-900">Live Dispatched Medicine Orders</h3>
 
           {medicineOrders.length === 0 ? (
             <div className="text-center py-10 text-slate-400 text-xs">
-              No active pharmacy orders yet. Click "Call / Order" on any in-stock medicine to dispatch an order.
+              No active pharmacy orders yet. Click &quot;Call / Order&quot; on any in-stock medicine to dispatch an order.
             </div>
           ) : (
             <div className="space-y-3">

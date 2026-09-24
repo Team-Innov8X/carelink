@@ -2,7 +2,6 @@ import React from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { MapView } from '../common/MapView';
 import {
-  Siren,
   Building2,
   Ambulance as AmbulanceIcon,
   Pill,
@@ -11,7 +10,6 @@ import {
   MapPin,
   Clock,
   ChevronRight,
-  AlertCircle,
 } from 'lucide-react';
 
 export const DispatcherDashboard: React.FC = () => {
@@ -24,9 +22,6 @@ export const DispatcherDashboard: React.FC = () => {
     setActiveTab,
   } = useCareLink();
 
-  const activeEmergencies = emergencies.filter(
-    (e) => e.status !== 'Completed' && e.status !== 'Rejected'
-  );
   const availableHospitals = hospitals.filter((h) => h.status === 'Available');
   const onDutyAmbulances = ambulances.filter(
     (a) => a.status === 'On Duty' || a.status === 'En Route'
@@ -81,38 +76,15 @@ export const DispatcherDashboard: React.FC = () => {
       {/* Top Welcome Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-          Good Morning, Dispatcher!
+          CareLink Response Network
         </h1>
         <p className="text-sm text-slate-500 mt-1">
           Here's the current status of hospitals, ambulances and requests.
         </p>
       </div>
 
-      {/* 4 Stat Cards matching Mockup Screen 2 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Active Emergencies */}
-        <div
-          onClick={() => setActiveTab('requests')}
-          className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:border-rose-300 hover:shadow-md transition-all cursor-pointer group"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Active Emergencies
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
-              <Siren className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-rose-600 tracking-tight">
-              {activeEmergencies.length}
-            </span>
-            <span className="text-xs font-semibold text-rose-600/80 bg-rose-50 px-2 py-0.5 rounded-full">
-              Live Cases
-            </span>
-          </div>
-        </div>
-
+      {/* Network status cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Card 2: Available Hospitals */}
         <div
           onClick={() => setActiveTab('hospitals')}

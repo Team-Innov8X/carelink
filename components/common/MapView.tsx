@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
-import L from 'leaflet';
+import type * as Leaflet from 'leaflet';
 
 interface MapViewProps {
   center?: [number, number];
@@ -20,48 +20,63 @@ export const MapView: React.FC<MapViewProps> = ({
   showRouteLine = false,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
-  const markersLayerRef = useRef<L.LayerGroup | null>(null);
-  const routeLineRef = useRef<L.Polyline | null>(null);
+  const mapInstanceRef = useRef<Leaflet.Map | null>(null);
+  const markersLayerRef = useRef<Leaflet.LayerGroup | null>(null);
+  const routeLineRef = useRef<Leaflet.Polyline | null>(null);
+  const leafletRef = useRef<typeof import('leaflet').default | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   const { ambulances, hospitals, emergencies, setSelectedEmergencyId, setActiveTab } =
     useCareLink();
 
   // Initialize Map
   useEffect(() => {
-    if (!mapContainerRef.current) return;
-    if (mapInstanceRef.current) return;
+    let cancelled = false;
+    let map: Leaflet.Map | null = null;
 
-    const map = L.map(mapContainerRef.current, {
-      center,
-      zoom,
-      zoomControl: true,
-      attributionControl: false,
-    });
+    const initializeMap = async () => {
+      if (!mapContainerRef.current || mapInstanceRef.current) return;
+      const { default: L } = await import('leaflet');
+      if (cancelled || !mapContainerRef.current) return;
+      leafletRef.current = L;
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
-      subdomains: 'abcd',
-    }).addTo(map);
+      map = L.map(mapContainerRef.current, {
+        center,
+        zoom,
+        zoomControl: true,
+        attributionControl: false,
+      });
 
-    const markersLayer = L.layerGroup().addTo(map);
-    markersLayerRef.current = markersLayer;
-    mapInstanceRef.current = map;
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        subdomains: 'abcd',
+      }).addTo(map);
 
-    // Fix map size after mounting
-    setTimeout(() => {
-      map.invalidateSize();
-    }, 200);
+      const markersLayer = L.layerGroup().addTo(map);
+      markersLayerRef.current = markersLayer;
+      mapInstanceRef.current = map;
+      setMapReady(true);
 
+      // Fix map size after mounting
+      setTimeout(() => {
+        map?.invalidateSize();
+      }, 200);
+    };
+
+    void initializeMap();
     return () => {
-      map.remove();
+      cancelled = true;
+      map?.remove();
       mapInstanceRef.current = null;
+      markersLayerRef.current = null;
+      leafletRef.current = null;
     };
   }, []);
 
   // Update Markers and Route Lines
   useEffect(() => {
-    if (!mapInstanceRef.current || !markersLayerRef.current) return;
+    const L = leafletRef.current;
+    if (!mapReady || !L || !mapInstanceRef.current || !markersLayerRef.current) return;
 
     const map = mapInstanceRef.current;
     const markersLayer = markersLayerRef.current;
@@ -210,7 +225,7 @@ export const MapView: React.FC<MapViewProps> = ({
         routeLineRef.current = polyline;
       }
     }
-  }, [ambulances, hospitals, emergencies, focusHospitalId, showRouteLine]);
+  }, [ambulances, hospitals, emergencies, focusHospitalId, showRouteLine, mapReady]);
 
   return (
     <div className="relative w-full rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100" style={{ height }}>
