@@ -4,7 +4,9 @@ import {
   Heart,
   Search,
   Bell,
+  UserRound,
 } from 'lucide-react';
+import { authClient } from '../../lib/auth-client';
 
 export const Navbar: React.FC = () => {
   const {
@@ -13,6 +15,9 @@ export const Navbar: React.FC = () => {
   } = useCareLink();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const { data: session } = authClient.useSession();
+  const profileName = session?.user?.name || session?.user?.email || 'My profile';
+  const initials = profileName.split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join('') || 'U';
 
   const activeEmergenciesCount = emergencies.filter(
     (e) => e.status !== 'Completed' && e.status !== 'Rejected'
@@ -75,6 +80,18 @@ export const Navbar: React.FC = () => {
                 {activeEmergenciesCount}
               </span>
             )}
+          </button>
+
+          <button
+            type="button"
+            className="group flex max-w-44 items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-2.5 transition hover:border-sky-200 hover:bg-sky-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+            title={profileName}
+            aria-label={`Profile: ${profileName}`}
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-600 to-indigo-600 text-xs font-bold text-white shadow-sm">
+              {session?.user?.image ? <img src={session.user.image} alt="" className="h-full w-full object-cover" /> : initials || <UserRound className="h-4 w-4" />}
+            </span>
+            <span className="max-w-28 truncate text-sm font-semibold text-slate-700 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">{profileName}</span>
           </button>
 
         </div>
