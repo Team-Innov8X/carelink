@@ -30,13 +30,19 @@ export async function getUsersCollection(): Promise<Collection<IUser>> {
   return db.collection<IUser>("user"); // Uses Better Auth 'user' collection
 }
 
+let indexesPromise: Promise<void> | null = null;
+
 /**
- * Initialize MongoDB Indexes for spatial queries, TTL auto-expiration, and fast lookups.
+ * Ensure MongoDB indexes exist before any query relies on them. In particular,
+ * hospitals.location must be GeoJSON Point data for the 2dsphere index and
+ * $geoNear queries to work efficiently.
  */
-export async function initializeIndexes() {
-  try {
+export function initializeIndexes(): Promise<void> {
+  if (indexesPromise) return indexesPromise;
+
+  indexesPromise = (async () => {
     const hospitals = await getHospitalsCollection();
-    await hospitals.createIndex({ location: "2dsphere" });
+    await hospitals.createIndex({ location: "2dsphere" }, { name: "hospitals_location_2dsphere" });
     await hospitals.createIndex({ code: 1 }, { unique: true });
 
     const resources = await getResourcesCollection();
@@ -44,12 +50,16 @@ export async function initializeIndexes() {
 
     const holds = await getHoldsCollection();
     await holds.createIndex({ hospitalId: 1, status: 1 });
-    // Native MongoDB TTL index: automatically deletes document when current time >= expiresAt
-    await holds.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    // Holds use a 15-minute lifetime, matching the default hold timeout.
+    await holds.createIndex({ createdAt: 1 }, { expireAfterSeconds: 15 * 60 });
     await holds.createIndex({ requestedByUserId: 1 });
 
     console.log("CareLink MongoDB indexes successfully initialized.");
-  } catch (error) {
-    console.error("Failed to initialize MongoDB indexes:", error);
-  }
+  })().catch((error: unknown) => {
+    // Allow a later request to retry after a transient database failure.
+    indexesPromise = null;
+    throw error;
+  });
+
+  return indexesPromise;
 }

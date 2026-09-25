@@ -3,6 +3,7 @@ import {
   getHospitalsCollection,
   getResourcesCollection,
   getHoldsCollection,
+  initializeIndexes,
   IHold,
   IResource,
   IHospital,
@@ -267,6 +268,8 @@ export async function findNextRankedHospital(params: {
   excludeHospitalIds?: string[];
   quantityNeeded?: number;
 }): Promise<INextRankedHospitalResult | null> {
+  // Ensure the geospatial index is in place before the $geoNear aggregation.
+  await initializeIndexes();
   const hospitalsCol = await getHospitalsCollection();
   const resourcesCol = await getResourcesCollection();
   const needed = params.quantityNeeded || 1;
