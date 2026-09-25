@@ -1,66 +1,29 @@
 import { NextResponse } from "next/server";
-import { rankHospitals } from "@/lib/ranking.mjs";
 import { getHospitalsCollection, getResourcesCollection } from "@/lib/models";
-
-type RankRequest = {
-  emergencyType: string;
-  ambulanceLocation: { latitude: number; longitude: number };
-};
+import { addTravelTimes, rankHospitals } from "@/lib/ranking";
+import { rankRequestSchema } from "@/lib/validation";
+import { errorResponse, validationError } from "@/lib/api-response";
 
 export async function POST(request: Request) {
-  let body: unknown;
+  let input;
+  try { input = rankRequestSchema.safeParse(await request.json()); }
+  catch { return errorResponse("Request body must be valid JSON.", 400); }
+  if (!input.success) return validationError(input.error);
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
-  }
-
-  if (!isRankRequest(body)) {
-    return NextResponse.json({
-      error: "Provide emergencyType and ambulanceLocation with valid latitude and longitude.",
-    }, { status: 400 });
-  }
-
-  try {
-    const [hospitalDocuments, resources] = await Promise.all([
-      (await getHospitalsCollection()).find({ status: { $ne: "inactive" } }).toArray(),
+    const [hospitalDocuments, resourceDocuments] = await Promise.all([
+      (await getHospitalsCollection()).find({ status: { $in: ["active", "busy"] } }).toArray(),
       (await getResourcesCollection()).find({}).toArray(),
     ]);
-
     const hospitals = hospitalDocuments.map((hospital) => ({
       id: hospital._id?.toString() ?? hospital.id ?? hospital.code,
-      name: hospital.name,
-      location: hospital.location,
-      status: hospital.status,
-    }));
-
-    const ranked = rankHospitals({
-      emergencyType: body.emergencyType,
-      ambulanceLocation: body.ambulanceLocation,
-      hospitals,
-      resources: resources.map((resource) => ({
-        hospitalId: resource.hospitalId,
-        type: resource.type,
-        category: resource.category,
-        availableQuantity: resource.availableQuantity,
-        status: resource.status,
+      name: hospital.name, location: hospital.location, status: hospital.status,
+      resources: resourceDocuments.filter((resource) => resource.hospitalId === (hospital._id?.toString() ?? hospital.id)).map((resource) => ({
+        category: resource.category, availableQuantity: Math.max(0, resource.availableQuantity - resource.heldQuantity), updatedAt: resource.updatedAt,
       })),
-    });
-
-    return NextResponse.json({ emergencyType: body.emergencyType, ranked });
+    }));
+    const withTravelTimes = await addTravelTimes(hospitals, input.data.ambulanceLocation);
+    return NextResponse.json({ emergencyType: input.data.emergencyType, ranked: rankHospitals(withTravelTimes, input.data) });
   } catch {
-    return NextResponse.json({ error: "Failed to rank hospitals." }, { status: 500 });
+    return errorResponse("Failed to rank hospitals.", 500);
   }
-}
-
-function isRankRequest(value: unknown): value is RankRequest {
-  if (!value || typeof value !== "object") return false;
-  const body = value as Record<string, unknown>;
-  if (typeof body.emergencyType !== "string" || !body.emergencyType.trim()) return false;
-  if (!body.ambulanceLocation || typeof body.ambulanceLocation !== "object") return false;
-  const location = body.ambulanceLocation as Record<string, unknown>;
-  return typeof location.latitude === "number" && Number.isFinite(location.latitude) &&
-    location.latitude >= -90 && location.latitude <= 90 &&
-    typeof location.longitude === "number" && Number.isFinite(location.longitude) &&
-    location.longitude >= -180 && location.longitude <= 180;
 }
