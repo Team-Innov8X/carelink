@@ -42,7 +42,7 @@ export function initializeIndexes(): Promise<void> {
 
   indexesPromise = (async () => {
     const hospitals = await getHospitalsCollection();
-    await hospitals.createIndex({ location: "2dsphere" }, { name: "hospitals_location_2dsphere" });
+    await hospitals.createIndex({ location: "2dsphere" });
     await hospitals.createIndex({ code: 1 }, { unique: true });
 
     const resources = await getResourcesCollection();
@@ -50,8 +50,8 @@ export function initializeIndexes(): Promise<void> {
 
     const holds = await getHoldsCollection();
     await holds.createIndex({ hospitalId: 1, status: 1 });
-    // Holds use a 15-minute lifetime, matching the default hold timeout.
-    await holds.createIndex({ createdAt: 1 }, { expireAfterSeconds: 15 * 60 });
+    // Native MongoDB TTL index: automatically deletes a hold when expiresAt is reached.
+    await holds.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
     await holds.createIndex({ requestedByUserId: 1 });
 
     console.log("CareLink MongoDB indexes successfully initialized.");
