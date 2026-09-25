@@ -44,12 +44,13 @@ export async function PATCH(request: Request, { params }: Context) {
       return NextResponse.json({ error: "Count must be between held quantity and total quantity" }, { status: 400 });
     }
 
+    const resourceStatus = status as "available" | "limited" | "unavailable";
     const updatedAt = new Date();
     await resources.updateOne(
       { _id: resource._id, hospitalId: id },
-      { $set: { status, availableQuantity: count, updatedAt } },
+      { $set: { status: resourceStatus, availableQuantity: count, updatedAt } },
     );
-    return NextResponse.json({ ...resource, status, availableQuantity: count, updatedAt });
+    return NextResponse.json({ ...resource, status: resourceStatus, availableQuantity: count, updatedAt });
   } catch {
     return NextResponse.json({ error: "Failed to update hospital resource" }, { status: 500 });
   }

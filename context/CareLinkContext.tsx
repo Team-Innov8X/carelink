@@ -62,12 +62,14 @@ interface CareLinkContextType {
   acceptEmergency: (requestId: string) => void;
   rejectEmergency: (requestId: string, reason?: string) => void;
   updateBedCounts: (hospitalId: string, bedType: keyof HospitalBeds, delta: number) => void;
+  setBedAvailability: (hospitalId: string, bedType: keyof HospitalBeds, available: number, total: number) => void;
+  updateHospitalSpecialty: (hospitalId: string, specialty: string, doctors: number) => void;
   refreshHospitalData: (hospitalId: string) => void;
   updateHandoffChecklist: (requestId: string, key: keyof HandoffChecklist, value: boolean) => void;
   completeHandoff: (requestId: string) => void;
   orderMedicine: (medicineId: string, pharmacyId: string, quantity: number, isUrgent?: boolean) => void;
   updateMedicineStock: (medicineId: string, pharmacyId: string, newStock: number) => void;
-  createNewEmergency: (emergency: Omit<EmergencyRequest, 'id' | 'status' | 'checklist' | 'requestedAt'>) => string;
+  createNewEmergency: (emergency: Pick<EmergencyRequest, 'patientName' | 'condition'> & Partial<EmergencyRequest>) => string;
   
   // Operational controls
   resetAllData: () => void;
@@ -335,6 +337,32 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
   };
 
+  const updateHospitalSpecialty = (hospitalId: string, specialty: string, doctors: number) => {
+    const normalized = specialty.trim();
+    if (!normalized) return;
+    setHospitals((prev) => prev.map((hospital) => {
+      if (hospital.id !== hospitalId) return hospital;
+      const exists = hospital.specialties.some((item) => item.toLowerCase() === normalized.toLowerCase());
+      const canonicalName = hospital.specialties.find((item) => item.toLowerCase() === normalized.toLowerCase()) ?? normalized;
+      return {
+        ...hospital,
+        specialties: exists ? hospital.specialties : [...hospital.specialties, normalized],
+        specialtyDoctors: { ...hospital.specialtyDoctors, [canonicalName]: Math.max(0, Math.floor(doctors)) },
+        lastUpdatedMinutesAgo: 0,
+      };
+    }));
+  };
+
+  const setBedAvailability = (hospitalId: string, bedType: keyof HospitalBeds, available: number, total: number) => {
+    const safeTotal = Math.max(0, Math.floor(total));
+    const safeAvailable = Math.min(safeTotal, Math.max(0, Math.floor(available)));
+    setHospitals((prev) => prev.map((hospital) => hospital.id !== hospitalId ? hospital : ({
+      ...hospital,
+      beds: { ...hospital.beds, [bedType]: { total: safeTotal, available: safeAvailable } },
+      lastUpdatedMinutesAgo: 0,
+    })));
+  };
+
   const refreshHospitalData = (hospitalId: string) => {
     setHospitals((prev) =>
       prev.map((h) => {
@@ -455,11 +483,18 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
   };
 
-  const createNewEmergency = (data: Omit<EmergencyRequest, 'id' | 'status' | 'checklist' | 'requestedAt'>): string => {
+  const createNewEmergency = (data: Pick<EmergencyRequest, 'patientName' | 'condition'> & Partial<EmergencyRequest>): string => {
     const newId = `P-${Math.floor(1028 + Math.random() * 900)}`;
     const newEmergency: EmergencyRequest = {
       ...data,
       id: newId,
+      age: data.age ?? 0,
+      gender: data.gender ?? 'Not specified',
+      priority: data.priority ?? 'Medium',
+      location: data.location ?? { lat: 28.6139, lng: 77.209, address: 'Location pending confirmation' },
+      requiredFacilities: data.requiredFacilities ?? [],
+      etaLimitMin: data.etaLimitMin ?? 30,
+      vitals: data.vitals ?? { bp: 'Not recorded', heartRate: 0, spO2: 0, conditionNotes: data.condition },
       status: 'Finding hospital',
       checklist: {
         arrivedAtHospital: false,
@@ -516,6 +551,8 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         acceptEmergency,
         rejectEmergency,
         updateBedCounts,
+        setBedAvailability,
+        updateHospitalSpecialty,
         refreshHospitalData,
         updateHandoffChecklist,
         completeHandoff,

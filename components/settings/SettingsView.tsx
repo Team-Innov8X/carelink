@@ -1,7 +1,23 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useCareLink } from '../../context/CareLinkContext';
+import { LogOut } from 'lucide-react';
+import { authClient } from '../../lib/auth-client';
+
 export const SettingsView: React.FC = () => {
   const { resetAllData } = useCareLink();
+  const router = useRouter();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    try {
+      await authClient.signOut();
+      router.push('/signin');
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -55,6 +71,22 @@ export const SettingsView: React.FC = () => {
             Restore Samples
           </button>
         </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+        <div>
+          <h3 className="font-bold text-sm text-slate-900">Sign out of CareLink</h3>
+          <p className="mt-1 text-xs text-slate-500">End your current session and return to the sign-in page.</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleSignOut}
+          disabled={isSigningOut}
+          className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <LogOut className="h-4 w-4" />
+          {isSigningOut ? 'Signing out…' : 'Log out'}
+        </button>
       </div>
     </div>
   );

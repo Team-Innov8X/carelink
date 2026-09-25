@@ -1,22 +1,16 @@
 import type { Metadata } from "next";
-import "@/index.css";
+import type { ReactNode } from "react";
+import "../index.css";
 
 export const metadata: Metadata = {
-  title: "CareLink - Emergency Response & Hospital Capacity System",
-  description:
-    "Real-time emergency response, smart hospital recommendations, and resource management.",
+  title: "CareLink | Emergency Response Network",
+  description: "Coordinate emergency response, hospitals, ambulances, and patient handoffs.",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body className="antialiased bg-slate-50 text-slate-900">
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

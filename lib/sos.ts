@@ -47,4 +47,3 @@ export function distanceKm(a: Coordinates, b: Coordinates) {
 }
 
 export function createRequestId() { return randomUUID(); }
-

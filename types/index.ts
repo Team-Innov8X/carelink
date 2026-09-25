@@ -21,6 +21,7 @@ export interface Hospital {
   etaMin: number;
   beds: HospitalBeds;
   specialties: string[];
+  specialtyDoctors?: Record<string, number>;
   status: HospitalStatus;
   lastUpdatedMinutesAgo: number; // Stale warning if > 10
   location: {
