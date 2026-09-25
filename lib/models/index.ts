@@ -3,3 +3,4 @@ export * from "./hospital";
 export * from "./resource";
 export * from "./hold";
 export * from "./db";
+export * from "@/lib/services/hold-service";

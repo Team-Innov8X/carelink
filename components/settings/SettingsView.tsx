@@ -5,7 +5,7 @@ import { LogOut } from 'lucide-react';
 import { authClient } from '../../lib/auth-client';
 
 export const SettingsView: React.FC = () => {
-  const { isSimulationActive, toggleSimulation, resetAllData } = useCareLink();
+  const { resetAllData } = useCareLink();
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
 
@@ -29,25 +29,6 @@ export const SettingsView: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-6">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-          <div>
-            <h3 className="font-bold text-sm text-slate-900">Live GPS Simulation Engine</h3>
-            <p className="text-xs text-slate-500">
-              Continuously moves ambulances and updates en-route telemetry
-            </p>
-          </div>
-          <button
-            onClick={toggleSimulation}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              isSimulationActive
-                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
-                : 'bg-slate-200 text-slate-700'
-            }`}
-          >
-            {isSimulationActive ? 'SIMULATION ACTIVE' : 'SIMULATION PAUSED'}
-          </button>
-        </div>
-
         <div className="flex items-center justify-between pb-4 border-b border-slate-100">
           <div>
             <h3 className="font-bold text-sm text-slate-900">Double Booking Protection</h3>
@@ -74,20 +55,20 @@ export const SettingsView: React.FC = () => {
 
         <div className="flex items-center justify-between pt-2">
           <div>
-            <h3 className="font-bold text-sm text-rose-700">Reset LocalStorage Data</h3>
+            <h3 className="font-bold text-sm text-rose-700">Restore Demo Data</h3>
             <p className="text-xs text-slate-500">
-              Clear custom changes and restore default mock dataset
+              Replace current local data with the built-in sample records
             </p>
           </div>
           <button
             onClick={() => {
-              if (confirm('Reset all demo state to original defaults?')) {
+              if (confirm('Replace current local data with the built-in sample records?')) {
                 resetAllData();
               }
             }}
             className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 transition-colors"
           >
-            Reset Database
+            Restore Samples
           </button>
         </div>
       </div>

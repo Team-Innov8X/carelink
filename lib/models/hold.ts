@@ -1,3 +1,5 @@
+import type { ObjectId } from "mongodb";
+
 export type HoldStatus =
   | "pending"    // Hold placed, awaiting hospital confirmation or arrival
   | "confirmed"  // Confirmed by hospital staff
@@ -17,7 +19,7 @@ export interface IPatientDetails {
 }
 
 export interface IHold {
-  _id?: string;
+  _id?: ObjectId;
   id?: string;
   hospitalId: string;
   resourceId: string;

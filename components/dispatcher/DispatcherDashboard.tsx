@@ -79,7 +79,7 @@ export const DispatcherDashboard: React.FC = () => {
           CareLink Response Network
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Here's the current status of hospitals, ambulances and requests.
+          Here&apos;s the current status of hospitals, ambulances and requests.
         </p>
       </div>
 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
+import { Medicine } from '../../types';
 import confetti from 'canvas-confetti';
 import {
   Search,
@@ -10,28 +11,35 @@ import {
   AlertCircle,
   CheckCircle2,
   Bell,
+  ArrowLeft,
+  Sparkles,
+  MapPin,
+  Clock,
   Check,
   PackageCheck,
+  TrendingDown,
   Plus,
   Minus,
 } from 'lucide-react';
 
-export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mode = 'pharmacy' }) => {
+export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = () => {
   const {
     medicines,
     pharmacies,
     orderMedicine,
     updateMedicineStock,
     medicineOrders,
+    setActiveTab,
   } = useCareLink();
 
-  const [searchQuery, setSearchQuery] = useState('Amoxicillin');
-  const [selectedMedicineId, setSelectedMedicineId] = useState<string>('med-1');
-  const [activeSubTab, setActiveSubTab] = useState<'search' | 'manage' | 'orders'>(mode === 'pharmacy' ? 'orders' : 'search');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedMedicineId, setSelectedMedicineId] = useState<string>('');
+  const [activeSubTab, setActiveSubTab] = useState<'search' | 'manage' | 'orders'>('search');
   const [orderConfirmation, setOrderConfirmation] = useState<string | null>(null);
 
   const selectedMed =
     medicines.find((m) => m.id === selectedMedicineId) || medicines[0];
+  const stockPharmacy = pharmacies[0];
 
   // Filter medicines by search query
   const filteredMedicines = medicines.filter((m) =>
@@ -41,6 +49,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
   );
 
   const handleOrder = (pharmacyId: string) => {
+    if (!selectedMed) return;
     orderMedicine(selectedMed.id, pharmacyId, 1, true);
     const pharm = pharmacies.find((p) => p.id === pharmacyId);
     setOrderConfirmation(`Medicine reserve request dispatched to ${pharm?.name || 'Pharmacy'}!`);
@@ -55,6 +64,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
   };
 
   const handleRequestNearest = () => {
+    if (!selectedMed) return;
     // Find nearest pharmacy with stock > 0
     const inStockPharmacies = pharmacies
       .filter((p) => (selectedMed.stock[p.id] || 0) > 0)
@@ -67,22 +77,35 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
     }
   };
 
+  if (!selectedMed) {
+    return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No medicine records are available.</div>;
+  }
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Pharmacy workspace navigation */}
-      <div className="flex items-center justify-end">
+      {/* Header with Navigation */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => setActiveTab('dashboard')}
+          className="flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back to Dashboard</span>
+        </button>
+
+        {/* Sub-tabs: Search, Pharmacy Portal, Active Orders */}
         <div className="flex items-center bg-slate-100 p-1 rounded-xl">
-          {mode === 'pharmacy' && <button
-            onClick={() => setActiveSubTab('orders')}
+          <button
+            onClick={() => setActiveSubTab('search')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeSubTab === 'orders'
+              activeSubTab === 'search'
                 ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            Orders ({medicineOrders.length})
-          </button>}
-          {mode === 'pharmacy' && <button
+            Check Availability
+          </button>
+          <button
             onClick={() => setActiveSubTab('manage')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               activeSubTab === 'manage'
@@ -91,13 +114,23 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
             }`}
           >
             Pharmacy Stock Portal
-          </button>}
+          </button>
+          <button
+            onClick={() => setActiveSubTab('orders')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              activeSubTab === 'orders'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            Orders ({medicineOrders.length})
+          </button>
         </div>
       </div>
 
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-          {mode === 'pharmacy' ? 'Pharmacy dashboard' : 'Check Medicine Availability'}
+          Check Medicine Availability
         </h1>
         <p className="text-xs text-slate-500 mt-0.5">
           Connect directly to certified local pharmacies to check live critical drug inventory
@@ -125,7 +158,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search medicine (e.g. Paracetamol, Amoxicillin, Epinephrine...)"
+                placeholder="Search by medicine name, category, or indication"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-sky-500 focus:ring-1 focus:ring-sky-500 text-xs font-medium outline-none transition-all"
@@ -314,7 +347,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
       )}
 
       {/* Sub-tab 2: Pharmacy Stock Portal (for Pharmacists) */}
-      {mode === 'pharmacy' && activeSubTab === 'manage' && (
+      {activeSubTab === 'manage' && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
           <div>
             <h3 className="font-bold text-base text-slate-900">
@@ -333,26 +366,25 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
                   <div className="text-xs text-slate-500">{med.form} • {med.indication}</div>
                 </div>
 
-                {/* Adjust stock for pharmacy 1 (HealthPlus) */}
                 <div className="flex items-center gap-3">
-                  <span className="text-xs font-medium text-slate-500">HealthPlus Stock:</span>
-                  <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                  <span className="text-xs font-medium text-slate-500">{stockPharmacy?.name ?? 'No pharmacy'} Stock:</span>
+                  {stockPharmacy && <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
                     <button
-                      onClick={() => updateMedicineStock(med.id, 'pharm-1', (med.stock['pharm-1'] || 0) - 5)}
+                      onClick={() => updateMedicineStock(med.id, stockPharmacy.id, (med.stock[stockPharmacy.id] || 0) - 5)}
                       className="w-7 h-7 rounded-lg bg-white text-slate-700 font-bold flex items-center justify-center hover:bg-slate-100 border border-slate-200"
                     >
                       <Minus className="w-3 h-3" />
                     </button>
                     <span className="font-mono font-bold text-sm w-8 text-center text-slate-900">
-                      {med.stock['pharm-1'] || 0}
+                      {med.stock[stockPharmacy.id] || 0}
                     </span>
                     <button
-                      onClick={() => updateMedicineStock(med.id, 'pharm-1', (med.stock['pharm-1'] || 0) + 5)}
+                      onClick={() => updateMedicineStock(med.id, stockPharmacy.id, (med.stock[stockPharmacy.id] || 0) + 5)}
                       className="w-7 h-7 rounded-lg bg-white text-slate-700 font-bold flex items-center justify-center hover:bg-slate-100 border border-slate-200"
                     >
                       <Plus className="w-3 h-3" />
                     </button>
-                  </div>
+                  </div>}
                 </div>
               </div>
             ))}
@@ -361,7 +393,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
       )}
 
       {/* Sub-tab 3: Active Orders */}
-      {mode === 'pharmacy' && activeSubTab === 'orders' && (
+      {activeSubTab === 'orders' && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
           <h3 className="font-bold text-base text-slate-900">Live Dispatched Medicine Orders</h3>
 

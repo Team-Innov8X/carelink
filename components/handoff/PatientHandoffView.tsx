@@ -32,9 +32,17 @@ export const PatientHandoffView: React.FC = () => {
   const currentEmergency =
     emergencies.find((e) => e.id === selectedEmergencyId) || emergencies[0];
 
+  if (!currentEmergency) {
+    return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No patient handoff records are available.</div>;
+  }
+
   const assignedHospital = hospitals.find(
     (h) => h.id === currentEmergency.assignedHospitalId
   ) || hospitals[0];
+
+  if (!assignedHospital) {
+    return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No hospital has been assigned to this patient.</div>;
+  }
 
   const handleToggleChecklist = (key: keyof HandoffChecklist) => {
     updateHandoffChecklist(
@@ -201,7 +209,7 @@ export const PatientHandoffView: React.FC = () => {
               <div>
                 <span className="text-slate-400 block text-[11px]">Ambulance Vehicle</span>
                 <span className="font-bold text-slate-800">
-                  {currentEmergency.assignedAmbulanceId || 'A-12'} (On Route)
+                  {currentEmergency.assignedAmbulanceId || 'Not assigned'}
                 </span>
               </div>
             </div>

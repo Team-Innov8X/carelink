@@ -1,3 +1,5 @@
+import type { ObjectId } from "mongodb";
+
 export interface IGeoLocation {
   type: "Point";
   coordinates: [number, number]; // [longitude, latitude]
@@ -25,7 +27,7 @@ export interface IHospitalCapacitySummary {
 }
 
 export interface IHospital {
-  _id?: string;
+  _id?: ObjectId;
   id?: string;
   name: string;
   code: string; // Unique hospital code (e.g. "HOSP-001")

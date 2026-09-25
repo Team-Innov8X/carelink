@@ -61,7 +61,7 @@ export interface PatientVitals {
 }
 
 export interface EmergencyRequest {
-  id: string; // e.g. 'P-1023'
+  id: string;
   patientName: string;
   age: number;
   gender: string;
@@ -110,7 +110,7 @@ export interface Medicine {
 }
 
 export interface Ambulance {
-  id: string; // e.g. 'A-12'
+  id: string;
   vehicleNumber: string;
   driverName: string;
   phone: string;
@@ -120,6 +120,15 @@ export interface Ambulance {
     lng: number;
   };
   assignedRequestId?: string;
+}
+
+export interface AmbulanceDriver {
+  id: string;
+  name: string;
+  phone: string;
+  licenseNumber: string;
+  ambulanceId: string;
+  status: 'On Duty' | 'En Route' | 'Available';
 }
 
 export interface MedicineOrder {
