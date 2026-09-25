@@ -17,7 +17,7 @@ export type SpecialistCategory =
 export type ResourceCategory = BedCategory | EquipmentCategory | SpecialistCategory | string;
 
 export interface IResource {
-  _id?: string;
+  _id?: ObjectId | string;
   id?: string;
   hospitalId: string;
   type: ResourceType;
@@ -32,3 +32,4 @@ export interface IResource {
   createdAt: Date;
   updatedAt: Date;
 }
+import type { ObjectId } from "mongodb";

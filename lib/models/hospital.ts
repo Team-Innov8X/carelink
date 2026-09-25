@@ -25,7 +25,7 @@ export interface IHospitalCapacitySummary {
 }
 
 export interface IHospital {
-  _id?: string;
+  _id?: ObjectId | string;
   id?: string;
   name: string;
   code: string; // Unique hospital code (e.g. "HOSP-001")
@@ -37,3 +37,4 @@ export interface IHospital {
   createdAt: Date;
   updatedAt: Date;
 }
+import type { ObjectId } from "mongodb";
