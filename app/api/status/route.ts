@@ -8,12 +8,6 @@ export async function GET() {
     endpoints: {
       auth: "/api/auth/*",
       seed: "/api/seed",
-      holds: {
-        create: "POST /api/holds",
-        list: "GET /api/holds",
-        confirm: "POST /api/holds/[id]/confirm",
-        cancel: "POST /api/holds/[id]/cancel",
-      },
     },
   });
 }
