@@ -31,6 +31,10 @@ export const SmartRecommendations: React.FC = () => {
   const currentEmergency =
     emergencies.find((e) => e.id === selectedEmergencyId) || emergencies[0];
 
+  if (!currentEmergency) {
+    return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No patient requests are available for hospital matching.</div>;
+  }
+
   const recommendations = calculateHospitalRecommendations(currentEmergency, hospitals);
 
   // Sorting

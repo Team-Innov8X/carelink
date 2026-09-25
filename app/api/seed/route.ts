@@ -178,9 +178,9 @@ export async function POST() {
       resourcesInserted: sampleResources.length,
       holdsInserted: sampleHolds.length,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { success: false, error: error?.message || "Seeding failed" },
+      { success: false, error: error instanceof Error ? error.message : "Seeding failed" },
       { status: 500 }
     );
   }

@@ -32,13 +32,14 @@ export const MedicineSearch: React.FC = () => {
     setActiveTab,
   } = useCareLink();
 
-  const [searchQuery, setSearchQuery] = useState('Amoxicillin');
-  const [selectedMedicineId, setSelectedMedicineId] = useState<string>('med-1');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedMedicineId, setSelectedMedicineId] = useState<string>('');
   const [activeSubTab, setActiveSubTab] = useState<'search' | 'manage' | 'orders'>('search');
   const [orderConfirmation, setOrderConfirmation] = useState<string | null>(null);
 
   const selectedMed =
     medicines.find((m) => m.id === selectedMedicineId) || medicines[0];
+  const stockPharmacy = pharmacies[0];
 
   // Filter medicines by search query
   const filteredMedicines = medicines.filter((m) =>
@@ -48,6 +49,7 @@ export const MedicineSearch: React.FC = () => {
   );
 
   const handleOrder = (pharmacyId: string) => {
+    if (!selectedMed) return;
     orderMedicine(selectedMed.id, pharmacyId, 1, true);
     const pharm = pharmacies.find((p) => p.id === pharmacyId);
     setOrderConfirmation(`Medicine reserve request dispatched to ${pharm?.name || 'Pharmacy'}!`);
@@ -62,6 +64,7 @@ export const MedicineSearch: React.FC = () => {
   };
 
   const handleRequestNearest = () => {
+    if (!selectedMed) return;
     // Find nearest pharmacy with stock > 0
     const inStockPharmacies = pharmacies
       .filter((p) => (selectedMed.stock[p.id] || 0) > 0)
@@ -73,6 +76,10 @@ export const MedicineSearch: React.FC = () => {
       alert('All nearby pharmacies are currently out of stock for this formulation. A regional alert has been triggered.');
     }
   };
+
+  if (!selectedMed) {
+    return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No medicine records are available.</div>;
+  }
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -151,7 +158,7 @@ export const MedicineSearch: React.FC = () => {
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search medicine (e.g. Paracetamol, Amoxicillin, Epinephrine...)"
+                placeholder="Search by medicine name, category, or indication"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-sky-500 focus:ring-1 focus:ring-sky-500 text-xs font-medium outline-none transition-all"
@@ -359,26 +366,25 @@ export const MedicineSearch: React.FC = () => {
                   <div className="text-xs text-slate-500">{med.form} • {med.indication}</div>
                 </div>
 
-                {/* Adjust stock for pharmacy 1 (HealthPlus) */}
                 <div className="flex items-center gap-3">
-                  <span className="text-xs font-medium text-slate-500">HealthPlus Stock:</span>
-                  <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                  <span className="text-xs font-medium text-slate-500">{stockPharmacy?.name ?? 'No pharmacy'} Stock:</span>
+                  {stockPharmacy && <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
                     <button
-                      onClick={() => updateMedicineStock(med.id, 'pharm-1', (med.stock['pharm-1'] || 0) - 5)}
+                      onClick={() => updateMedicineStock(med.id, stockPharmacy.id, (med.stock[stockPharmacy.id] || 0) - 5)}
                       className="w-7 h-7 rounded-lg bg-white text-slate-700 font-bold flex items-center justify-center hover:bg-slate-100 border border-slate-200"
                     >
                       <Minus className="w-3 h-3" />
                     </button>
                     <span className="font-mono font-bold text-sm w-8 text-center text-slate-900">
-                      {med.stock['pharm-1'] || 0}
+                      {med.stock[stockPharmacy.id] || 0}
                     </span>
                     <button
-                      onClick={() => updateMedicineStock(med.id, 'pharm-1', (med.stock['pharm-1'] || 0) + 5)}
+                      onClick={() => updateMedicineStock(med.id, stockPharmacy.id, (med.stock[stockPharmacy.id] || 0) + 5)}
                       className="w-7 h-7 rounded-lg bg-white text-slate-700 font-bold flex items-center justify-center hover:bg-slate-100 border border-slate-200"
                     >
                       <Plus className="w-3 h-3" />
                     </button>
-                  </div>
+                  </div>}
                 </div>
               </div>
             ))}
@@ -393,7 +399,7 @@ export const MedicineSearch: React.FC = () => {
 
           {medicineOrders.length === 0 ? (
             <div className="text-center py-10 text-slate-400 text-xs">
-              No active pharmacy orders yet. Click "Call / Order" on any in-stock medicine to dispatch an order.
+              No active pharmacy orders yet. Click &quot;Call / Order&quot; on any in-stock medicine to dispatch an order.
             </div>
           ) : (
             <div className="space-y-3">

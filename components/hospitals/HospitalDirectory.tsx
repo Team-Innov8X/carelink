@@ -73,7 +73,7 @@ export const HospitalDirectory: React.FC = () => {
   };
 
   const handleRequestBed = (hospitalId: string) => {
-    const reqId = selectedEmergencyId || 'P-1023';
+    const reqId = selectedEmergencyId || '';
     const success = requestHospitalBed(reqId, hospitalId);
     if (success) {
       setActiveTab('handoff');
@@ -105,7 +105,7 @@ export const HospitalDirectory: React.FC = () => {
         </button>
       </div>
 
-      {/* Screen 8: Stale Data Warning Banner if City Care Hospital or any hospital is outdated */}
+      {/* Show warnings for any hospital with outdated data. */}
       {hospitals
         .filter((h) => h.lastUpdatedMinutesAgo >= 10 && !dismissedStaleIds.includes(h.id))
         .map((staleHosp) => (
@@ -201,6 +201,9 @@ export const HospitalDirectory: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {filteredHospitals.length === 0 && (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">No hospital records are available.</td></tr>
+              )}
               {filteredHospitals.map((hosp) => {
                 const isAvail = hosp.status === 'Available';
                 const isLimited = hosp.status === 'Limited';
