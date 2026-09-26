@@ -1,5 +1,6 @@
 import { requireRole } from "@/lib/auth-utils";
 import { distanceKm, mapsUrl, sosCollections, type Coordinates } from "@/lib/sos";
+import { getResourcesCollection } from "@/lib/models";
 
 export const runtime = "nodejs";
 
@@ -15,8 +16,29 @@ export async function GET(request: Request, context: RouteContext<"/api/sos/[id]
   const url = new URL(request.url);
   const limitParam = Number(url.searchParams.get("limit") ?? 5);
   const limit = Number.isFinite(limitParam) ? Math.max(1, Math.min(20, Math.floor(limitParam))) : 5;
-  const allHospitals = await hospitals.find({}).toArray();
-  const suitable = allHospitals.filter((hospital) => Array.isArray(hospital.equipment) && hospital.equipment.length > 0 && sos.requiredEquipment.every((needed) => hospital.equipment.some((item) => item.toLowerCase() === needed.toLowerCase())) && typeof hospital.location?.latitude === "number" && typeof hospital.location?.longitude === "number");
-  const nearby = suitable.map((hospital) => ({ id: String(hospital._id), name: hospital.name, address: hospital.address ?? null, location: hospital.location, equipment: hospital.equipment, distanceKm: Number(distanceKm(origin, hospital.location).toFixed(1)), directionsUrl: mapsUrl(hospital.location, origin) })).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, limit);
+  const [allHospitals, resources] = await Promise.all([
+    hospitals.find({ status: { $ne: "inactive" } }).toArray(),
+    (await getResourcesCollection()).find({ type: "equipment", status: { $ne: "unavailable" } }).toArray(),
+  ]);
+  const equipmentByHospital = new Map<string, Set<string>>();
+  for (const resource of resources) {
+    if (resource.availableQuantity - resource.heldQuantity <= 0) continue;
+    const equipment = equipmentByHospital.get(resource.hospitalId) ?? new Set<string>();
+    equipment.add(resource.category.toLowerCase());
+    equipmentByHospital.set(resource.hospitalId, equipment);
+  }
+  const candidates = allHospitals.flatMap((hospital) => {
+    const rawLocation = hospital.location as unknown as { latitude?: unknown; longitude?: unknown; coordinates?: unknown };
+    const location: Coordinates | null = typeof rawLocation?.latitude === "number" && typeof rawLocation.longitude === "number"
+      ? { latitude: rawLocation.latitude, longitude: rawLocation.longitude }
+      : Array.isArray(rawLocation?.coordinates) && typeof rawLocation.coordinates[0] === "number" && typeof rawLocation.coordinates[1] === "number"
+        ? { latitude: rawLocation.coordinates[1], longitude: rawLocation.coordinates[0] }
+        : null;
+    if (!location) return [];
+    const equipment = new Set([...(hospital.equipment ?? []).map((item) => item.toLowerCase()), ...(equipmentByHospital.get(String(hospital._id)) ?? [])]);
+    if (!sos.requiredEquipment.every((needed) => equipment.has(needed.toLowerCase()))) return [];
+    return [{ hospital, location, equipment: [...equipment] }];
+  });
+  const nearby = candidates.map(({ hospital, location, equipment }) => ({ id: String(hospital._id), name: hospital.name, address: hospital.address ?? null, location, equipment, distanceKm: Number(distanceKm(origin, location).toFixed(1)), directionsUrl: mapsUrl(location, origin) })).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, limit);
   return Response.json({ hospitals: nearby, message: nearby.length ? undefined : "No hospital with all required equipment is registered" });
 }
