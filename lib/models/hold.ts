@@ -2,9 +2,11 @@ import type { ObjectId } from "mongodb";
 
 export type HoldStatus =
   | "pending"    // Hold placed, awaiting hospital confirmation or arrival
+  | "confirming"
   | "confirmed"  // Confirmed by hospital staff
   | "fulfilled"  // Patient arrived & resource assigned
   | "expired"    // Auto-expired because hold window lapsed
+  | "rejected"   // Hospital declined the request
   | "cancelled";  // Cancelled by requester or staff
 
 export type PriorityLevel = "critical" | "urgent" | "standard";
@@ -19,7 +21,7 @@ export interface IPatientDetails {
 }
 
 export interface IHold {
-  _id?: ObjectId;
+  _id?: ObjectId | string;
   id?: string;
   hospitalId: string;
   resourceId: string;
@@ -29,8 +31,11 @@ export interface IHold {
   status: HoldStatus;
   expiresAt: Date;
   confirmedAt?: Date;
+  confirmedByUserId?: string;
   fulfilledAt?: Date;
   notes?: string;
+  originLocation?: [number, number];
   createdAt: Date;
   updatedAt: Date;
 }
+import type { ObjectId } from "mongodb";

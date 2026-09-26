@@ -50,8 +50,9 @@ export function initializeIndexes(): Promise<void> {
 
     const holds = await getHoldsCollection();
     await holds.createIndex({ hospitalId: 1, status: 1 });
-    // Native MongoDB TTL index: automatically deletes a hold when expiresAt is reached.
-    await holds.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    // Expiry must release resource inventory before a hold can disappear.
+    await holds.dropIndex("expiresAt_1").catch(() => undefined);
+    await holds.createIndex({ expiresAt: 1 });
     await holds.createIndex({ requestedByUserId: 1 });
 
     console.log("CareLink MongoDB indexes successfully initialized.");

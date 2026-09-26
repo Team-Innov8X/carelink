@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { releaseHold } from "@/lib/services/hold-service";
+import { cancelHoldSchema } from "@/lib/validation";
+import { errorResponse, validationError } from "@/lib/api-response";
 
 /**
  * POST /api/holds/[id]/cancel
@@ -19,14 +21,17 @@ export async function POST(
       );
     }
 
-    const body = await req.json().catch(() => ({}));
-    const reason = body?.reason === "expired" ? "expired" : "cancelled";
-    const originLocation = body?.originLocation; // [lng, lat] for next-ranked hospital search
+    let body: unknown = {};
+    try { body = await req.json(); } catch (error) { if (!(error instanceof SyntaxError)) throw error; }
+    const parsed = cancelHoldSchema.safeParse(body);
+    if (!parsed.success) return validationError(parsed.error);
+    const reason = parsed.data?.reason ?? "cancelled";
+    const originLocation = parsed.data?.originLocation;
 
     const result = await releaseHold(id, reason, originLocation);
 
     if (!result.success) {
-      return NextResponse.json(result, { status: 400 });
+      return errorResponse(result.message, 409);
     }
 
     return NextResponse.json(result, { status: 200 });

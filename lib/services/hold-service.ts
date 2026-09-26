@@ -1,4 +1,5 @@
 import { ObjectId } from "mongodb";
+import { addTravelTimes, rankHospitals, RankingHospital } from "@/lib/ranking";
 import {
   getHospitalsCollection,
   getResourcesCollection,
@@ -28,6 +29,9 @@ export interface INextRankedHospitalResult {
   hospital: IHospital;
   availableResource: IResource;
   distanceMeters?: number;
+  travelTimeMinutes?: number;
+  score?: number;
+  scoreBreakdown?: import("@/lib/ranking").RankingResult["scoreBreakdown"];
 }
 
 /**
@@ -46,6 +50,7 @@ export async function createHold(params: ICreateHoldParams) {
       hospitalId: params.hospitalId,
       type: params.resourceType,
       category: params.category,
+      status: { $ne: "unavailable" },
       $expr: {
         $gte: [
           { $subtract: ["$availableQuantity", "$heldQuantity"] },
@@ -90,11 +95,18 @@ export async function createHold(params: ICreateHoldParams) {
     status: "pending",
     expiresAt,
     notes: params.notes,
+    originLocation: params.originLocation,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
 
-  const insertResult = await holdsCol.insertOne(holdDoc);
+  let insertResult;
+  try {
+    insertResult = await holdsCol.insertOne(holdDoc);
+  } catch (error) {
+    await resourcesCol.updateOne({ _id: updatedResource._id, heldQuantity: { $gte: quantityToHold } }, { $inc: { heldQuantity: -quantityToHold }, $set: { updatedAt: new Date() } });
+    throw error;
+  }
   const createdHold = { ...holdDoc, _id: insertResult.insertedId.toString(), id: insertResult.insertedId.toString() };
 
   return {
@@ -116,14 +128,19 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
 
   const queryId = ObjectId.isValid(holdId) ? new ObjectId(holdId) : holdId;
 
-  // Find hold
-  const hold = await holdsCol.findOne({ _id: queryId as any });
+  // Claim the pending hold first so simultaneous confirm/reject requests cannot
+  // consume or release the same inventory twice.
+  const hold = await holdsCol.findOneAndUpdate(
+    { _id: queryId as any, status: "pending", expiresAt: { $gt: new Date() } },
+    { $set: { status: "confirming", updatedAt: new Date() } },
+    { returnDocument: "after" },
+  );
 
   if (!hold) {
     return { success: false, reason: "NOT_FOUND", message: "Hold document not found." };
   }
 
-  if (hold.status !== "pending") {
+  if (hold.status !== "confirming") {
     return {
       success: false,
       reason: "INVALID_STATUS",
@@ -137,7 +154,7 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
     : hold.resourceId;
 
   const resourceUpdate = await resourcesCol.findOneAndUpdate(
-    { _id: resourceQueryId as any },
+    { _id: resourceQueryId as any, availableQuantity: { $gte: hold.quantity }, heldQuantity: { $gte: hold.quantity } },
     {
       $inc: {
         availableQuantity: -hold.quantity,
@@ -148,8 +165,11 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
     { returnDocument: "after" }
   );
 
-  // Update resource status if availableQuantity reaches 0
-  if (resourceUpdate && resourceUpdate.availableQuantity <= 0) {
+  if (!resourceUpdate) {
+    await holdsCol.updateOne({ _id: queryId as any, status: "confirming" }, { $set: { status: "pending", updatedAt: new Date() } });
+    return { success: false, reason: "RESOURCE_CHANGED", message: "The held resource is no longer available." };
+  }
+  if (resourceUpdate.availableQuantity <= 0) {
     await resourcesCol.updateOne(
       { _id: resourceQueryId as any },
       { $set: { status: "unavailable" } }
@@ -163,6 +183,7 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
       $set: {
         status: "confirmed",
         confirmedAt: new Date(),
+        confirmedByUserId,
         updatedAt: new Date(),
       },
     }
@@ -184,57 +205,47 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
  */
 export async function releaseHold(
   holdId: string,
-  reason: "cancelled" | "expired" = "cancelled",
+  reason: "cancelled" | "expired" | "rejected" = "cancelled",
   originLocation?: [number, number]
 ) {
   const holdsCol = await getHoldsCollection();
   const resourcesCol = await getResourcesCollection();
 
   const queryId = ObjectId.isValid(holdId) ? new ObjectId(holdId) : holdId;
-  const hold = await holdsCol.findOne({ _id: queryId as any });
+  const current = await holdsCol.findOne({ _id: queryId as any });
 
-  if (!hold) {
+  if (!current) {
     return { success: false, reason: "NOT_FOUND", message: "Hold document not found." };
   }
 
-  if (hold.status === "cancelled" || hold.status === "expired") {
-    return { success: false, reason: "ALREADY_RELEASED", message: `Hold is already ${hold.status}.` };
+  const hold = await holdsCol.findOneAndUpdate(
+    { _id: queryId as any, status: "pending" },
+    { $set: { status: reason, updatedAt: new Date() } },
+    { returnDocument: "after" },
+  );
+  if (!hold) {
+    return { success: false, reason: "ALREADY_RELEASED", message: `Hold is already ${current.status}.` };
   }
 
   const resourceQueryId = ObjectId.isValid(hold.resourceId)
     ? new ObjectId(hold.resourceId)
     : hold.resourceId;
 
-  // Release held quantity if hold was pending
-  if (hold.status === "pending") {
-    await resourcesCol.updateOne(
+  // A pending hold only increases heldQuantity; availableQuantity remains the
+  // physical free count until confirmation, so rejecting decrements held only.
+  if (current.status === "pending") {
+    const releaseResult = await resourcesCol.updateOne(
       { _id: resourceQueryId as any },
       {
         $inc: { heldQuantity: -hold.quantity },
         $set: { updatedAt: new Date() },
       }
     );
-  } else if (hold.status === "confirmed") {
-    // If releasing a confirmed hold, restore available quantity
-    await resourcesCol.updateOne(
-      { _id: resourceQueryId as any },
-      {
-        $inc: { availableQuantity: hold.quantity },
-        $set: { status: "available", updatedAt: new Date() },
-      }
-    );
-  }
-
-  // Update hold document status
-  await holdsCol.updateOne(
-    { _id: queryId as any },
-    {
-      $set: {
-        status: reason,
-        updatedAt: new Date(),
-      },
+    if (releaseResult.matchedCount === 0) {
+      await holdsCol.updateOne({ _id: queryId as any, status: reason }, { $set: { status: "pending", updatedAt: new Date() } });
+      return { success: false, reason: "RESOURCE_NOT_FOUND", message: "Resource not found." };
     }
-  );
+  }
 
   // Auto-escalate: Find next-ranked hospital for rerouting
   const currentResource = await resourcesCol.findOne({ _id: resourceQueryId as any });
@@ -244,7 +255,7 @@ export async function releaseHold(
     nextRanked = await findNextRankedHospital({
       resourceType: currentResource.type,
       category: currentResource.category,
-      originLocation,
+      originLocation: originLocation ?? hold.originLocation,
       excludeHospitalIds: [hold.hospitalId],
       quantityNeeded: hold.quantity,
     });
@@ -256,6 +267,18 @@ export async function releaseHold(
     releasedHoldId: holdId,
     nextRankedHospital: nextRanked,
   };
+}
+
+/** Expire due pending holds, release their inventory, and return rerank candidates. */
+export async function expirePendingHolds(hospitalId?: string) {
+  const holds = await getHoldsCollection();
+  const due = await holds.find({ status: "pending", expiresAt: { $lte: new Date() }, ...(hospitalId ? { hospitalId } : {}) }).limit(100).toArray();
+  const results = [];
+  for (const hold of due) {
+    if (!hold._id) continue;
+    results.push(await releaseHold(hold._id.toString(), "expired", hold.originLocation));
+  }
+  return results;
 }
 
 /**
@@ -291,68 +314,45 @@ export async function findNextRankedHospital(params: {
     return null;
   }
 
-  const hospitalIds = eligibleResources.map((r) => r.hospitalId);
-
-  // If origin location is provided, query nearby hospitals using 2DSphere spatial index
-  if (params.originLocation && params.originLocation.length === 2) {
-    const nearbyHospitals = await hospitalsCol
-      .aggregate<IHospital & { dist: { calculated: number } }>([
-        {
-          $geoNear: {
-            near: {
-              type: "Point",
-              coordinates: params.originLocation,
-            },
-            distanceField: "dist.calculated",
-            spherical: true,
-            query: {
-              _id: {
-                $in: hospitalIds.map((id) =>
-                  ObjectId.isValid(id) ? new ObjectId(id) : id
-                ),
-              },
-              status: { $in: ["active", "busy"] },
-            },
-          },
-        },
-        { $limit: 1 },
-      ])
-      .toArray();
-
-    if (nearbyHospitals.length > 0) {
-      const topHospital = nearbyHospitals[0];
-      const matchingResource = eligibleResources.find(
-        (r) => r.hospitalId === String(topHospital._id)
-      )!;
-
-      return {
-        hospital: topHospital,
-        availableResource: matchingResource,
-        distanceMeters: Math.round(topHospital.dist.calculated),
-      };
-    }
-  }
-
-  // Fallback: Find active hospital with highest available capacity
-  const availableHospital = await hospitalsCol.findOne({
-    _id: {
-      $in: hospitalIds.map((id) =>
-        ObjectId.isValid(id) ? new ObjectId(id) : id
-      ) as any,
-    },
+  const hospitalIds = [...new Set(eligibleResources.map((r) => r.hospitalId))];
+  const hospitals = await hospitalsCol.find({
+    _id: { $in: hospitalIds.map((id) => ObjectId.isValid(id) ? new ObjectId(id) : id) as any },
     status: { $in: ["active", "busy"] },
+  }).toArray();
+  const candidates: RankingHospital[] = hospitals.map((hospital) => {
+    const id = hospital._id?.toString() ?? hospital.id ?? hospital.code;
+    return {
+      id,
+      name: hospital.name,
+      location: hospital.location,
+      status: hospital.status,
+      resources: eligibleResources.filter((resource) => resource.hospitalId === id).map((resource) => ({
+        category: resource.category,
+        availableQuantity: Math.max(0, resource.availableQuantity - resource.heldQuantity),
+        updatedAt: resource.updatedAt,
+      })),
+    };
   });
-
-  if (!availableHospital) {
-    return null;
+  if (params.originLocation) {
+    const [longitude, latitude] = params.originLocation;
+    const routed = await addTravelTimes(candidates, { latitude, longitude });
+    candidates.splice(0, candidates.length, ...routed);
   }
-
-  const matchingResource = eligibleResources.find(
-    (r) => r.hospitalId === String(availableHospital._id)
-  )!;
-
+  const ranked = rankHospitals(candidates, {
+    emergencyType: String(params.category),
+    requiredResources: [String(params.category)],
+    ambulanceLocation: params.originLocation ? { latitude: params.originLocation[1], longitude: params.originLocation[0] } : { latitude: 0, longitude: 0 },
+  }, { limit: 1 });
+  const winner = ranked[0];
+  if (!winner) return null;
+  const hospital = hospitals.find((candidate) => candidate._id?.toString() === winner.hospitalId);
+  const availableResource = eligibleResources.find((resource) => resource.hospitalId === winner.hospitalId);
+  if (!hospital || !availableResource) return null;
   return {
-    hospital: availableHospital,
-    availableResource: matchingResource,
+    hospital,
+    availableResource,
+    travelTimeMinutes: winner.travelTimeMinutes ?? undefined,
+    score: winner.score,
+    scoreBreakdown: winner.scoreBreakdown,
   };
 }

@@ -1,39 +1,24 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { ObjectId } from "mongodb";
 import { confirmHold } from "@/lib/services/hold-service";
+import { requireRole } from "@/lib/auth-utils";
+import { errorResponse } from "@/lib/api-response";
+import { getHoldsCollection } from "@/lib/models";
 
-/**
- * POST /api/holds/[id]/confirm
- * Hospital confirms a pending hold.
- * Decrements availableQuantity & heldQuantity (resource officially occupied).
- */
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole("hospital");
+  if (!auth.authorized) return errorResponse(auth.reason, auth.reason === "UNAUTHENTICATED" ? 401 : 403);
   try {
     const { id } = await params;
-
-    if (!id) {
-      return NextResponse.json(
-        { success: false, error: "Missing hold ID parameter" },
-        { status: 400 }
-      );
-    }
-
-    const body = await req.json().catch(() => ({}));
-    const confirmedByUserId = body?.confirmedByUserId;
-
-    const result = await confirmHold(id, confirmedByUserId);
-
-    if (!result.success) {
-      return NextResponse.json(result, { status: 400 });
-    }
-
-    return NextResponse.json(result, { status: 200 });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Failed to confirm hold" },
-      { status: 500 }
-    );
+    if (!ObjectId.isValid(id)) return errorResponse("Invalid hold id", 400);
+    const hospitalId = (auth.user as typeof auth.user & { hospitalId?: string }).hospitalId;
+    if (!hospitalId) return errorResponse("Hospital account is not linked to a hospital", 403);
+    const ownedHold = await (await getHoldsCollection()).findOne({ _id: new ObjectId(id), hospitalId, status: "pending" });
+    if (!ownedHold) return errorResponse("Pending hold not found", 404);
+    const result = await confirmHold(id, auth.user.id);
+    if (!result.success) return errorResponse(result.message, 409);
+    return NextResponse.json(result);
+  } catch {
+    return errorResponse("Failed to confirm hold", 500);
   }
 }
