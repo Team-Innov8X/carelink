@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import type { Role } from './types';
 import { CareLinkProvider, useCareLink } from './context/CareLinkContext';
 import { Navbar } from './components/common/Navbar';
 import { Sidebar } from './components/common/Sidebar';
@@ -12,6 +13,7 @@ import { ReportsView } from './components/reports/ReportsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { DoubleBookingModal } from './components/hospitals/DoubleBookingModal';
 import { NewEmergencyModal } from './components/dispatcher/NewEmergencyModal';
+import { EmergencyRequestsView } from './components/dispatcher/EmergencyRequestsView';
 import { MobileNav } from './components/mobile/MobileNav';
 import { Siren } from 'lucide-react';
 
@@ -32,6 +34,7 @@ const MainAppContent: React.FC = () => {
         {/* Dynamic Center View */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
           {activeTab === 'dashboard' && <DispatcherDashboard />}
+          {activeTab === 'requests' && <EmergencyRequestsView onOpenNewEmergency={() => setIsNewEmergencyOpen(true)} />}
           {activeTab === 'hospitals' && <HospitalDirectory />}
           {activeTab === 'recommendations' && <SmartRecommendations />}
           {activeTab === 'handoff' && <PatientHandoffView />}
@@ -66,9 +69,9 @@ const MainAppContent: React.FC = () => {
   );
 };
 
-export function App() {
+export function App({ initialRole = 'dispatcher' }: { initialRole?: Role }) {
   return (
-    <CareLinkProvider>
+    <CareLinkProvider initialRole={initialRole}>
       <MainAppContent />
     </CareLinkProvider>
   );

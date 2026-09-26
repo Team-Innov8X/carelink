@@ -22,6 +22,7 @@ export const NewEmergencyModal: React.FC<NewEmergencyModalProps> = ({ isOpen, on
   const { createNewEmergency, setActiveTab } = useCareLink();
 
   const [patientName, setPatientName] = useState('');
+  const [patientPhone, setPatientPhone] = useState('');
   const [age, setAge] = useState<number | ''>('');
   const [gender, setGender] = useState('');
   const [condition, setCondition] = useState('');
@@ -48,6 +49,7 @@ export const NewEmergencyModal: React.FC<NewEmergencyModalProps> = ({ isOpen, on
     e.preventDefault();
     createNewEmergency({
       patientName,
+      patientPhone,
       age: Number(age),
       gender,
       condition,
@@ -117,6 +119,12 @@ export const NewEmergencyModal: React.FC<NewEmergencyModalProps> = ({ isOpen, on
                 onChange={(e) => setPatientName(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold text-slate-800 outline-none focus:border-rose-500"
               />
+            </div>
+            <div className="col-span-2">
+              <label className="font-bold text-slate-700 uppercase tracking-wider text-[10px] block mb-1">
+                Patient phone number
+              </label>
+              <input type="tel" required value={patientPhone} onChange={(e) => setPatientPhone(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-slate-200 font-semibold text-slate-800 outline-none focus:border-rose-500" placeholder="For urgent contact" />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
