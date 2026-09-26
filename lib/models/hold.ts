@@ -1,3 +1,5 @@
+import type { ObjectId } from "mongodb";
+
 export type HoldStatus =
   | "pending"    // Hold placed, awaiting hospital confirmation or arrival
   | "confirming"

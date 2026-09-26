@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
+import { username } from "better-auth/plugins";
 import { client } from "./mongodb";
 
 export type UserRole =
@@ -25,6 +26,7 @@ export const auth = betterAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
     },
   },
+  plugins: [username()],
   user: {
     additionalFields: {
       role: {

@@ -3,30 +3,21 @@ import { useCareLink } from '../../context/CareLinkContext';
 import {
   LayoutDashboard,
   Building2,
-  Siren,
   Pill,
-  Menu,
   HeartHandshake,
 } from 'lucide-react';
 
 export const MobileNav: React.FC = () => {
-  const { activeTab, setActiveTab, emergencies } = useCareLink();
-
-  const activeCount = emergencies.filter(
-    (e) => e.status !== 'Completed' && e.status !== 'Rejected'
+  const { activeTab, setActiveTab, medicines } = useCareLink();
+  const outOfStockCount = medicines.filter((medicine) =>
+    Object.values(medicine.stock).some((quantity) => quantity === 0)
   ).length;
 
-  const tabs = [
+  const tabs: { id: string; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: 'dashboard', label: 'Home', icon: <LayoutDashboard className="w-5 h-5" /> },
     { id: 'hospitals', label: 'Hospitals', icon: <Building2 className="w-5 h-5" /> },
-    {
-      id: 'requests',
-      label: 'Requests',
-      icon: <Siren className="w-5 h-5" />,
-      badge: activeCount,
-    },
     { id: 'handoff', label: 'Handoff', icon: <HeartHandshake className="w-5 h-5" /> },
-    { id: 'pharmacy', label: 'Pharmacy', icon: <Pill className="w-5 h-5" /> },
+    { id: 'pharmacy', label: 'Pharmacy', icon: <Pill className="w-5 h-5" />, badge: outOfStockCount },
   ];
 
   return (

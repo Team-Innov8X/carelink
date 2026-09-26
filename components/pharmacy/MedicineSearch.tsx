@@ -22,7 +22,7 @@ import {
   Minus,
 } from 'lucide-react';
 
-export const MedicineSearch: React.FC = () => {
+export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = () => {
   const {
     medicines,
     pharmacies,

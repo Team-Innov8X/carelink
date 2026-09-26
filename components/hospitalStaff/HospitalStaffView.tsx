@@ -13,14 +13,11 @@ import {
   Activity,
   HeartPulse,
   ShieldCheck,
-  RotateCcw,
 } from 'lucide-react';
 
 export const HospitalStaffView: React.FC = () => {
   const {
     hospitals,
-    selectedHospitalId,
-    setSelectedHospitalId,
     emergencies,
     acceptEmergency,
     rejectEmergency,
@@ -33,8 +30,8 @@ export const HospitalStaffView: React.FC = () => {
     'pending'
   );
 
-  const currentHospital =
-    hospitals.find((h) => h.id === selectedHospitalId) || hospitals[0];
+  // This workspace is fixed to its assigned hospital; it cannot switch facilities.
+  const currentHospital = hospitals[0];
 
   if (!currentHospital) {
     return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No hospital records are available.</div>;
@@ -98,21 +95,6 @@ export const HospitalStaffView: React.FC = () => {
           </div>
         </div>
 
-        {/* Hospital selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400 font-medium">Switch Facility:</span>
-          <select
-            value={currentHospital.id}
-            onChange={(e) => setSelectedHospitalId(e.target.value)}
-            className="text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none"
-          >
-            {hospitals.map((h) => (
-              <option key={h.id} value={h.id}>
-                {h.name}
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
 
       {/* Current Bed Availability (Mockup Panel 5 bottom) */}

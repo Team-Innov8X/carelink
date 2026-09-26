@@ -1,3 +1,5 @@
+import type { ObjectId } from "mongodb";
+
 export interface IGeoLocation {
   type: "Point";
   coordinates: [number, number]; // [longitude, latitude]
