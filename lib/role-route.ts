@@ -6,14 +6,15 @@ export function routeForRole(role?: string) {
     case 'pharmacy':
       return '/pharmacy-dashboard';
     case 'patient':
-      return '/';
+      return '/patient-dashboard';
     case 'driver':
     case 'ambulance_driver':
     case 'paramedic':
       return '/driver-dashboard';
     case 'dispatcher':
-      return '/';
+      return '/dispatcher';
     default:
       return '/';
   }
 }
+

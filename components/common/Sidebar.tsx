@@ -2,7 +2,9 @@ import React from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import {
   LayoutDashboard,
+  Siren,
   Building2,
+  ClipboardList,
   Pill,
   BarChart3,
   Settings,
@@ -11,7 +13,8 @@ import {
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
-  const { activeTab, setActiveTab, medicines } = useCareLink();
+  const { activeTab, setActiveTab, medicines, emergencies } = useCareLink();
+  const activeEmergenciesCount = emergencies.filter((request) => !['Completed', 'Rejected'].includes(request.status)).length;
 
   // Count unavailable / out of stock medicines
   const outOfStockCount = medicines.filter((m) =>
@@ -37,6 +40,13 @@ export const Sidebar: React.FC = () => {
       badgeColor: 'bg-purple-100 text-purple-700',
     },
     {
+      id: 'requests',
+      label: 'Emergency Requests',
+      icon: <Siren className="w-5 h-5" />,
+      badge: activeEmergenciesCount,
+      badgeColor: 'bg-rose-500 text-white',
+    },
+    {
       id: 'recommendations',
       label: 'Smart Match',
       icon: <Activity className="w-5 h-5" />,
@@ -47,6 +57,11 @@ export const Sidebar: React.FC = () => {
       id: 'handoff',
       label: 'Patient Handoff',
       icon: <HeartHandshake className="w-5 h-5" />,
+    },
+    {
+      id: 'hospital-portal',
+      label: 'Hospital Portal',
+      icon: <ClipboardList className="w-5 h-5" />,
     },
     {
       id: 'reports',

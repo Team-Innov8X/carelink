@@ -18,6 +18,7 @@ export const DispatcherDashboard: React.FC = () => {
     hospitals,
     ambulances,
     medicines,
+    role,
     setSelectedEmergencyId,
     setActiveTab,
   } = useCareLink();
@@ -76,10 +77,10 @@ export const DispatcherDashboard: React.FC = () => {
       {/* Top Welcome Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-          CareLink Response Network
+          {role === 'patient' ? 'Your Care Dashboard' : 'CareLink Response Network'}
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Here&apos;s the current status of hospitals, ambulances and requests.
+          {role === 'patient' ? 'Explore nearby hospitals, medicine availability, and your care requests.' : 'Here’s the current status of hospitals, ambulances and requests.'}
         </p>
       </div>
 

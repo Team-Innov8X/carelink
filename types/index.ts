@@ -63,6 +63,7 @@ export interface PatientVitals {
 export interface EmergencyRequest {
   id: string;
   patientName: string;
+  patientPhone?: string;
   age: number;
   gender: string;
   condition: string;
