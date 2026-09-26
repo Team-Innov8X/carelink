@@ -3,21 +3,43 @@
 import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Heart, Mail, Lock, UserRound } from 'lucide-react';
+import { Heart, Mail, Lock, UserRound, Building2, MapPin, FileText, Stethoscope, Store, Ambulance } from 'lucide-react';
 import { routeForRole } from '../../lib/role-route';
 
 export default function SignupForm({ role }: { role: string }) {
   const router = useRouter();
   const [username, setUsername] = useState('');
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [hospitalName, setHospitalName] = useState('');
+  const [hospitalAddress, setHospitalAddress] = useState('');
+  const [hospitalRegistrationNumber, setHospitalRegistrationNumber] = useState('');
+  const [hospitalSpecialties, setHospitalSpecialties] = useState('');
+  const [pharmacyName, setPharmacyName] = useState('');
+  const [pharmacyAddress, setPharmacyAddress] = useState('');
+  const [pharmacyLicenseNumber, setPharmacyLicenseNumber] = useState('');
+  const [pharmacyType, setPharmacyType] = useState('Retail pharmacy');
+  const [licenseNumber, setLicenseNumber] = useState('');
+  const [vehicleNumber, setVehicleNumber] = useState('');
+  const [driverQualification, setDriverQualification] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const roleDetailsValid = () => {
+    if (!name.trim() || !username.trim() || !phone.trim()) return 'Enter your name, username, and phone number first.';
+    if (role === 'hospital_staff' && [hospitalName, hospitalAddress, hospitalRegistrationNumber, hospitalSpecialties].some((value) => !value.trim())) return 'Complete all hospital details before continuing.';
+    if (role === 'pharmacy' && [pharmacyName, pharmacyAddress, pharmacyLicenseNumber].some((value) => !value.trim())) return 'Complete all pharmacy details before continuing.';
+    if (role === 'driver' && [licenseNumber, vehicleNumber, driverQualification].some((value) => !value.trim())) return 'Complete all driver details before continuing.';
+    return '';
+  };
 
   const handleSignup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
+    const missingDetails = roleDetailsValid();
+    if (missingDetails) { setError(missingDetails); return; }
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
       return;
@@ -28,7 +50,12 @@ export default function SignupForm({ role }: { role: string }) {
       const response = await fetch('/api/auth/sign-up/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: username, username, email, password, role }),
+        body: JSON.stringify({
+          name, username, phone, email, password, role,
+          ...(role === 'hospital_staff' ? { hospitalName, hospitalAddress, hospitalRegistrationNumber, hospitalSpecialties } : {}),
+          ...(role === 'pharmacy' ? { pharmacyName, pharmacyAddress, pharmacyLicenseNumber, pharmacyType } : {}),
+          ...(role === 'driver' ? { licenseNumber, vehicleNumber, driverQualification } : {}),
+        }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message || 'Unable to create your account.');
@@ -42,11 +69,18 @@ export default function SignupForm({ role }: { role: string }) {
 
   const handleGoogleSignup = async () => {
     setError('');
+    const missingDetails = roleDetailsValid();
+    if (missingDetails) { setError(missingDetails); return; }
     try {
       const response = await fetch('/api/auth/sign-in/social', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'google', callbackURL: routeForRole(role), additionalData: { role } }),
+        body: JSON.stringify({ provider: 'google', callbackURL: routeForRole(role), additionalData: {
+          role, name, username, phone,
+          ...(role === 'hospital_staff' ? { hospitalName, hospitalAddress, hospitalRegistrationNumber, hospitalSpecialties } : {}),
+          ...(role === 'pharmacy' ? { pharmacyName, pharmacyAddress, pharmacyLicenseNumber, pharmacyType } : {}),
+          ...(role === 'driver' ? { licenseNumber, vehicleNumber, driverQualification } : {}),
+        } }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message || 'Google sign-in is unavailable.');
@@ -77,8 +111,13 @@ export default function SignupForm({ role }: { role: string }) {
         <div className="overflow-y-auto p-8 md:min-h-0 lg:p-10">
           <header className="mb-6"><h2 className="text-2xl font-bold text-slate-900">Create your account</h2><p className="mt-1 text-sm text-slate-500">Join CareLink to coordinate better care</p></header>
           <form onSubmit={handleSignup} className="space-y-4">
+            <div><label className={labelClass} htmlFor="signup-name">Full name</label><input id="signup-name" className={`${inputClass} pl-4`} required autoComplete="name" value={name} onChange={event => setName(event.target.value)} placeholder="Your full name" /></div>
             <div><label className={labelClass} htmlFor="signup-username">Username</label><div className="relative"><UserRound className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-username" className={inputClass} required minLength={3} maxLength={30} pattern="[A-Za-z0-9_.]+" autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} placeholder="e.g. care_user" /></div></div>
+            <div><label className={labelClass} htmlFor="signup-phone">Phone number</label><input id="signup-phone" className={`${inputClass} pl-4`} type="tel" required autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="Contact number" /></div>
             <div><label className={labelClass} htmlFor="signup-email">Email</label><div className="relative"><Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-email" className={inputClass} type="email" required autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="name@example.com" /></div></div>
+            {role === 'hospital_staff' && <div className="space-y-4 rounded-2xl border border-sky-200 bg-sky-50/70 p-4"><p className="flex items-center gap-2 text-sm font-bold text-sky-900"><Building2 className="h-4 w-4" />Hospital details</p><div><label className={labelClass} htmlFor="hospital-name">Hospital name</label><input id="hospital-name" className={`${inputClass} pl-4`} required value={hospitalName} onChange={event => setHospitalName(event.target.value)} placeholder="Registered hospital name" /></div><div><label className={labelClass} htmlFor="hospital-address">Hospital address</label><div className="relative"><MapPin className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="hospital-address" className={inputClass} required value={hospitalAddress} onChange={event => setHospitalAddress(event.target.value)} placeholder="Street, city, postal code" /></div></div><div><label className={labelClass} htmlFor="hospital-registration">Registration number</label><div className="relative"><FileText className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="hospital-registration" className={inputClass} required value={hospitalRegistrationNumber} onChange={event => setHospitalRegistrationNumber(event.target.value)} placeholder="Hospital registration / license" /></div></div><div><label className={labelClass} htmlFor="hospital-specialties">Specialties and services</label><div className="relative"><Stethoscope className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" /><textarea id="hospital-specialties" className={`${inputClass} min-h-20 pl-10`} required value={hospitalSpecialties} onChange={event => setHospitalSpecialties(event.target.value)} placeholder="e.g. ICU, Cardiology, Trauma Care" /></div><p className="mt-1 text-[11px] text-slate-500">Separate specialties with commas.</p></div></div>}
+            {role === 'pharmacy' && <div className="space-y-4 rounded-2xl border border-violet-200 bg-violet-50/70 p-4"><p className="flex items-center gap-2 text-sm font-bold text-violet-900"><Store className="h-4 w-4" />Pharmacy details</p><div><label className={labelClass} htmlFor="pharmacy-name">Pharmacy name</label><input id="pharmacy-name" className={`${inputClass} pl-4`} required value={pharmacyName} onChange={event => setPharmacyName(event.target.value)} placeholder="Registered pharmacy name" /></div><div><label className={labelClass} htmlFor="pharmacy-address">Pharmacy address</label><input id="pharmacy-address" className={`${inputClass} pl-4`} required value={pharmacyAddress} onChange={event => setPharmacyAddress(event.target.value)} placeholder="Street, city, postal code" /></div><div><label className={labelClass} htmlFor="pharmacy-license">Pharmacy license number</label><input id="pharmacy-license" className={`${inputClass} pl-4`} required value={pharmacyLicenseNumber} onChange={event => setPharmacyLicenseNumber(event.target.value)} placeholder="Pharmacy registration / license" /></div><div><label className={labelClass} htmlFor="pharmacy-type">Pharmacy type</label><select id="pharmacy-type" value={pharmacyType} onChange={event => setPharmacyType(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-800"><option>Retail pharmacy</option><option>Hospital pharmacy</option><option>24-hour pharmacy</option><option>Specialty pharmacy</option></select></div></div>}
+            {role === 'driver' && <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4"><p className="flex items-center gap-2 text-sm font-bold text-amber-900"><Ambulance className="h-4 w-4" />Driver details</p><div><label className={labelClass} htmlFor="driver-license">Driver license number</label><input id="driver-license" className={`${inputClass} pl-4`} required value={licenseNumber} onChange={event => setLicenseNumber(event.target.value)} placeholder="Valid driver license number" /></div><div><label className={labelClass} htmlFor="vehicle-number">Ambulance / vehicle number</label><input id="vehicle-number" className={`${inputClass} pl-4`} required value={vehicleNumber} onChange={event => setVehicleNumber(event.target.value)} placeholder="Vehicle registration number" /></div><div><label className={labelClass} htmlFor="driver-qualification">Emergency qualification</label><select id="driver-qualification" value={driverQualification} onChange={event => setDriverQualification(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-800"><option value="">Choose qualification</option><option>Ambulance driver</option><option>Emergency Medical Technician</option><option>Paramedic</option><option>Advanced Life Support</option></select></div></div>}
             <div><label className={labelClass} htmlFor="signup-password">Password</label><div className="relative"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-password" className={inputClass} type="password" required minLength={8} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /></div></div>
             <div><label className={labelClass} htmlFor="confirm-password">Confirm password</label><div className="relative"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="confirm-password" className={inputClass} type="password" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} /></div></div>
             <p className="rounded-xl bg-sky-50 px-3.5 py-2.5 text-sm font-semibold text-sky-800">Creating a {role === 'hospital_staff' ? 'Hospital admin' : role === 'pharmacy' ? 'Pharmacy' : role === 'driver' ? 'Driver' : 'Patient'} account</p>
