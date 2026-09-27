@@ -7,8 +7,6 @@ import { Heart, Lock, UserRound } from 'lucide-react';
 import { authClient } from '../../lib/auth-client';
 import { routeForRole } from '../../lib/role-route';
 
-
-
 const inputClass = 'w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm font-medium text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100';
 const labelClass = 'mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-700';
 
@@ -24,13 +22,15 @@ export default function SignInPage() {
     setError('');
     setSubmitting(true);
     try {
-      const result = identifier.includes('@')
-        ? await authClient.signIn.email({ email: identifier, password })
-        : await authClient.signIn.username({ username: identifier, password });
+      const normalizedIdentifier = identifier.trim();
+      const result = normalizedIdentifier.includes('@')
+        ? await authClient.signIn.email({ email: normalizedIdentifier.toLowerCase(), password })
+        : await authClient.signIn.username({ username: normalizedIdentifier, password });
 
       if (result.error) throw new Error(result.error.message || 'Sign in failed. Check your credentials.');
       const signedInRole = (result.data?.user as (typeof result.data.user & { role?: string }) | undefined)?.role || 'patient';
-      router.push(routeForRole(signedInRole));
+      router.replace(routeForRole(signedInRole));
+      router.refresh();
     } catch (signInError) {
       setError(signInError instanceof Error ? signInError.message : 'Unable to sign in. Please try again.');
     } finally {
@@ -44,7 +44,7 @@ export default function SignInPage() {
     try {
       const result = await authClient.signIn.social({
         provider: 'google',
-        callbackURL: routeForRole("patient"),
+        callbackURL: routeForRole('patient'),
       });
       if (result.error) throw new Error(result.error.message || 'Google sign in is unavailable.');
       if (result.data?.url) window.location.assign(result.data.url);
@@ -69,12 +69,11 @@ export default function SignInPage() {
           </div>
         </aside>
 
-        <div className="overflow-y-auto p-9 md:min-h-0 lg:p-12">
-          <header className="mb-8"><h2 className="text-3xl font-bold text-slate-900">Sign in</h2><p className="mt-2 text-base text-slate-500">Access your care workspace</p></header>
-          <form onSubmit={handleSignIn} className="space-y-5">
+        <div className="overflow-y-auto p-8 md:min-h-0 lg:p-10">
+          <header className="mb-6"><h2 className="text-2xl font-bold text-slate-900">Sign in</h2><p className="mt-1 text-sm text-slate-500">Access your care workspace</p></header>
+          <form onSubmit={handleSignIn} className="space-y-4">
             <div><label className={labelClass} htmlFor="signin-identifier">Username or email</label><div className="relative"><UserRound className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signin-identifier" className={inputClass} required autoComplete="username" value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder="Your username or email" /></div></div>
             <div><label className={labelClass} htmlFor="signin-password">Password</label><div className="relative"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signin-password" className={inputClass} type="password" required autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" /></div></div>
-
             {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
             <button type="submit" disabled={submitting} className="mt-2 w-full rounded-xl bg-sky-600 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-600/20 transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Signing in…' : 'Sign in'}</button>
           </form>

@@ -10,6 +10,7 @@ import {
   Settings,
   Activity,
   HeartHandshake,
+  Bell,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -45,6 +46,11 @@ export const Sidebar: React.FC = () => {
       icon: <Siren className="w-5 h-5" />,
       badge: activeEmergenciesCount,
       badgeColor: 'bg-rose-500 text-white',
+    },
+    {
+      id: 'notifications',
+      label: 'Notifications',
+      icon: <Bell className="w-5 h-5" />,
     },
     {
       id: 'recommendations',

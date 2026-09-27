@@ -174,7 +174,11 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
         .catch(() => {});
     };
     window.addEventListener('carelink-authenticated', reloadSharedState);
-    return () => window.removeEventListener('carelink-authenticated', reloadSharedState);
+    window.addEventListener('carelink-data-refresh', reloadSharedState);
+    return () => {
+      window.removeEventListener('carelink-authenticated', reloadSharedState);
+      window.removeEventListener('carelink-data-refresh', reloadSharedState);
+    };
   }, []);
 
   // Keep a local offline copy and persist operational data to the shared backend.

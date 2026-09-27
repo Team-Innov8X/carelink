@@ -23,9 +23,11 @@ export interface HospitalRecommendation {
 
 export function calculateHospitalRecommendations(
   request: EmergencyRequest,
-  hospitals: Hospital[]
+  hospitals: Hospital[],
+  etaByHospital: Record<string, number> = {},
 ): HospitalRecommendation[] {
   const recommendations = hospitals.map((hosp) => {
+    const etaMin = etaByHospital[hosp.id] ?? hosp.etaMin;
     // 1. Facility match score (40% weight)
     const required = request.requiredFacilities;
     const matchingSpecialties = required.filter((spec) =>
@@ -41,10 +43,10 @@ export function calculateHospitalRecommendations(
     // If ETA is <= request.etaLimitMin, higher score
     const targetEta = request.etaLimitMin || 20;
     let etaRatio = 1;
-    if (hosp.etaMin <= targetEta) {
-      etaRatio = 1 - (hosp.etaMin / (targetEta * 1.5));
+    if (etaMin <= targetEta) {
+      etaRatio = 1 - (etaMin / (targetEta * 1.5));
     } else {
-      etaRatio = Math.max(0.1, 1 - (hosp.etaMin - targetEta) / 20);
+      etaRatio = Math.max(0.1, 1 - (etaMin - targetEta) / 20);
     }
     const etaScore = Math.min(35, Math.max(5, etaRatio * 35));
 
@@ -85,7 +87,7 @@ export function calculateHospitalRecommendations(
       matchScore,
       matchingSpecialties,
       missingSpecialties,
-      etaMin: hosp.etaMin,
+      etaMin,
       distanceKm: hosp.distanceKm,
       availableBedHighlights: {
         general: hosp.beds.general.available,

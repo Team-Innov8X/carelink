@@ -1,7 +1,27 @@
 import { requireRole } from "@/lib/auth-utils";
-import { createRequestId, sosCollections, validCoordinates } from "@/lib/sos";
+import { createRequestId, ensureHospitalRequestForSos, sosCollections, validCoordinates } from "@/lib/sos";
 
 export const runtime = "nodejs";
+
+export async function GET() {
+  const auth = await requireRole(["patient", "dispatcher"]);
+  if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
+  const { requests } = await sosCollections();
+  const role = (auth.user as { role?: string }).role;
+  const query = role === "dispatcher" ? {} : { patientId: auth.user.id };
+  const items = await requests.find(query).sort({ createdAt: -1 }).limit(50).toArray();
+  return Response.json({ requests: items.map((item) => ({
+    id: item._id,
+    status: item.status,
+    incidentType: item.incidentType,
+    patientName: item.patientName,
+    patientPhone: item.patientPhone,
+    requiredEquipment: item.requiredEquipment,
+    createdAt: item.createdAt,
+    acceptedAt: item.acceptedAt,
+    driverAssigned: Boolean(item.driverId),
+  })) });
+}
 
 export async function POST(request: Request) {
   const auth = await requireRole("patient");
@@ -9,8 +29,10 @@ export async function POST(request: Request) {
 
   let body: { location?: unknown; incidentType?: unknown; requiredEquipment?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "Invalid JSON body" }, { status: 400 }); }
-  if (!validCoordinates(body.location)) return Response.json({ error: "location must include valid latitude and longitude" }, { status: 400 });
-  if (typeof body.incidentType !== "string" || body.incidentType.trim().length < 2 || body.incidentType.length > 120) {
+  const patientLocation = body.location;
+  if (!validCoordinates(patientLocation)) return Response.json({ error: "location must include valid latitude and longitude" }, { status: 400 });
+  const incidentType = body.incidentType === undefined ? "Emergency assistance requested" : body.incidentType;
+  if (typeof incidentType !== "string" || incidentType.trim().length < 2 || incidentType.length > 120) {
     return Response.json({ error: "incidentType must be between 2 and 120 characters" }, { status: 400 });
   }
   if (body.requiredEquipment !== undefined && (!Array.isArray(body.requiredEquipment) || body.requiredEquipment.some((item) => typeof item !== "string" || item.length > 80))) {
@@ -18,12 +40,34 @@ export async function POST(request: Request) {
   }
 
   const { requests } = await sosCollections();
+  const existing = await requests.findOne({ patientId: auth.user.id, status: { $in: ["searching", "accepted"] } });
+  if (existing) {
+    const hospitalRequest = await ensureHospitalRequestForSos(existing).catch(() => null);
+    return Response.json({
+      request: { id: existing._id, status: existing.status, createdAt: existing.createdAt },
+      hospitalRequestId: hospitalRequest?._id ?? null,
+      message: "You already have an active emergency request",
+      existing: true,
+    });
+  }
+  const profile = auth.user as typeof auth.user & { email?: string; phone?: string };
   const sos = {
     _id: createRequestId(), patientId: auth.user.id, patientName: auth.user.name,
-    location: body.location, incidentType: body.incidentType.trim(),
+    patientEmail: profile.email, patientPhone: profile.phone,
+    location: patientLocation, incidentType: incidentType.trim(),
     requiredEquipment: [...new Set(((body.requiredEquipment ?? []) as string[]).map((item) => item.trim()).filter(Boolean))],
     status: "searching" as const, driverId: null, createdAt: new Date(),
   };
   await requests.insertOne(sos);
-  return Response.json({ request: { id: sos._id, status: sos.status, createdAt: sos.createdAt }, message: "SOS sent to available ambulance drivers" }, { status: 201 });
+
+  const hospitalRequest = await ensureHospitalRequestForSos(sos).catch(() => null);
+  const hospitalRequestId = hospitalRequest?._id ?? null;
+
+  return Response.json({
+    request: { id: sos._id, status: sos.status, createdAt: sos.createdAt },
+    hospitalRequestId,
+    message: hospitalRequestId
+      ? "SOS sent to ambulance drivers and the nearest hospital."
+      : "SOS sent to available ambulance drivers; no active hospital is registered yet.",
+  }, { status: 201 });
 }

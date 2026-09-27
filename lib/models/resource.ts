@@ -19,7 +19,7 @@ export type SpecialistCategory =
 export type ResourceCategory = BedCategory | EquipmentCategory | SpecialistCategory | string;
 
 export interface IResource {
-  _id?: ObjectId;
+  _id?: ObjectId | string;
   id?: string;
   hospitalId: string;
   type: ResourceType;

@@ -15,6 +15,10 @@ The dashboard uses Leaflet with OpenStreetMap tiles. No Google Maps key or Googl
 
 On first load, the app initializes its operational snapshot from the built-in sample data. Hospital capacity, emergency requests, pharmacy inventory, ambulance state, and medicine orders then sync between clients. If MongoDB is unavailable, the UI uses browser storage; those changes will not be shared with other devices.
 
+### Database seed data
+
+The sample hospital, resource, and hold records are maintained in `scripts/seed/seed-database.ts`; `POST /api/seed` calls this helper. Seeding clears the hospitals, resources, and holds collections before inserting the sample records, so use it only with a local or disposable database.
+
 ## SOS dispatch API
 
 All SOS endpoints require an authenticated session. Patient requests are visible to logged-in ambulance drivers who have registered themselves as available. Drivers poll for new work with `GET /api/sos/available`; acceptance is atomic, so only one driver can claim a request. The driver then receives the patient's coordinates and a Google Maps directions URL. After accepting, the driver can retrieve equipment-matched hospitals ordered by distance.

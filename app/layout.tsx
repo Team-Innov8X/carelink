@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "../index.css";
+import NavigationTransition from "./navigation-transition";
 
 export const metadata: Metadata = {
   title: "CareLink | Emergency Response Network",
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><NavigationTransition>{children}</NavigationTransition></body>
     </html>
   );
 }

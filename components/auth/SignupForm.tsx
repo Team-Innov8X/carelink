@@ -4,6 +4,7 @@ import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Heart, Mail, Lock, UserRound, Building2, MapPin, FileText, Stethoscope, Store, Ambulance, Phone, User } from 'lucide-react';
+import { authClient } from '../../lib/auth-client';
 import { routeForRole } from '../../lib/role-route';
 
 export default function SignupForm({ role }: { role: string }) {
@@ -47,19 +48,21 @@ export default function SignupForm({ role }: { role: string }) {
 
     setSubmitting(true);
     try {
-      const response = await fetch('/api/auth/sign-up/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name, username, phone, email, password, role,
-          ...(role === 'hospital_staff' ? { hospitalName, hospitalAddress, hospitalRegistrationNumber, hospitalSpecialties } : {}),
-          ...(role === 'pharmacy' ? { pharmacyName, pharmacyAddress, pharmacyLicenseNumber, pharmacyType } : {}),
-          ...(role === 'driver' ? { licenseNumber, vehicleNumber, driverQualification } : {}),
-        }),
+      const result = await authClient.signUp.email({
+        name: name.trim(),
+        username: username.trim(),
+        phone: phone.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+        role,
+        ...(role === 'hospital_staff' ? { hospitalName: hospitalName.trim(), hospitalAddress: hospitalAddress.trim(), hospitalRegistrationNumber: hospitalRegistrationNumber.trim(), hospitalSpecialties: hospitalSpecialties.trim() } : {}),
+        ...(role === 'pharmacy' ? { pharmacyName: pharmacyName.trim(), pharmacyAddress: pharmacyAddress.trim(), pharmacyLicenseNumber: pharmacyLicenseNumber.trim(), pharmacyType } : {}),
+        ...(role === 'driver' ? { licenseNumber: licenseNumber.trim(), vehicleNumber: vehicleNumber.trim(), driverQualification } : {}),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.message || 'Unable to create your account.');
-      router.push(routeForRole(role));
+      if (result.error) throw new Error(result.error.message || 'Unable to create your account.');
+      if (!result.data?.user) throw new Error('Your account was created, but we could not start your session. Please sign in.');
+      router.replace(routeForRole(role));
+      router.refresh();
     } catch (signupError) {
       setError(signupError instanceof Error ? signupError.message : 'Unable to create your account.');
     } finally {
@@ -72,21 +75,23 @@ export default function SignupForm({ role }: { role: string }) {
     const missingDetails = roleDetailsValid();
     if (missingDetails) { setError(missingDetails); return; }
     try {
-      const response = await fetch('/api/auth/sign-in/social', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'google', callbackURL: routeForRole(role), additionalData: {
-          role, name, username, phone,
-          ...(role === 'hospital_staff' ? { hospitalName, hospitalAddress, hospitalRegistrationNumber, hospitalSpecialties } : {}),
-          ...(role === 'pharmacy' ? { pharmacyName, pharmacyAddress, pharmacyLicenseNumber, pharmacyType } : {}),
-          ...(role === 'driver' ? { licenseNumber, vehicleNumber, driverQualification } : {}),
-        } }),
+      setSubmitting(true);
+      const result = await authClient.signIn.social({
+        provider: 'google',
+        callbackURL: routeForRole(role),
+        additionalData: {
+          role, name: name.trim(), username: username.trim(), phone: phone.trim(),
+          ...(role === 'hospital_staff' ? { hospitalName: hospitalName.trim(), hospitalAddress: hospitalAddress.trim(), hospitalRegistrationNumber: hospitalRegistrationNumber.trim(), hospitalSpecialties: hospitalSpecialties.trim() } : {}),
+          ...(role === 'pharmacy' ? { pharmacyName: pharmacyName.trim(), pharmacyAddress: pharmacyAddress.trim(), pharmacyLicenseNumber: pharmacyLicenseNumber.trim(), pharmacyType } : {}),
+          ...(role === 'driver' ? { licenseNumber: licenseNumber.trim(), vehicleNumber: vehicleNumber.trim(), driverQualification } : {}),
+        },
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.message || 'Google sign-in is unavailable.');
-      if (result.url) window.location.assign(result.url);
+      if (result.error) throw new Error(result.error.message || 'Google sign-in is unavailable.');
+      if (result.data?.url) window.location.assign(result.data.url);
+      else throw new Error('Google sign-in did not return a redirect URL.');
     } catch (googleError) {
       setError(googleError instanceof Error ? googleError.message : 'Google sign-in is unavailable.');
+      setSubmitting(false);
     }
   };
 
@@ -126,7 +131,7 @@ export default function SignupForm({ role }: { role: string }) {
             <button type="submit" disabled={submitting} className="mt-2 w-full rounded-xl bg-sky-600 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-600/20 transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Creating account…' : 'Create account'}</button>
           </form>
           <div className="relative my-5 text-center"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200" /></div><span className="relative bg-white px-3 text-xs font-medium uppercase text-slate-400">or</span></div>
-          <button type="button" onClick={handleGoogleSignup} className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"><svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 3.01 13.22l7.98 6.19C12.9 13.72 18.02 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.75 7.18l7.72 6C44.42 37.95 46.98 31.8 46.98 24.55z"/><path fill="#FBBC05" d="M10.99 28.59A14.4 14.4 0 0 1 10.25 24c0-1.59.27-3.13.74-4.59l-7.98-6.19A23.9 23.9 0 0 0 .98 24c0 3.88.93 7.55 2.57 10.78l7.44-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.72-6c-2.14 1.43-4.88 2.28-8.19 2.28-5.98 0-11.1-4.22-13.01-9.91l-7.44 6.19C7.05 43.1 15.04 48 24 48z"/></svg> Continue with Google</button>
+          <button type="button" disabled={submitting} onClick={handleGoogleSignup} className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"><svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 3.01 13.22l7.98 6.19C12.9 13.72 18.02 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.75 7.18l7.72 6C44.42 37.95 46.98 31.8 46.98 24.55z"/><path fill="#FBBC05" d="M10.99 28.59A14.4 14.4 0 0 1 10.25 24c0-1.59.27-3.13.74-4.59l-7.98-6.19A23.9 23.9 0 0 0 .98 24c0 3.88.93 7.55 2.57 10.78l7.44-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.72-6c-2.14 1.43-4.88 2.28-8.19 2.28-5.98 0-11.1-4.22-13.01-9.91l-7.44 6.19C7.05 43.1 15.04 48 24 48z"/></svg> Continue with Google</button>
           <p className="mt-6 text-center text-xs text-slate-400">Already have an account? <Link href="/signin" className="font-semibold text-sky-600 hover:underline">Sign in</Link></p>
         </div>
       </section>

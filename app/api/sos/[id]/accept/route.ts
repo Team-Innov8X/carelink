@@ -16,12 +16,20 @@ export async function POST(request: Request, context: RouteContext<"/api/sos/[id
   if (validCoordinates(body.location)) await drivers.updateOne({ userId: auth.user.id }, { $set: { location: body.location, locationUpdatedAt: new Date() } });
   const reserved = await drivers.updateOne({ userId: auth.user.id, available: true }, { $set: { available: false, activeRequestId: id, updatedAt: new Date() } });
   if (reserved.modifiedCount !== 1) return Response.json({ error: "Driver is already handling another request" }, { status: 409 });
+  const sos = await requests.findOne({ _id: id, status: "searching", driverId: null });
+  if (!sos) {
+    await drivers.updateOne({ userId: auth.user.id, activeRequestId: id }, { $set: { available: true }, $unset: { activeRequestId: "" } });
+    return Response.json({ error: "SOS request is no longer available" }, { status: 409 });
+  }
   const result = await requests.updateOne({ _id: id, status: "searching", driverId: null }, { $set: { status: "accepted", driverId: auth.user.id, acceptedAt: new Date() } });
   if (result.modifiedCount !== 1) {
     await drivers.updateOne({ userId: auth.user.id, activeRequestId: id }, { $set: { available: true }, $unset: { activeRequestId: "" } });
     return Response.json({ error: "SOS request is no longer available" }, { status: 409 });
   }
-  const sos = await requests.findOne({ _id: id });
-  if (!sos) return Response.json({ error: "SOS request not found" }, { status: 404 });
-  return Response.json({ request: { id: sos._id, status: sos.status }, patient: { name: sos.patientName, location: sos.location }, directionsUrl: mapsUrl(sos.location, validCoordinates(body.location) ? body.location : validCoordinates(driver.location) ? driver.location : undefined) });
+  await requests.updateMany(
+    { patientId: sos.patientId, _id: { $ne: id }, status: "searching" },
+    { $set: { status: "cancelled", cancelledAt: new Date(), cancellationReason: "Another active SOS for this patient was accepted" } },
+  );
+  const driverLocation = validCoordinates(body.location) ? body.location : validCoordinates(driver.location) ? driver.location : undefined;
+  return Response.json({ request: { id: sos._id, status: "accepted" }, patient: { name: sos.patientName, phone: sos.patientPhone, location: sos.location }, driverLocation, directionsUrl: mapsUrl(sos.location, driverLocation) });
 }
