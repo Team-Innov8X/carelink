@@ -1,5 +1,5 @@
 import { requireRole } from "@/lib/auth-utils";
-import { chooseBedCategory, createRequestId, distanceKm, sosCollections, validCoordinates, workflowCollections, ensureHospitalRequestForSos } from "@/lib/sos";
+import { chooseBedCategory, chooseRequiredSpecialty, createRequestId, distanceKm, sosCollections, validCoordinates, workflowCollections, ensureHospitalRequestForSos } from "@/lib/sos";
 import clientPromise from "@/lib/mongodb";
 
 export const runtime = "nodejs";
@@ -82,7 +82,13 @@ export async function POST(request: Request) {
     requestType: "bed",
     status: { $in: ["pending", "accepting", "accepted"] },
   });
-  if (existing) return Response.json({ request: existing, existing: true });
+  if (existing) return Response.json({
+    request: existing,
+    existing: true,
+    message: existing.status === "accepted"
+      ? `${existing.hospitalName} has already accepted this request.`
+      : "A request has already been created for you at this hospital.",
+  });
 
   const now = new Date();
   const bedRequest = {
@@ -92,7 +98,8 @@ export async function POST(request: Request) {
     hospitalId: targetHospital.id,
     hospitalName: targetHospital.name,
     inventorySource: targetHospital.inventorySource,
-    bedCategory: targetHospital.inventorySource ? chooseBedCategory(requiredEquipment, targetHospital.beds) : undefined,
+    bedCategory: targetHospital.inventorySource ? chooseBedCategory([incidentType, ...requiredEquipment], targetHospital.beds) : undefined,
+    requiredSpecialty: chooseRequiredSpecialty(incidentType, requiredEquipment, appHospital?.specialties),
     requestedHospitalId: body.hospitalId.trim(),
     requestedHospitalName: typeof body.hospitalName === "string" ? body.hospitalName.slice(0, 120) : undefined,
     patientId: auth.user.id,

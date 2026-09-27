@@ -40,7 +40,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const routeRef = useRef<Leaflet.Polyline | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState('');
-  const [routedPath, setRoutedPath] = useState<[number, number][] | null>(null);
+  const [routeResult, setRouteResult] = useState<{ key: string; path: [number, number][] } | null>(null);
   const { ambulances, hospitals, emergencies, selectedEmergencyId, setSelectedEmergencyId } = useCareLink();
 
   const emergency = emergencies.find((item) => item.id === selectedEmergencyId) ?? emergencies[0];
@@ -54,19 +54,16 @@ export const MapView: React.FC<MapViewProps> = ({
     return point ? [point.lat, point.lng] : null;
   }, [center, emergency?.location.lat, emergency?.location.lng, ambulance?.location.lat, ambulance?.location.lng, hospital?.location.lat, hospital?.location.lng]);
   const mapCenterRef = useRef<[number, number] | null>(mapCenter);
-  mapCenterRef.current = mapCenter;
   const routeKey = patientLocation && driverLocation
     ? `${driverLocation[0]},${driverLocation[1]}|${patientLocation[0]},${patientLocation[1]}`
     : '';
+  useEffect(() => { mapCenterRef.current = mapCenter; }, [mapCenter]);
+  const routedPath = routeResult?.key === routeKey ? routeResult.path : null;
 
   useEffect(() => {
-    if (!routeKey) {
-      setRoutedPath(null);
-      return;
-    }
+    if (!routeKey) return;
 
     const controller = new AbortController();
-    setRoutedPath(null);
     const [origin, destination] = routeKey.split('|').map((point) => point.split(',').map(Number));
     const url = `https://router.project-osrm.org/route/v1/driving/${origin[1]},${origin[0]};${destination[1]},${destination[0]}?overview=full&geometries=geojson&steps=false`;
 
@@ -77,7 +74,7 @@ export const MapView: React.FC<MapViewProps> = ({
       })
       .then((result: { code?: string; routes?: { geometry?: { coordinates?: [number, number][] } }[] }) => {
         const coordinates = result.code === 'Ok' ? result.routes?.[0]?.geometry?.coordinates : undefined;
-        if (coordinates?.length) setRoutedPath(coordinates.map(([lng, lat]) => [lat, lng]));
+        if (coordinates?.length) setRouteResult({ key: routeKey, path: coordinates.map(([lng, lat]) => [lat, lng]) });
       })
       .catch((error: unknown) => {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -91,6 +88,7 @@ export const MapView: React.FC<MapViewProps> = ({
   useEffect(() => {
     let active = true;
     let map: Leaflet.Map | null = null;
+    let resizeObserver: ResizeObserver | null = null;
 
     const initialCenter = mapCenterRef.current;
     if (!initialCenter) {
@@ -116,6 +114,9 @@ export const MapView: React.FC<MapViewProps> = ({
       }).addTo(map);
       layersRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
+      resizeObserver = new ResizeObserver(() => map?.invalidateSize({ animate: false, pan: false }));
+      resizeObserver.observe(containerRef.current);
+      requestAnimationFrame(() => map?.invalidateSize({ animate: false, pan: false }));
       setMapError('');
       setMapReady(true);
     }).catch((error: unknown) => {
@@ -124,6 +125,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
     return () => {
       active = false;
+      resizeObserver?.disconnect();
       map?.stop();
       map?.remove();
       mapRef.current = null;

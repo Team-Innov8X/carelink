@@ -34,6 +34,7 @@ function SpecialtyManagement() {
   const { hospitals, updateHospitalSpecialty } = useCareLink();
   const hospital = hospitals[0];
   const [specialtyName, setSpecialtyName] = useState('');
+  const [doctorDrafts, setDoctorDrafts] = useState<Record<string, string>>({});
 
   if (!hospital) return null;
 
@@ -59,7 +60,7 @@ function SpecialtyManagement() {
           <label key={specialty} className={`flex items-center justify-between gap-4 rounded-2xl border p-4 text-sm font-medium transition-all ${tileColors[index % tileColors.length]}`}>
             <span>{specialty}</span>
             <span className="flex items-center gap-2 text-xs font-medium text-slate-500">Doctors available
-              <input aria-label={`${specialty} doctors available`} type="number" min="0" value={hospital.specialtyDoctors?.[specialty] ?? 0} onChange={(event) => updateHospitalSpecialty(hospital.id, specialty, Number(event.target.value))} className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-right text-sm text-slate-900" />
+              <input aria-label={`${specialty} doctors available`} type="number" min="0" value={doctorDrafts[specialty] ?? String(hospital.specialtyDoctors?.[specialty] ?? 0)} onChange={(event) => setDoctorDrafts((drafts) => ({ ...drafts, [specialty]: event.target.value }))} onBlur={() => { const value = Number(doctorDrafts[specialty]); if (doctorDrafts[specialty] !== undefined && Number.isFinite(value)) void updateHospitalSpecialty(hospital.id, specialty, value); setDoctorDrafts((drafts) => { const next = { ...drafts }; delete next[specialty]; return next; }); }} className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-right text-sm text-slate-900" />
             </span>
           </label>
         ))}

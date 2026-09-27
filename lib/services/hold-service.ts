@@ -134,7 +134,7 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
   // Claim the pending hold first so simultaneous confirm/reject requests cannot
   // consume or release the same inventory twice.
   const hold = await holdsCol.findOneAndUpdate(
-    { _id: queryId as any, status: "pending", expiresAt: { $gt: new Date() } },
+    { _id: queryId as ObjectId, status: "pending", expiresAt: { $gt: new Date() } },
     { $set: { status: "confirming", updatedAt: new Date() } },
     { returnDocument: "after" },
   );
@@ -154,7 +154,7 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
   // Claim this hold before changing inventory so two concurrent confirms cannot
   // decrement the same bed twice.
   const claim = await holdsCol.updateOne(
-    { _id: queryId as any, status: "pending" },
+    { _id: queryId as ObjectId, status: "pending" },
     { $set: { status: "confirming", updatedAt: new Date() } },
   );
   if (claim.modifiedCount !== 1) {
@@ -167,7 +167,7 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
     : hold.resourceId;
 
   const resourceUpdate = await resourcesCol.findOneAndUpdate(
-    { _id: resourceQueryId as any, heldQuantity: { $gte: hold.quantity }, availableQuantity: { $gte: hold.quantity } },
+    { _id: resourceQueryId as ObjectId, heldQuantity: { $gte: hold.quantity }, availableQuantity: { $gte: hold.quantity } },
     {
       $inc: {
         availableQuantity: -hold.quantity,
@@ -179,21 +179,21 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
   );
 
   if (!resourceUpdate) {
-    await holdsCol.updateOne({ _id: queryId as any, status: "confirming" }, { $set: { status: "pending", updatedAt: new Date() } });
+    await holdsCol.updateOne({ _id: queryId as ObjectId, status: "confirming" }, { $set: { status: "pending", updatedAt: new Date() } });
     return { success: false, reason: "JUST_TAKEN", message: "Reserved capacity is no longer available." };
   }
 
   // Update resource status if availableQuantity reaches 0
   if (resourceUpdate && resourceUpdate.availableQuantity <= 0) {
     await resourcesCol.updateOne(
-      { _id: resourceQueryId as any },
+      { _id: resourceQueryId as ObjectId },
       { $set: { status: "unavailable" } }
     );
   }
 
   // Mark hold as confirmed
   await holdsCol.updateOne(
-    { _id: queryId as any, status: "confirming" },
+    { _id: queryId as ObjectId, status: "confirming" },
     {
       $set: {
         status: "confirmed",
@@ -205,7 +205,7 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
     }
   );
 
-  const updatedHold = await holdsCol.findOne({ _id: queryId as any });
+  const updatedHold = await holdsCol.findOne({ _id: queryId as ObjectId });
 
   return {
     success: true,
@@ -228,14 +228,14 @@ export async function releaseHold(
   const resourcesCol = await getResourcesCollection();
 
   const queryId = ObjectId.isValid(holdId) ? new ObjectId(holdId) : holdId;
-  const current = await holdsCol.findOne({ _id: queryId as any });
+  const current = await holdsCol.findOne({ _id: queryId as ObjectId });
 
   if (!current) {
     return { success: false, reason: "NOT_FOUND", message: "Hold document not found." };
   }
 
   const hold = await holdsCol.findOneAndUpdate(
-    { _id: queryId as any, status: "pending" },
+    { _id: queryId as ObjectId, status: "pending" },
     { $set: { status: reason, updatedAt: new Date() } },
     { returnDocument: "after" },
   );
@@ -251,20 +251,20 @@ export async function releaseHold(
   // physical free count until confirmation, so rejecting decrements held only.
   if (current.status === "pending") {
     const releaseResult = await resourcesCol.updateOne(
-      { _id: resourceQueryId as any },
+      { _id: resourceQueryId as ObjectId },
       {
         $inc: { heldQuantity: -hold.quantity },
         $set: { updatedAt: new Date() },
       }
     );
     if (releaseResult.matchedCount === 0) {
-      await holdsCol.updateOne({ _id: queryId as any, status: reason }, { $set: { status: "pending", updatedAt: new Date() } });
+      await holdsCol.updateOne({ _id: queryId as ObjectId, status: reason }, { $set: { status: "pending", updatedAt: new Date() } });
       return { success: false, reason: "RESOURCE_NOT_FOUND", message: "Resource not found." };
     }
   }
 
   // Auto-escalate: Find next-ranked hospital for rerouting
-  const currentResource = await resourcesCol.findOne({ _id: resourceQueryId as any });
+  const currentResource = await resourcesCol.findOne({ _id: resourceQueryId as ObjectId });
   let nextRanked = null;
 
   if (currentResource) {
@@ -332,7 +332,7 @@ export async function findNextRankedHospital(params: {
 
   const hospitalIds = [...new Set(eligibleResources.map((r) => r.hospitalId))];
   const hospitals = await hospitalsCol.find({
-    _id: { $in: hospitalIds.map((id) => ObjectId.isValid(id) ? new ObjectId(id) : id) as any },
+    _id: { $in: hospitalIds.map((id) => ObjectId.isValid(id) ? new ObjectId(id) : new ObjectId(id)) as ObjectId[] },
     status: { $in: ["active", "busy"] },
   }).toArray();
   const candidates: RankingHospital[] = hospitals.map((hospital) => {

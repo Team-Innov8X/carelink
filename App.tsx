@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import type { Role } from './types';
 import { CareLinkProvider, useCareLink } from './context/CareLinkContext';
 import { Navbar } from './components/common/Navbar';
@@ -17,11 +17,13 @@ import { EmergencyRequestsView } from './components/dispatcher/EmergencyRequests
 import { NotificationCenter } from './components/notifications/NotificationCenter';
 import { MobileNav } from './components/mobile/MobileNav';
 import { LoaderCircle, Siren } from 'lucide-react';
+import { PatientSOSStatus } from './components/patient/PatientSOSStatus';
 
 const MainAppContent: React.FC = () => {
   const { activeTab, role } = useCareLink();
   const [isNewEmergencyOpen, setIsNewEmergencyOpen] = useState(false);
   const [sosSubmitting, setSosSubmitting] = useState(false);
+  const sosSubmittingRef = useRef(false);
   const [sosMessage, setSosMessage] = useState('');
 
   const handleSOS = () => {
@@ -29,6 +31,8 @@ const MainAppContent: React.FC = () => {
       setIsNewEmergencyOpen(true);
       return;
     }
+    if (sosSubmittingRef.current) return;
+    sosSubmittingRef.current = true;
     const sendRequest = async (location: { latitude: number; longitude: number }) => {
       try {
         const response = await fetch('/api/sos', {
@@ -38,10 +42,17 @@ const MainAppContent: React.FC = () => {
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Could not send your emergency request.');
-        setSosMessage(`${result.existing ? 'Your SOS is already active' : 'Emergency request sent'}. Reference: ${result.request.id}`);
+        const statusMessage = result.message || (!result.existing
+          ? 'Emergency request sent to the hospital and ambulance network'
+          : result.request.status === 'completed'
+            ? 'This recent SOS was already handled'
+            : 'Your SOS request has already been created');
+        setSosMessage(`${statusMessage.replace(/[.\s]+$/, '')}. Reference: ${result.request.id}`);
+        window.dispatchEvent(new Event('carelink-sos-updated'));
       } catch (error) {
         setSosMessage(error instanceof Error ? error.message : 'Could not send your emergency request.');
       } finally {
+        sosSubmittingRef.current = false;
         setSosSubmitting(false);
       }
     };
@@ -55,6 +66,7 @@ const MainAppContent: React.FC = () => {
 
     if (!navigator.geolocation) {
       setSosMessage('This browser cannot access GPS. Enable location services or use a GPS-enabled device.');
+      sosSubmittingRef.current = false;
       return;
     }
 
@@ -69,6 +81,7 @@ const MainAppContent: React.FC = () => {
           ? 'Could not get your location in time. Please try again.'
           : 'Your location is unavailable. Turn on GPS and try again.';
       setSosMessage(message);
+      sosSubmittingRef.current = false;
       setSosSubmitting(false);
     }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   };
@@ -85,6 +98,7 @@ const MainAppContent: React.FC = () => {
 
         {/* Dynamic Center View */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
+          {role === 'patient' && activeTab === 'dashboard' && <PatientSOSStatus />}
           {activeTab === 'dashboard' && <DispatcherDashboard />}
           {activeTab === 'requests' && <EmergencyRequestsView onOpenNewEmergency={() => setIsNewEmergencyOpen(true)} />}
           {activeTab === 'notifications' && <NotificationCenter />}

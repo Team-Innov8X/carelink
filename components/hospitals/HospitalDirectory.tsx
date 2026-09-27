@@ -77,7 +77,7 @@ export const HospitalDirectory: React.FC = () => {
     try {
       const result = await submitBedRequest(hospital, emergency);
       const routedHospital = result.request?.hospitalName || hospital.name;
-      setRequestMessage(`${result.existing ? 'An open request is already waiting at' : 'Bed request sent to'} ${routedHospital}. Hospital staff will review it shortly.`);
+      setRequestMessage(result.message || `${result.existing ? 'An open request is already waiting at' : 'Bed request sent to'} ${routedHospital}. Hospital staff will review it shortly.`);
     } catch (error) {
       setRequestMessage(error instanceof Error ? error.message : 'Could not send the bed request.');
     } finally {

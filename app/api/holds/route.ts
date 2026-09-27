@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Filter } from "mongodb";
+import type { HoldStatus } from "@/lib/models";
 import { createHold } from "@/lib/services/hold-service";
 import { getHoldsCollection } from "@/lib/models";
 import { createHoldSchema } from "@/lib/validation";
@@ -23,8 +25,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(result, { status: 201 });
-  } catch (error: any) {
-    return errorResponse(error instanceof SyntaxError ? "Request body must be valid JSON" : error?.message || "Failed to create hold", error instanceof SyntaxError ? 400 : 500);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to create hold";
+    return errorResponse(error instanceof SyntaxError ? "Request body must be valid JSON" : message, error instanceof SyntaxError ? 400 : 500);
   }
 }
 
@@ -39,11 +42,11 @@ export async function GET(req: NextRequest) {
     const requestedByUserId = searchParams.get("requestedByUserId");
     const status = searchParams.get("status");
 
-    const query: Record<string, any> = {};
+    const query: Filter<import("@/lib/models").IHold> = {};
 
     if (hospitalId) query.hospitalId = hospitalId;
     if (requestedByUserId) query.requestedByUserId = requestedByUserId;
-    if (status) query.status = status;
+    if (status) query.status = status as HoldStatus;
 
     const holdsCol = await getHoldsCollection();
     const holds = await holdsCol.find(query).sort({ createdAt: -1 }).toArray();
@@ -53,7 +56,7 @@ export async function GET(req: NextRequest) {
       count: holds.length,
       holds,
     });
-  } catch (error: any) {
-    return errorResponse(error?.message || "Failed to fetch holds", 500);
+  } catch (error: unknown) {
+    return errorResponse(error instanceof Error ? error.message : "Failed to fetch holds", 500);
   }
 }
