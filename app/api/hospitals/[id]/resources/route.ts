@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { requireRole } from "@/lib/auth-utils";
+import { requireRole, resolveHospitalId } from "@/lib/auth-utils";
 import { errorResponse, validationError } from "@/lib/api-response";
 import { getHospitalsCollection, getResourcesCollection } from "@/lib/models";
 import { resourceUpdateSchema } from "@/lib/validation";
@@ -17,7 +17,7 @@ export async function GET(_request: Request, { params }: Context) {
 }
 
 export async function PATCH(request: Request, { params }: Context) {
-  const auth = await requireRole("hospital");
+  const auth = await requireRole(["hospital", "hospital_staff"]);
   if (!auth.authorized) return errorResponse(auth.reason, auth.reason === "UNAUTHENTICATED" ? 401 : 403);
   let parsed;
   try { parsed = resourceUpdateSchema.safeParse(await request.json()); }
@@ -26,7 +26,7 @@ export async function PATCH(request: Request, { params }: Context) {
   try {
     const { id } = await params;
     if (!ObjectId.isValid(id)) return errorResponse("Invalid hospital id", 400);
-    const linkedHospitalId = (auth.user as typeof auth.user & { hospitalId?: string }).hospitalId;
+    const linkedHospitalId = await resolveHospitalId(auth.user as typeof auth.user & { hospitalId?: string; hospitalName?: string });
     if (linkedHospitalId !== id) return errorResponse("Forbidden", 403);
     if (!ObjectId.isValid(parsed.data.resourceId)) return errorResponse("Invalid resource id", 400);
     const resources = await getResourcesCollection();

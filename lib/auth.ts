@@ -2,16 +2,9 @@ import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import { username } from "better-auth/plugins";
 import { client } from "./mongodb";
+import { isSelfServiceRole } from "./roles";
 
-export type UserRole =
-  | "admin"
-  | "hospital"
-  | "patient"
-  | "hospital_staff"
-  | "ambulance_driver"
-  | "driver"
-  | "dispatcher"
-  | "pharmacy";
+export type { UserRole } from "./roles";
 
 export const auth = betterAuth({
   database: mongodbAdapter(client.db(), { client }),
@@ -55,6 +48,24 @@ export const auth = betterAuth({
       licenseNumber: { type: "string", required: false, input: true },
       vehicleNumber: { type: "string", required: false, input: true },
       driverQualification: { type: "string", required: false, input: true },
+    },
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) => {
+          const requestedRole = (user as typeof user & { role?: unknown }).role ?? "patient";
+          if (!isSelfServiceRole(requestedRole)) return false;
+          return { data: { ...user, role: requestedRole } };
+        },
+      },
+      update: {
+        before: async (user, context) => {
+          if (!("role" in user)) return;
+          const editorRole = (context as unknown as { context?: { session?: { user?: { role?: string } } } } | undefined)?.context?.session?.user?.role;
+          if (editorRole !== "admin") return false;
+        },
+      },
     },
   },
 });

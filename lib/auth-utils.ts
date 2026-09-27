@@ -1,5 +1,7 @@
 import { headers } from "next/headers";
-import { auth, UserRole } from "./auth";
+import { auth } from "./auth";
+import type { UserRole } from "./roles";
+import { getHospitalsCollection } from "./models";
 
 /**
  * Retrieve current user & session on the server side.
@@ -9,6 +11,17 @@ export async function getServerSession() {
   return await auth.api.getSession({
     headers: reqHeaders,
   });
+}
+
+/** Resolve a hospital staff account to its linked hospital, supporting legacy signups that stored only the name. */
+export async function resolveHospitalId(user: { hospitalId?: string; hospitalName?: string }) {
+  if (user.hospitalId) return user.hospitalId;
+  if (!user.hospitalName?.trim()) return null;
+  const hospital = await (await getHospitalsCollection()).findOne(
+    { name: user.hospitalName.trim() },
+    { projection: { _id: 1 } },
+  );
+  return hospital?._id?.toString() ?? null;
 }
 
 /**
