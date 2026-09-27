@@ -21,6 +21,7 @@ export interface Hospital {
   etaMin: number;
   beds: HospitalBeds;
   specialties: string[];
+  specialtyDoctors?: Record<string, number>;
   status: HospitalStatus;
   lastUpdatedMinutesAgo: number; // Stale warning if > 10
   location: {
@@ -62,6 +63,7 @@ export interface PatientVitals {
 export interface EmergencyRequest {
   id: string;
   patientName: string;
+  patientPhone?: string;
   age: number;
   gender: string;
   condition: string;

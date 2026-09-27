@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
+import { username } from "better-auth/plugins";
 import { client } from "./mongodb";
 
 export type UserRole =
@@ -25,6 +26,7 @@ export const auth = betterAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
     },
   },
+  plugins: [username()],
   user: {
     additionalFields: {
       role: {
@@ -33,6 +35,26 @@ export const auth = betterAuth({
         required: false,
         input: true,
       },
+      phone: {
+        type: "string",
+        required: false,
+        input: true,
+      },
+      hospitalName: {
+        type: "string",
+        required: false,
+        input: true,
+      },
+      hospitalAddress: { type: "string", required: false, input: true },
+      hospitalRegistrationNumber: { type: "string", required: false, input: true },
+      hospitalSpecialties: { type: "string", required: false, input: true },
+      pharmacyName: { type: "string", required: false, input: true },
+      pharmacyAddress: { type: "string", required: false, input: true },
+      pharmacyLicenseNumber: { type: "string", required: false, input: true },
+      pharmacyType: { type: "string", required: false, input: true },
+      licenseNumber: { type: "string", required: false, input: true },
+      vehicleNumber: { type: "string", required: false, input: true },
+      driverQualification: { type: "string", required: false, input: true },
     },
   },
 });

@@ -4,21 +4,18 @@ import {
   LayoutDashboard,
   Siren,
   Building2,
-  Store,
-  Pill,
   ClipboardList,
+  Pill,
   BarChart3,
   Settings,
   Activity,
   HeartHandshake,
+  Bell,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
-  const { activeTab, setActiveTab, emergencies, medicines } = useCareLink();
-
-  const activeEmergenciesCount = emergencies.filter(
-    (e) => e.status !== 'Completed' && e.status !== 'Rejected'
-  ).length;
+  const { activeTab, setActiveTab, medicines, emergencies } = useCareLink();
+  const activeEmergenciesCount = emergencies.filter((request) => !['Completed', 'Rejected'].includes(request.status)).length;
 
   // Count unavailable / out of stock medicines
   const outOfStockCount = medicines.filter((m) =>
@@ -32,6 +29,18 @@ export const Sidebar: React.FC = () => {
       icon: <LayoutDashboard className="w-5 h-5" />,
     },
     {
+      id: 'hospitals',
+      label: 'Hospitals',
+      icon: <Building2 className="w-5 h-5" />,
+    },
+    {
+      id: 'pharmacy',
+      label: 'Medicine & Pharmacy',
+      icon: <Pill className="w-5 h-5" />,
+      badge: outOfStockCount > 0 ? `${outOfStockCount} Alerts` : undefined,
+      badgeColor: 'bg-purple-100 text-purple-700',
+    },
+    {
       id: 'requests',
       label: 'Emergency Requests',
       icon: <Siren className="w-5 h-5" />,
@@ -39,9 +48,9 @@ export const Sidebar: React.FC = () => {
       badgeColor: 'bg-rose-500 text-white',
     },
     {
-      id: 'hospitals',
-      label: 'Hospitals',
-      icon: <Building2 className="w-5 h-5" />,
+      id: 'notifications',
+      label: 'Notifications',
+      icon: <Bell className="w-5 h-5" />,
     },
     {
       id: 'recommendations',
@@ -54,13 +63,6 @@ export const Sidebar: React.FC = () => {
       id: 'handoff',
       label: 'Patient Handoff',
       icon: <HeartHandshake className="w-5 h-5" />,
-    },
-    {
-      id: 'pharmacy',
-      label: 'Medicine & Pharmacy',
-      icon: <Pill className="w-5 h-5" />,
-      badge: outOfStockCount > 0 ? `${outOfStockCount} Alerts` : undefined,
-      badgeColor: 'bg-purple-100 text-purple-700',
     },
     {
       id: 'hospital-portal',

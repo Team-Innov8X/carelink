@@ -1,3 +1,5 @@
+import type { ObjectId } from "mongodb";
+
 export type ResourceType = "bed" | "equipment" | "specialist";
 
 export type BedCategory = "icu" | "general" | "pediatric" | "emergency" | "isolation";
@@ -17,7 +19,7 @@ export type SpecialistCategory =
 export type ResourceCategory = BedCategory | EquipmentCategory | SpecialistCategory | string;
 
 export interface IResource {
-  _id?: string;
+  _id?: ObjectId;
   id?: string;
   hospitalId: string;
   type: ResourceType;
