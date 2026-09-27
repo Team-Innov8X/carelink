@@ -14,9 +14,13 @@ export async function getServerSession() {
 /**
  * Ensure user is logged in and possesses one of the allowed roles.
  */
-export async function requireRole(allowedRoles?: UserRole | UserRole[]) {
-  const session = await getServerSession();
-
+export async function requireRole(
+  sessionOrRoles?: Awaited<ReturnType<typeof getServerSession>> | UserRole | UserRole[],
+  explicitRoles?: UserRole | UserRole[],
+): Promise<RoleAuthorization> {
+  const hasSessionArgument = arguments.length > 1;
+  const session = hasSessionArgument ? sessionOrRoles as Awaited<ReturnType<typeof getServerSession>> : await getServerSession();
+  const allowedRoles = hasSessionArgument ? explicitRoles : sessionOrRoles as UserRole | UserRole[] | undefined;
   if (!session || !session.user) {
     return { authorized: false, reason: "UNAUTHENTICATED" as const, user: null };
   }
@@ -37,3 +41,8 @@ export async function requireRole(allowedRoles?: UserRole | UserRole[]) {
 
   return { authorized: true, reason: null, user: session.user };
 }
+
+export type RoleAuthorization =
+  | { authorized: true; reason: null; user: NonNullable<Awaited<ReturnType<typeof getServerSession>>>["user"] }
+  | { authorized: false; reason: "UNAUTHENTICATED"; user: null }
+  | { authorized: false; reason: "FORBIDDEN"; user: NonNullable<Awaited<ReturnType<typeof getServerSession>>>["user"]; role: string };
