@@ -21,7 +21,7 @@ export interface IPatientDetails {
 }
 
 export interface IHold {
-  _id?: ObjectId | string;
+  _id?: ObjectId;
   id?: string;
   hospitalId: string;
   resourceId: string;

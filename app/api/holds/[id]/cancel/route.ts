@@ -35,9 +35,10 @@ export async function POST(
     }
 
     return NextResponse.json(result, { status: 200 });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to cancel hold";
     return NextResponse.json(
-      { success: false, error: error?.message || "Failed to cancel hold" },
+      { success: false, error: message },
       { status: 500 }
     );
   }

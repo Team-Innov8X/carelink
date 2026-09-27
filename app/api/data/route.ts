@@ -21,7 +21,7 @@ const defaultState = {
 
 const stateCollection = async () => {
   const client = await clientPromise;
-  return client.db().collection<{ _id: string; state: Record<string, unknown>; updatedAt?: Date }>("appState");
+  return client.db().collection<{ _id: string; state: Record<string, unknown>; updatedAt?: Date; revision?: number }>("appState");
 };
 
 const hasSession = async () => Boolean(await auth.api.getSession({ headers: await headers() }));
@@ -36,7 +36,7 @@ export async function GET() {
     if (stored) return NextResponse.json({ state: stored.state, connected: true });
     await collection.updateOne(
       { _id: "carelink" },
-      { $setOnInsert: { state: defaultState, updatedAt: new Date() } },
+      { $setOnInsert: { state: defaultState, updatedAt: new Date(), revision: 0 } },
       { upsert: true },
     );
     const initialized = await collection.findOne({ _id: "carelink" });
@@ -58,12 +58,46 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Invalid CareLink state" }, { status: 400 });
     }
     const collection = await stateCollection();
-    await collection.updateOne(
-      { _id: "carelink" },
-      { $set: { state, updatedAt: new Date() } },
-      { upsert: true },
-    );
-    return NextResponse.json({ success: true });
+    const incomingHospitals = state.hospitals as Record<string, unknown>[];
+    const bedTypes = ["general", "icu", "trauma", "ventilators"] as const;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const stored = await collection.findOne({ _id: "carelink" });
+      const savedHospitals = Array.isArray(stored?.state?.hospitals)
+        ? stored.state.hospitals as Record<string, unknown>[]
+        : [];
+      const mergedHospitals = incomingHospitals.map((incoming) => {
+        const current = savedHospitals.find((hospital) => hospital.id === incoming.id);
+        if (!current) return incoming;
+        const oldBeds = current.beds && typeof current.beds === "object" ? current.beds as Record<string, unknown> : {};
+        const newBeds = incoming.beds && typeof incoming.beds === "object" ? incoming.beds as Record<string, unknown> : {};
+        const beds = { ...newBeds };
+        for (const bedType of bedTypes) {
+          const oldBed = oldBeds[bedType] as { available?: unknown } | undefined;
+          const newBed = newBeds[bedType] as { available?: unknown; total?: unknown } | undefined;
+          if (typeof oldBed?.available === "number" && typeof newBed?.total === "number") {
+            beds[bedType] = { ...newBed, available: Math.min(oldBed.available, newBed.total) };
+          }
+        }
+        const incomingDoctors = incoming.specialtyDoctors && typeof incoming.specialtyDoctors === "object" ? incoming.specialtyDoctors as Record<string, number> : {};
+        const savedDoctors = current.specialtyDoctors && typeof current.specialtyDoctors === "object" ? current.specialtyDoctors as Record<string, number> : {};
+        return { ...incoming, beds, specialtyDoctors: { ...incomingDoctors, ...savedDoctors } };
+      });
+      const stateToSave = { ...state, hospitals: mergedHospitals };
+      const filter = stored
+        ? { _id: "carelink", ...(typeof stored.revision === "number" ? { revision: stored.revision } : { revision: { $exists: false } }) }
+        : { _id: "carelink" };
+      try {
+        const result = await collection.updateOne(
+          filter,
+          { $set: { state: stateToSave, updatedAt: new Date() }, $inc: { revision: 1 } },
+          { upsert: !stored },
+        );
+        if (result.modifiedCount === 1 || result.upsertedCount === 1) return NextResponse.json({ success: true });
+      } catch (error) {
+        if (!(error && typeof error === "object" && "code" in error && error.code === 11000)) throw error;
+      }
+    }
+    return NextResponse.json({ error: "Shared data changed while saving. Please retry." }, { status: 409 });
   } catch (error) {
     console.error("CareLink database write failed:", error);
     return NextResponse.json({ error: "Could not save CareLink data" }, { status: 503 });

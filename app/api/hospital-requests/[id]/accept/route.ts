@@ -1,8 +1,10 @@
 import { requireRole } from "@/lib/auth-utils";
 import { confirmHold, createHold, releaseHold } from "@/lib/services/hold-service";
 import { getResourcesCollection } from "@/lib/models";
-import { workflowCollections } from "@/lib/sos";
+import { chooseRequiredSpecialty, workflowCollections } from "@/lib/sos";
+import type { HospitalAdmissionRequest } from "@/lib/sos";
 import clientPromise from "@/lib/mongodb";
+import { INITIAL_HOSPITALS } from "@/data/mockHospitals";
 
 export const runtime = "nodejs";
 
@@ -14,7 +16,7 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
 
   const { id } = await context.params;
   const { hospitalRequests, notifications } = await workflowCollections();
-  const hospitalRequest = await hospitalRequests.findOne({ _id: id });
+  let hospitalRequest = await hospitalRequests.findOne({ _id: id });
   if (!hospitalRequest) return Response.json({ error: "Hospital request not found." }, { status: 404 });
 
   const profile = auth.user as typeof auth.user & { hospitalId?: string; hospitalName?: string };
@@ -23,6 +25,11 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
     : profile.hospitalName === hospitalRequest.hospitalName;
   if (process.env.NODE_ENV !== "development" && !belongsToHospital) {
     return Response.json({ error: "This request belongs to another hospital." }, { status: 403 });
+  }
+  if (!hospitalRequest.requiredSpecialty) {
+    const specialty = chooseRequiredSpecialty(hospitalRequest.incidentType, hospitalRequest.requiredEquipment, []);
+    await hospitalRequests.updateOne({ _id: id, status: "pending", requiredSpecialty: { $exists: false } }, { $set: { requiredSpecialty: specialty, updatedAt: new Date() } });
+    hospitalRequest = { ...hospitalRequest, requiredSpecialty: specialty };
   }
 
   const locked = await hospitalRequests.updateOne(
@@ -34,25 +41,39 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
   }
 
   let holdId: string | undefined;
+  let doctorHoldId: string | undefined;
   try {
     if (hospitalRequest.inventorySource === "app-state" && hospitalRequest.bedCategory) {
       const database = (await clientPromise).db();
       const appState = database.collection<{ _id: string }>("appState");
       const category = hospitalRequest.bedCategory;
+      const specialty = hospitalRequest.requiredSpecialty;
+      if (!specialty) {
+        await hospitalRequests.updateOne({ _id: id, status: "accepting" }, { $set: { status: "pending", updatedAt: new Date() }, $unset: { acceptedByUserId: "" } });
+        return Response.json({ error: "A required doctor specialty is not configured for this request." }, { status: 409 });
+      }
+      const defaultDoctors = INITIAL_HOSPITALS.find((hospital) => hospital.id === hospitalRequest.hospitalId)?.specialtyDoctors;
+      if (defaultDoctors) {
+        await appState.updateOne(
+          { _id: "carelink", "state.hospitals": { $elemMatch: { id: hospitalRequest.hospitalId, specialtyDoctors: { $exists: false } } } },
+          { $set: { "state.hospitals.$[hospital].specialtyDoctors": defaultDoctors, updatedAt: new Date() }, $inc: { revision: 1 } },
+          { arrayFilters: [{ "hospital.id": hospitalRequest.hospitalId, "hospital.specialtyDoctors": { $exists: false } }] },
+        );
+      }
       const result = await appState.updateOne(
         {
           _id: "carelink",
-          "state.hospitals": { $elemMatch: { id: hospitalRequest.hospitalId, [`beds.${category}.available`]: { $gt: 0 } } },
+          "state.hospitals": { $elemMatch: { id: hospitalRequest.hospitalId, [`beds.${category}.available`]: { $gt: 0 }, [`specialtyDoctors.${specialty}`]: { $gt: 0 } } },
         },
         {
-          $inc: { [`state.hospitals.$[hospital].beds.${category}.available`]: -1 },
+          $inc: { [`state.hospitals.$[hospital].beds.${category}.available`]: -1, [`state.hospitals.$[hospital].specialtyDoctors.${specialty}`]: -1, revision: 1 },
           $set: { updatedAt: new Date() },
         },
-        { arrayFilters: [{ "hospital.id": hospitalRequest.hospitalId, [`hospital.beds.${category}.available`]: { $gt: 0 } }] },
+        { arrayFilters: [{ "hospital.id": hospitalRequest.hospitalId, [`hospital.beds.${category}.available`]: { $gt: 0 }, [`hospital.specialtyDoctors.${specialty}`]: { $gt: 0 } }] },
       );
       if (result.modifiedCount !== 1) {
         await hospitalRequests.updateOne({ _id: id, status: "accepting" }, { $set: { status: "pending", updatedAt: new Date() }, $unset: { acceptedByUserId: "" } });
-        return Response.json({ error: "No bed of the required type is currently available. The request remains pending." }, { status: 409 });
+        return Response.json({ error: `A ${category} bed and ${specialty} doctor must both be available. The request remains pending.` }, { status: 409 });
       }
 
       const acceptedAt = new Date();
@@ -67,22 +88,44 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
           recipientId: hospitalRequest.patientId,
           type: "hospital_request_accepted",
           title: "Hospital accepted your emergency request",
-          message: `${hospitalRequest.hospitalName} accepted your request and reserved a bed.`,
+          message: `${hospitalRequest.hospitalName} accepted your request and reserved a ${category} bed and ${specialty} doctor.`,
           relatedRequestId: hospitalRequest.sosRequestId,
           createdAt: acceptedAt,
         } },
         { upsert: true },
       );
-      return Response.json({ success: true, request: { id, status: "accepted", acceptedAt }, message: "Request accepted and a bed reserved. The patient was notified." });
+      return Response.json({ success: true, request: { id, status: "accepted", acceptedAt }, message: "Request accepted; bed and doctor capacity reserved. The patient was notified." });
     }
 
     const resources = await getResourcesCollection();
     const bedResources = await resources.find({
       hospitalId: hospitalRequest.hospitalId,
       type: "bed",
+      ...(hospitalRequest.bedCategory ? { category: hospitalRequest.bedCategory } : {}),
       status: { $ne: "unavailable" },
       $expr: { $gte: [{ $subtract: ["$availableQuantity", "$heldQuantity"] }, 1] },
     }).toArray();
+
+    const doctorCategory = doctorResourceCategory(hospitalRequest);
+    if (!doctorCategory) {
+      await hospitalRequests.updateOne({ _id: id, status: "accepting" }, { $set: { status: "pending", updatedAt: new Date() }, $unset: { acceptedByUserId: "" } });
+      return Response.json({ error: "A doctor specialty must be configured before this request can be accepted." }, { status: 409 });
+    }
+    const doctorHoldResult = await createHold({
+      hospitalId: hospitalRequest.hospitalId,
+      resourceType: "specialist",
+      category: doctorCategory,
+      requestedByUserId: hospitalRequest.patientId,
+      patientDetails: { name: hospitalRequest.patientName, conditionSummary: hospitalRequest.incidentType, priority: "urgent" },
+      quantity: 1,
+      originLocation: [hospitalRequest.location.longitude, hospitalRequest.location.latitude],
+      notes: `Doctor for ${hospitalRequest.sosRequestId}`,
+    });
+    doctorHoldId = doctorHoldResult.success && doctorHoldResult.hold ? doctorHoldResult.hold.id : undefined;
+    if (!doctorHoldId) {
+      await hospitalRequests.updateOne({ _id: id, status: "accepting" }, { $set: { status: "pending", updatedAt: new Date() }, $unset: { acceptedByUserId: "" } });
+      return Response.json({ error: `No ${doctorCategory.replaceAll("_", " ")} is currently available. The request remains pending.` }, { status: 409 });
+    }
 
     let holdResult: Awaited<ReturnType<typeof createHold>> | null = null;
     for (const resource of bedResources) {
@@ -108,17 +151,20 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
     }
 
     if (!holdResult || !holdId) {
+      await releaseHold(doctorHoldId).catch(() => undefined);
       await hospitalRequests.updateOne({ _id: id, status: "accepting" }, { $set: { status: "pending", updatedAt: new Date() }, $unset: { acceptedByUserId: "" } });
       return Response.json({ error: "No bed is currently available at this hospital. The request remains pending." }, { status: 409 });
     }
 
     const confirmation = await confirmHold(holdId, auth.user.id);
     if (!confirmation.success) throw new Error(confirmation.message);
+    const doctorConfirmation = await confirmHold(doctorHoldId, auth.user.id);
+    if (!doctorConfirmation.success) throw new Error(doctorConfirmation.message);
 
     const acceptedAt = new Date();
     await hospitalRequests.updateOne(
       { _id: id, status: "accepting" },
-      { $set: { status: "accepted", holdId, acceptedAt, updatedAt: acceptedAt } },
+      { $set: { status: "accepted", holdId, doctorHoldId, acceptedAt, updatedAt: acceptedAt } },
     );
     const notificationId = `hospital-accepted-${id}`;
     await notifications.updateOne(
@@ -128,17 +174,29 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
         recipientId: hospitalRequest.patientId,
         type: "hospital_request_accepted",
         title: "Hospital accepted your emergency request",
-        message: `${hospitalRequest.hospitalName} accepted your request and reserved a bed.`,
+        message: `${hospitalRequest.hospitalName} accepted your request and reserved a bed and ${doctorCategory.replaceAll("_", " ")}.`,
         relatedRequestId: hospitalRequest.sosRequestId,
         createdAt: acceptedAt,
       } },
       { upsert: true },
     );
 
-    return Response.json({ success: true, request: { id, status: "accepted", acceptedAt }, holdId, message: "Request accepted and one bed reserved. The patient was notified." });
+    return Response.json({ success: true, request: { id, status: "accepted", acceptedAt }, holdId, message: "Request accepted; a bed and doctor were reserved. The patient was notified." });
   } catch (error) {
     if (holdId) await releaseHold(holdId).catch(() => undefined);
+    if (doctorHoldId) await releaseHold(doctorHoldId).catch(() => undefined);
     await hospitalRequests.updateOne({ _id: id, status: "accepting" }, { $set: { status: "pending", updatedAt: new Date() }, $unset: { acceptedByUserId: "" } });
     return Response.json({ error: error instanceof Error ? error.message : "Could not accept the hospital request." }, { status: 500 });
   }
+}
+
+function doctorResourceCategory(request: HospitalAdmissionRequest) {
+  const specialty = request.requiredSpecialty?.toLowerCase() ?? "";
+  if (/cardiac|cardio|heart/.test(specialty)) return "cardiologist";
+  if (/neuro|stroke|brain/.test(specialty)) return "neurologist";
+  if (/trauma|orthop|injur/.test(specialty)) return "trauma_surgeon";
+  if (/icu|critical|anesth/.test(specialty)) return "anesthesiologist";
+  if (/pediatric|child/.test(specialty)) return "pediatrician";
+  if (/general|emergency/.test(specialty)) return "emergency_physician";
+  return undefined;
 }

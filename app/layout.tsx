@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "../index.css";
+import "leaflet/dist/leaflet.css";
 import NavigationTransition from "./navigation-transition";
 
 export const metadata: Metadata = {
