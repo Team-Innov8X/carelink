@@ -23,6 +23,14 @@ export async function GET() {
         confirm: "POST /api/holds/[id]/confirm",
         cancel: "POST /api/holds/[id]/cancel",
       },
+      hospitalRequests: {
+        list: "GET /api/hospital-requests",
+        accept: "POST /api/hospital-requests/[id]/accept",
+      },
+      notifications: {
+        list: "GET /api/notifications",
+        markRead: "PATCH /api/notifications/[id]",
+      },
     },
   }, { status: database === "connected" ? 200 : 503 });
 }

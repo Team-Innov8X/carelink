@@ -30,9 +30,10 @@ export default function SignInPage() {
     setError('');
     setSubmitting(true);
     try {
-      const result = identifier.includes('@')
-        ? await authClient.signIn.email({ email: identifier, password })
-        : await authClient.signIn.username({ username: identifier, password });
+      const normalizedIdentifier = identifier.trim();
+      const result = normalizedIdentifier.includes('@')
+        ? await authClient.signIn.email({ email: normalizedIdentifier.toLowerCase(), password })
+        : await authClient.signIn.username({ username: normalizedIdentifier, password });
 
       if (result.error) throw new Error(result.error.message || 'Sign in failed. Check your credentials.');
       const signedInRole = (result.data?.user as (typeof result.data.user & { role?: string }) | undefined)?.role || accountType;
@@ -40,7 +41,8 @@ export default function SignInPage() {
         await authClient.signOut();
         throw new Error('That account belongs to a different workspace. Choose the matching account type.');
       }
-      router.push(routeForRole(signedInRole));
+      router.replace(routeForRole(signedInRole));
+      router.refresh();
     } catch (signInError) {
       setError(signInError instanceof Error ? signInError.message : 'Unable to sign in. Please try again.');
     } finally {

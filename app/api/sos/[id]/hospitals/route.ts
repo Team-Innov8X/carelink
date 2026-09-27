@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth-utils";
 import { distanceKm, mapsUrl, sosCollections, type Coordinates } from "@/lib/sos";
 import { getResourcesCollection } from "@/lib/models";
+import { INITIAL_HOSPITALS } from "@/data/mockHospitals";
 
 export const runtime = "nodejs";
 
@@ -12,10 +13,31 @@ export async function GET(request: Request, context: RouteContext<"/api/sos/[id]
   const sos = await requests.findOne({ _id: id, driverId: auth.user.id, status: "accepted" });
   if (!sos) return Response.json({ error: "Accepted SOS request not found for this driver" }, { status: 404 });
   const driver = await drivers.findOne({ userId: auth.user.id });
-  const origin = (driver?.location as Coordinates | undefined) ?? sos.location;
+  const origin = sos.arrivedAt ? sos.location : (driver?.location as Coordinates | undefined) ?? sos.location;
   const url = new URL(request.url);
   const limitParam = Number(url.searchParams.get("limit") ?? 5);
   const limit = Number.isFinite(limitParam) ? Math.max(1, Math.min(20, Math.floor(limitParam))) : 5;
+
+  if (process.env.NODE_ENV === "development") {
+    const demoHospitals = INITIAL_HOSPITALS.map((hospital) => ({
+      id: hospital.id,
+      name: hospital.name,
+      address: hospital.location.address,
+      location: { latitude: hospital.location.lat, longitude: hospital.location.lng },
+      equipment: hospital.specialties,
+      distanceKm: distanceKm(origin, { latitude: hospital.location.lat, longitude: hospital.location.lng }),
+      directionsUrl: mapsUrl({ latitude: hospital.location.lat, longitude: hospital.location.lng }, origin),
+    }));
+    const matchingHospitals = demoHospitals.filter((hospital) =>
+      sos.requiredEquipment.every((needed) => hospital.equipment.some((item) => item.toLowerCase() === needed.toLowerCase())),
+    );
+    const nearest = (matchingHospitals.length ? matchingHospitals : demoHospitals)
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, limit)
+      .map((hospital) => ({ ...hospital, distanceKm: Number(hospital.distanceKm.toFixed(1)) }));
+    return Response.json({ hospitals: nearest, message: nearest.length ? undefined : "No test hospitals are configured" });
+  }
+
   const [allHospitals, resources] = await Promise.all([
     hospitals.find({ status: { $ne: "inactive" } }).toArray(),
     (await getResourcesCollection()).find({ type: "equipment", status: { $ne: "unavailable" } }).toArray(),

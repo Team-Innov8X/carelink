@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { MapView } from '../common/MapView';
 import {
@@ -10,7 +10,11 @@ import {
   MapPin,
   Clock,
   ChevronRight,
+  LocateFixed,
 } from 'lucide-react';
+
+type NearbyDriver = { id: string; name?: string; location: { latitude: number; longitude: number }; distanceKm: number };
+type PatientProfile = { name: string; email?: string | null; phone?: string | null };
 
 export const DispatcherDashboard: React.FC = () => {
   const {
@@ -30,6 +34,69 @@ export const DispatcherDashboard: React.FC = () => {
   const unavailableMedicines = medicines.filter((m) =>
     Object.values(m.stock).some((qty) => qty === 0)
   );
+  const [patientLocation, setPatientLocation] = useState<[number, number] | undefined>();
+  const [patientProfile, setPatientProfile] = useState<PatientProfile | undefined>();
+  const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriver[]>([]);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationMessage, setLocationMessage] = useState('');
+  const driverMapLocations = useMemo(() => nearbyDrivers.map((driver) => ({
+    id: driver.id,
+    name: driver.name,
+    location: [driver.location.latitude, driver.location.longitude] as [number, number],
+    distanceKm: driver.distanceKm,
+  })), [nearbyDrivers]);
+
+  const showCurrentAndNearbyLocations = () => {
+    const loadNearby = async (gpsLocation: [number, number]) => {
+      setLocationLoading(true);
+      setLocationMessage('Loading your profile and nearby drivers…');
+      try {
+        const query = new URLSearchParams({ latitude: String(gpsLocation[0]), longitude: String(gpsLocation[1]) });
+        const response = await fetch(`/api/sos/nearby?${query.toString()}`, { cache: 'no-store' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Could not load nearby drivers.');
+
+        setPatientProfile(result.patient);
+        setPatientLocation(result.patientLocation
+          ? [result.patientLocation.latitude, result.patientLocation.longitude]
+          : gpsLocation);
+        setNearbyDrivers(result.drivers ?? []);
+        setLocationMessage(result.demo
+          ? `Demo map for ${result.patient?.name || 'your profile'} near ${result.area}: ${result.drivers.length} test drivers.`
+          : result.drivers?.length
+            ? `Showing your location and ${result.drivers.length} available drivers within ${result.radiusKm} km.`
+            : `Your location is shown. No available drivers were found within ${result.radiusKm} km.`);
+      } catch (error) {
+        setPatientLocation(gpsLocation);
+        setNearbyDrivers([]);
+        setLocationMessage(error instanceof Error ? error.message : 'Could not load nearby drivers.');
+      } finally {
+        setLocationLoading(false);
+      }
+    };
+
+    if (process.env.NODE_ENV === 'development') {
+      // The local demo uses the signed-in profile at Connaught Place, New Delhi.
+      void loadNearby([28.6328, 77.2195]);
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      setLocationMessage('This browser does not support GPS location.');
+      return;
+    }
+
+    setLocationLoading(true);
+    setLocationMessage('Getting your location and nearby available drivers…');
+    navigator.geolocation.getCurrentPosition(({ coords }) => {
+      void loadNearby([coords.latitude, coords.longitude]);
+    }, (error) => {
+      setLocationMessage(error.code === error.PERMISSION_DENIED
+        ? 'Allow location access to show your position and nearby drivers.'
+        : 'Could not get your GPS location. Please try again.');
+      setLocationLoading(false);
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+  };
 
   const getPriorityBadge = (priority: string) => {
     switch (priority) {
@@ -162,12 +229,11 @@ export const DispatcherDashboard: React.FC = () => {
               <h2 className="text-base font-bold text-slate-900">Live Ambulance Locations</h2>
               <p className="text-xs text-slate-500">Real-time GPS tracking & triage proximity</p>
             </div>
-            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-full border border-emerald-200">
-              Live Feeds
-            </span>
+            {role === 'patient' ? <button type="button" disabled={locationLoading} onClick={showCurrentAndNearbyLocations} className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800 hover:bg-sky-100 disabled:cursor-wait disabled:opacity-60"><LocateFixed className="h-4 w-4" />{locationLoading ? 'Locating…' : 'Show my location & nearby drivers'}</button> : <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-full border border-emerald-200">Live Feeds</span>}
           </div>
 
-          <MapView height="380px" />
+          {role === 'patient' && locationMessage && <p role="status" className="mb-2 text-xs text-slate-600">{locationMessage}</p>}
+          <MapView height="380px" center={patientLocation} patientLocation={patientLocation} patientName={patientProfile?.name} driverLocations={driverMapLocations} />
         </div>
 
         {/* Right: Recent Emergency Requests Table (Mockup Panel 2) */}

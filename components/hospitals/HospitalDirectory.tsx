@@ -1,27 +1,18 @@
 import React, { useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
+import { submitBedRequest } from '../../utils/hospitalRequests';
 import { StaleDataWarning } from '../common/AlertBanner';
 import {
-  Building2,
   Search,
-  Filter,
   RotateCcw,
-  MapPin,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  Activity,
-  ArrowRight,
   Sparkles,
-  Phone,
 } from 'lucide-react';
 
 export const HospitalDirectory: React.FC = () => {
   const {
     hospitals,
+    emergencies,
     selectedEmergencyId,
-    requestHospitalBed,
     refreshHospitalData,
     setActiveTab,
     setSelectedHospitalId,
@@ -32,6 +23,8 @@ export const HospitalDirectory: React.FC = () => {
   const [availabilityFilter, setAvailabilityFilter] = useState('all');
   const [specialtyFilter, setSpecialtyFilter] = useState('all');
   const [dismissedStaleIds, setDismissedStaleIds] = useState<string[]>([]);
+  const [requestingHospitalId, setRequestingHospitalId] = useState<string | null>(null);
+  const [requestMessage, setRequestMessage] = useState('');
 
   // Filter logic
   const filteredHospitals = hospitals.filter((hosp) => {
@@ -72,11 +65,23 @@ export const HospitalDirectory: React.FC = () => {
     setSpecialtyFilter('all');
   };
 
-  const handleRequestBed = (hospitalId: string) => {
-    const reqId = selectedEmergencyId || '';
-    const success = requestHospitalBed(reqId, hospitalId);
-    if (success) {
-      setActiveTab('handoff');
+  const handleRequestBed = async (hospitalId: string) => {
+    const hospital = hospitals.find((item) => item.id === hospitalId);
+    const emergency = emergencies.find((item) => item.id === selectedEmergencyId) ?? emergencies[0];
+    if (!hospital || !emergency) {
+      setRequestMessage('Select a patient request before requesting a bed.');
+      return;
+    }
+    setRequestingHospitalId(hospitalId);
+    setRequestMessage('');
+    try {
+      const result = await submitBedRequest(hospital, emergency);
+      const routedHospital = result.request?.hospitalName || hospital.name;
+      setRequestMessage(`${result.existing ? 'An open request is already waiting at' : 'Bed request sent to'} ${routedHospital}. Hospital staff will review it shortly.`);
+    } catch (error) {
+      setRequestMessage(error instanceof Error ? error.message : 'Could not send the bed request.');
+    } finally {
+      setRequestingHospitalId(null);
     }
   };
 
@@ -104,6 +109,8 @@ export const HospitalDirectory: React.FC = () => {
           <span>Patient Smart Match (AI)</span>
         </button>
       </div>
+
+      {requestMessage && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900">{requestMessage}</p>}
 
       {/* Show warnings for any hospital with outdated data. */}
       {hospitals
@@ -322,14 +329,14 @@ export const HospitalDirectory: React.FC = () => {
                         </button>
                         <button
                           onClick={() => handleRequestBed(hosp.id)}
-                          disabled={isFull}
+                          disabled={isFull || requestingHospitalId === hosp.id}
                           className={`px-3 py-1.5 rounded-lg font-semibold text-xs shadow-2xs transition-all ${
                             isFull
                               ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                               : 'bg-sky-600 hover:bg-sky-500 text-white shadow-sky-600/20'
                           }`}
                         >
-                          Request Bed
+                          {requestingHospitalId === hosp.id ? 'Sending…' : 'Request Bed'}
                         </button>
                       </div>
                     </td>
