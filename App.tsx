@@ -18,7 +18,7 @@ import { MobileNav } from './components/mobile/MobileNav';
 import { Siren } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
-  const { activeTab } = useCareLink();
+  const { activeTab, role } = useCareLink();
   const [isNewEmergencyOpen, setIsNewEmergencyOpen] = useState(false);
 
   return (
@@ -36,7 +36,7 @@ const MainAppContent: React.FC = () => {
           {activeTab === 'dashboard' && <DispatcherDashboard />}
           {activeTab === 'requests' && <EmergencyRequestsView onOpenNewEmergency={() => setIsNewEmergencyOpen(true)} />}
           {activeTab === 'hospitals' && <HospitalDirectory />}
-          {activeTab === 'recommendations' && <SmartRecommendations />}
+          {activeTab === 'recommendations' && (role === 'patient' ? <section className="mx-auto mt-10 max-w-xl rounded-3xl border border-sky-100 bg-white p-10 text-center shadow-sm"><div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-50 text-sky-700"><Siren className="h-7 w-7" /></div><h1 className="text-2xl font-black text-slate-900">Feature coming soon</h1><p className="mt-2 text-sm text-slate-500">Smart Match is being prepared and will be available here soon.</p></section> : <SmartRecommendations />)}
           {activeTab === 'handoff' && <PatientHandoffView />}
           {activeTab === 'pharmacy' && <MedicineSearch mode="patient" />}
           {activeTab === 'hospital-portal' && <HospitalStaffView />}
@@ -48,16 +48,16 @@ const MainAppContent: React.FC = () => {
       {/* Responsive Mobile Bottom Tab Bar matching Panel 10 */}
       <MobileNav />
 
-      <button
+      {role !== 'patient' && <button
         type="button"
         onClick={() => setIsNewEmergencyOpen(true)}
         aria-label="Create SOS emergency call"
         title="Create SOS emergency call"
-        className="fixed bottom-20 right-5 z-50 flex items-center gap-2 rounded-full bg-rose-600 px-5 py-3.5 text-sm font-bold text-white shadow-xl shadow-rose-900/30 transition hover:-translate-y-0.5 hover:bg-rose-500 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-300 md:bottom-6 md:right-6"
+        className="fixed bottom-20 right-5 z-50 flex items-center gap-2.5 rounded-full bg-rose-600 px-6 py-4 text-base font-bold text-white shadow-xl shadow-rose-900/30 transition hover:-translate-y-0.5 hover:bg-rose-500 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-300 md:bottom-6 md:right-6"
       >
-        <Siren className="h-5 w-5" />
+        <Siren className="h-6 w-6" />
         SOS Call
-      </button>
+      </button>}
 
       {/* Modals */}
       <NewEmergencyModal

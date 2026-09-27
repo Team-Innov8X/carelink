@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
-  const { activeTab, setActiveTab, medicines, emergencies } = useCareLink();
+  const { activeTab, setActiveTab, medicines, emergencies, role } = useCareLink();
   const activeEmergenciesCount = emergencies.filter((request) => !['Completed', 'Rejected'].includes(request.status)).length;
 
   // Count unavailable / out of stock medicines
@@ -81,7 +81,7 @@ export const Sidebar: React.FC = () => {
         <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
           Navigation
         </div>
-        {navItems.map((item) => {
+        {navItems.filter((item) => !(role === 'patient' && item.id === 'requests')).map((item) => {
           const isActive = activeTab === item.id;
           return (
             <button
