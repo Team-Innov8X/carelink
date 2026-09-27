@@ -2,6 +2,7 @@ import type { ObjectId } from "mongodb";
 
 export type HoldStatus =
   | "pending"    // Hold placed, awaiting hospital confirmation or arrival
+  | "confirming" // Confirmation lock; prevents concurrent double confirmation
   | "confirmed"  // Confirmed by hospital staff
   | "fulfilled"  // Patient arrived & resource assigned
   | "expired"    // Auto-expired because hold window lapsed
@@ -27,7 +28,7 @@ export interface IHold {
   patientDetails: IPatientDetails;
   quantity: number;
   status: HoldStatus;
-  expiresAt: Date;
+  expiresAt?: Date;
   confirmedAt?: Date;
   fulfilledAt?: Date;
   notes?: string;

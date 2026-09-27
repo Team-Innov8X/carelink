@@ -66,9 +66,9 @@ export const Navbar: React.FC = () => {
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Active Emergency Alert Badge */}
           <button
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => setActiveTab('notifications')}
             className="relative p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
-            title={`${activeEmergenciesCount} active emergency cases`}
+            title={`${activeEmergenciesCount} active emergency cases · Open notifications`}
           >
             <Bell className="w-5 h-5" />
             {activeEmergenciesCount > 0 && (

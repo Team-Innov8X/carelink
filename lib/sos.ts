@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Collection, Document } from "mongodb";
+import type { Document } from "mongodb";
 import clientPromise from "./mongodb";
 
 export type Coordinates = { latitude: number; longitude: number };
@@ -8,6 +8,8 @@ export type SosRequest = {
   _id: string;
   patientId: string;
   patientName: string;
+  patientEmail?: string;
+  patientPhone?: string;
   location: Coordinates;
   incidentType: string;
   requiredEquipment: string[];
@@ -15,6 +17,150 @@ export type SosRequest = {
   driverId: string | null;
   createdAt: Date;
   acceptedAt?: Date;
+  arrivedAt?: Date;
+};
+
+export type HospitalAdmissionRequest = {
+  _id: string;
+  sosRequestId: string;
+  hospitalId: string;
+  hospitalName: string;
+  patientId: string;
+  patientName: string;
+  patientPhone?: string;
+  location: Coordinates;
+  incidentType: string;
+  requiredEquipment: string[];
+  status: "pending" | "accepting" | "accepted" | "rejected";
+  requestType?: "sos" | "bed";
+  inventorySource?: "app-state";
+  bedCategory?: "general" | "icu" | "trauma" | "ventilators";
+  holdId?: string;
+  acceptedByUserId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  acceptedAt?: Date;
+};
+
+export async function ensureHospitalRequestForSos(sos: SosRequest) {
+  const db = (await clientPromise).db();
+  const appStateCollection = db.collection<{ _id: string; state?: { hospitals?: Array<Record<string, unknown>> } }>("appState");
+  const appState = process.env.NODE_ENV === "development"
+    ? await appStateCollection.findOne({ _id: "carelink" })
+    : null;
+  const demoHospitals = (appState?.state?.hospitals ?? []) as Array<Record<string, unknown>>;
+  const nearbyDemo = demoHospitals.flatMap((hospital) => {
+    const location = hospital.location as { lat?: unknown; lng?: unknown } | undefined;
+    if (typeof location?.lat !== "number" || typeof location.lng !== "number") return [];
+    return [{ hospital, distance: distanceKm(sos.location, { latitude: location.lat, longitude: location.lng }) }];
+  }).sort((a, b) => a.distance - b.distance)[0];
+
+  const { hospitals } = await sosCollections();
+  const { hospitalRequests } = await workflowCollections();
+  const existing = await hospitalRequests.findOne({ sosRequestId: sos._id });
+  if (existing) {
+    if (existing.status === "pending" && nearbyDemo && existing.inventorySource !== "app-state") {
+      const hospitalId = String(nearbyDemo.hospital.id ?? "");
+      const hospitalName = String(nearbyDemo.hospital.name ?? "");
+      if (hospitalId && hospitalName) {
+        await hospitalRequests.updateOne({ _id: existing._id, status: "pending" }, { $set: {
+          hospitalId,
+          hospitalName,
+          inventorySource: "app-state",
+          bedCategory: chooseBedCategory(sos.requiredEquipment, nearbyDemo.hospital.beds),
+          updatedAt: new Date(),
+        } });
+        return { ...existing, hospitalId, hospitalName, inventorySource: "app-state" as const };
+      }
+    }
+    return existing;
+  }
+
+  if (nearbyDemo) {
+    const hospitalId = String(nearbyDemo.hospital.id ?? "");
+    const hospitalName = String(nearbyDemo.hospital.name ?? "");
+    if (hospitalId && hospitalName) {
+      const now = new Date();
+      const request: HospitalAdmissionRequest = {
+        _id: createRequestId(),
+        sosRequestId: sos._id,
+        requestType: "sos",
+        inventorySource: "app-state",
+        bedCategory: chooseBedCategory(sos.requiredEquipment, nearbyDemo.hospital.beds),
+        hospitalId,
+        hospitalName,
+        patientId: sos.patientId,
+        patientName: sos.patientName,
+        patientPhone: sos.patientPhone,
+        location: sos.location,
+        incidentType: sos.incidentType,
+        requiredEquipment: sos.requiredEquipment,
+        status: "pending",
+        createdAt: now,
+        updatedAt: now,
+      };
+      await hospitalRequests.insertOne(request);
+      return request;
+    }
+  }
+
+  const candidates = await hospitals.find({ status: { $ne: "inactive" } }).toArray();
+  const nearest = candidates.flatMap((hospital) => {
+    const raw = hospital.location as unknown as { latitude?: unknown; longitude?: unknown; coordinates?: unknown };
+    const point = typeof raw?.latitude === "number" && typeof raw.longitude === "number"
+      ? { latitude: raw.latitude, longitude: raw.longitude }
+      : Array.isArray(raw?.coordinates) && typeof raw.coordinates[0] === "number" && typeof raw.coordinates[1] === "number"
+        ? { latitude: raw.coordinates[1], longitude: raw.coordinates[0] }
+        : null;
+    return point ? [{ hospital, distance: distanceKm(sos.location, point) }] : [];
+  }).sort((a, b) => a.distance - b.distance)[0];
+  if (!nearest) return null;
+
+  const now = new Date();
+  const request: HospitalAdmissionRequest = {
+    _id: createRequestId(),
+    sosRequestId: sos._id,
+    requestType: "sos",
+    hospitalId: String(nearest.hospital._id),
+    hospitalName: nearest.hospital.name,
+    patientId: sos.patientId,
+    patientName: sos.patientName,
+    patientPhone: sos.patientPhone,
+    location: sos.location,
+    incidentType: sos.incidentType,
+    requiredEquipment: sos.requiredEquipment,
+    status: "pending",
+    createdAt: now,
+    updatedAt: now,
+  };
+  await hospitalRequests.insertOne(request);
+  return request;
+}
+
+export function chooseBedCategory(
+  requiredEquipment: string[],
+  bedsValue: unknown,
+): HospitalAdmissionRequest["bedCategory"] {
+  const beds = bedsValue && typeof bedsValue === "object" ? bedsValue as Record<string, { available?: unknown }> : {};
+  const needs = requiredEquipment.join(" ").toLowerCase();
+  const preference: NonNullable<HospitalAdmissionRequest["bedCategory"]>[] = /trauma|orthopedic/.test(needs)
+    ? ["trauma", "icu", "general"]
+    : /icu|cardiac|ventilat|critical/.test(needs)
+      ? ["icu", "general", "trauma"]
+      : ["general", "icu", "trauma"];
+  return preference.find((category) => typeof beds[category]?.available === "number" && beds[category].available > 0)
+    ?? preference[0];
+}
+
+export type CareNotification = {
+  _id: string;
+  recipientId: string;
+  type: "hospital_request_accepted";
+  title: string;
+  message: string;
+  relatedRequestId: string;
+  readAt?: Date;
+  createdAt: Date;
 };
 
 export async function sosCollections() {
@@ -23,6 +169,14 @@ export async function sosCollections() {
   const drivers = db.collection<Document & { userId: string; available: boolean; location?: Coordinates }>("drivers");
   const hospitals = db.collection<Document & { name: string; location: Coordinates; equipment: string[] }>("hospitals");
   return { requests, drivers, hospitals };
+}
+
+export async function workflowCollections() {
+  const db = (await clientPromise).db();
+  return {
+    hospitalRequests: db.collection<HospitalAdmissionRequest>("hospitalAdmissionRequests"),
+    notifications: db.collection<CareNotification>("notifications"),
+  };
 }
 
 export function validCoordinates(value: unknown): value is Coordinates {
