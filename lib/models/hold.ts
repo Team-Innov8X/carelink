@@ -29,7 +29,7 @@ export interface IHold {
   patientDetails: IPatientDetails;
   quantity: number;
   status: HoldStatus;
-  expiresAt: Date;
+  expiresAt?: Date;
   confirmedAt?: Date;
   confirmedByUserId?: string;
   fulfilledAt?: Date;

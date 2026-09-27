@@ -61,6 +61,7 @@ interface CareLinkContextType {
   requestHospitalBed: (requestId: string, hospitalId: string) => boolean;
   acceptEmergency: (requestId: string) => void;
   rejectEmergency: (requestId: string, reason?: string) => void;
+  rejectDriverEmergency: (requestId: string) => void;
   updateBedCounts: (hospitalId: string, bedType: keyof HospitalBeds, delta: number) => void;
   setBedAvailability: (hospitalId: string, bedType: keyof HospitalBeds, available: number, total: number) => void;
   updateHospitalSpecialty: (hospitalId: string, specialty: string, doctors: number) => void;
@@ -85,9 +86,9 @@ const mergeInitialRecords = <T extends { id: string }>(saved: T[] | undefined, i
   return Array.from(records.values());
 };
 
-export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole?: Role }> = ({ children, initialRole }) => {
   const hydrated = useRef(false);
-  const [role, setRole] = useState<Role>('dispatcher');
+  const [role, setRole] = useState<Role>(initialRole ?? 'dispatcher');
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [hospitals, setHospitals] = useState<Hospital[]>(INITIAL_HOSPITALS);
   const [emergencies, setEmergencies] = useState<EmergencyRequest[]>(INITIAL_EMERGENCIES);
@@ -172,7 +173,11 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         .catch(() => {});
     };
     window.addEventListener('carelink-authenticated', reloadSharedState);
-    return () => window.removeEventListener('carelink-authenticated', reloadSharedState);
+    window.addEventListener('carelink-data-refresh', reloadSharedState);
+    return () => {
+      window.removeEventListener('carelink-authenticated', reloadSharedState);
+      window.removeEventListener('carelink-data-refresh', reloadSharedState);
+    };
   }, []);
 
   // Keep a local offline copy and persist operational data to the shared backend.
@@ -305,6 +310,10 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return req;
       })
     );
+  };
+
+  const rejectDriverEmergency = (requestId: string) => {
+    setEmergencies((prev) => prev.map((req) => req.id === requestId ? { ...req, status: 'Rejected' } : req));
   };
 
   const updateBedCounts = (
@@ -550,6 +559,7 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         requestHospitalBed,
         acceptEmergency,
         rejectEmergency,
+        rejectDriverEmergency,
         updateBedCounts,
         setBedAvailability,
         updateHospitalSpecialty,

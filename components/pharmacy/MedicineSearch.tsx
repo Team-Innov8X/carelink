@@ -22,7 +22,7 @@ import {
   Minus,
 } from 'lucide-react';
 
-export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = () => {
+export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mode = 'patient' }) => {
   const {
     medicines,
     pharmacies,
@@ -34,7 +34,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = () =>
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMedicineId, setSelectedMedicineId] = useState<string>('');
-  const [activeSubTab, setActiveSubTab] = useState<'search' | 'manage' | 'orders'>('search');
+  const [activeSubTab, setActiveSubTab] = useState<'search' | 'manage' | 'orders'>(mode === 'pharmacy' ? 'manage' : 'search');
   const [orderConfirmation, setOrderConfirmation] = useState<string | null>(null);
 
   const selectedMed =
@@ -95,7 +95,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = () =>
 
         {/* Sub-tabs: Search, Pharmacy Portal, Active Orders */}
         <div className="flex items-center bg-slate-100 p-1 rounded-xl">
-          <button
+          {mode === 'patient' && <button
             onClick={() => setActiveSubTab('search')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               activeSubTab === 'search'
@@ -104,8 +104,8 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = () =>
             }`}
           >
             Check Availability
-          </button>
-          <button
+          </button>}
+          {mode === 'pharmacy' && <button
             onClick={() => setActiveSubTab('manage')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               activeSubTab === 'manage'
@@ -113,8 +113,8 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = () =>
                 : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            Pharmacy Stock Portal
-          </button>
+            Inventory
+          </button>}
           <button
             onClick={() => setActiveSubTab('orders')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -130,10 +130,10 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = () =>
 
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-          Check Medicine Availability
+          {mode === 'pharmacy' ? 'Pharmacy Inventory' : 'Check Medicine Availability'}
         </h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Connect directly to certified local pharmacies to check live critical drug inventory
+          {mode === 'pharmacy' ? 'Update your live medicine stock and review incoming orders.' : 'Connect directly to certified local pharmacies to check live critical drug inventory.'}
         </p>
       </div>
 

@@ -1,19 +1,14 @@
 import React, { useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
+import { submitBedRequest } from '../../utils/hospitalRequests';
 import { calculateHospitalRecommendations } from '../../utils/recommendationAlgorithm';
 import {
   ArrowLeft,
   User,
   MapPin,
   Clock,
-  Sparkles,
-  ShieldCheck,
   CheckCircle2,
-  AlertCircle,
-  Building2,
   ChevronRight,
-  TrendingUp,
-  SlidersHorizontal,
 } from 'lucide-react';
 
 export const SmartRecommendations: React.FC = () => {
@@ -22,11 +17,12 @@ export const SmartRecommendations: React.FC = () => {
     selectedEmergencyId,
     setSelectedEmergencyId,
     hospitals,
-    requestHospitalBed,
     setActiveTab,
   } = useCareLink();
 
   const [sortBy, setSortBy] = useState<'match' | 'distance' | 'eta'>('match');
+  const [requestingHospitalId, setRequestingHospitalId] = useState<string | null>(null);
+  const [requestMessage, setRequestMessage] = useState('');
 
   const currentEmergency =
     emergencies.find((e) => e.id === selectedEmergencyId) || emergencies[0];
@@ -44,10 +40,19 @@ export const SmartRecommendations: React.FC = () => {
     return b.matchScore - a.matchScore;
   });
 
-  const handleRequestHospital = (hospitalId: string) => {
-    const success = requestHospitalBed(currentEmergency.id, hospitalId);
-    if (success) {
-      setActiveTab('handoff');
+  const handleRequestHospital = async (hospitalId: string) => {
+    const hospital = hospitals.find((item) => item.id === hospitalId);
+    if (!hospital) return;
+    setRequestingHospitalId(hospitalId);
+    setRequestMessage('');
+    try {
+      const result = await submitBedRequest(hospital, currentEmergency);
+      const routedHospital = result.request?.hospitalName || hospital.name;
+      setRequestMessage(`${result.existing ? 'An open request is already waiting at' : 'Bed request sent to'} ${routedHospital}. Hospital staff will review it shortly.`);
+    } catch (error) {
+      setRequestMessage(error instanceof Error ? error.message : 'Could not send the bed request.');
+    } finally {
+      setRequestingHospitalId(null);
     }
   };
 
@@ -94,6 +99,8 @@ export const SmartRecommendations: React.FC = () => {
           Algorithmic matching based on real-time trauma bed availability, distance & ICU telemetry.
         </p>
       </div>
+
+      {requestMessage && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900">{requestMessage}</p>}
 
       {/* Patient Summary Card (Mockup Panel 4) */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
@@ -168,7 +175,7 @@ export const SmartRecommendations: React.FC = () => {
           <span className="text-slate-500 font-medium">Sort by:</span>
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            onChange={(e) => setSortBy(e.target.value as 'match' | 'distance' | 'eta')}
             className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white font-semibold text-slate-700 outline-none"
           >
             <option value="match">Best Match Score</option>
@@ -260,9 +267,10 @@ export const SmartRecommendations: React.FC = () => {
 
                   <button
                     onClick={() => handleRequestHospital(hospital.id)}
+                    disabled={requestingHospitalId === hospital.id}
                     className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition-all active:scale-95"
                   >
-                    Request Bed
+                    {requestingHospitalId === hospital.id ? 'Sending…' : 'Request Bed'}
                   </button>
                 </div>
               </div>

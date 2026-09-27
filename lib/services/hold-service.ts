@@ -104,7 +104,10 @@ export async function createHold(params: ICreateHoldParams) {
   try {
     insertResult = await holdsCol.insertOne(holdDoc);
   } catch (error) {
-    await resourcesCol.updateOne({ _id: updatedResource._id, heldQuantity: { $gte: quantityToHold } }, { $inc: { heldQuantity: -quantityToHold }, $set: { updatedAt: new Date() } });
+    await resourcesCol.updateOne(
+      { _id: updatedResource._id, heldQuantity: { $gte: quantityToHold } },
+      { $inc: { heldQuantity: -quantityToHold }, $set: { updatedAt: new Date() } },
+    );
     throw error;
   }
   const createdHold = { ...holdDoc, _id: insertResult.insertedId.toString(), id: insertResult.insertedId.toString() };
@@ -148,13 +151,23 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
     };
   }
 
+  // Claim this hold before changing inventory so two concurrent confirms cannot
+  // decrement the same bed twice.
+  const claim = await holdsCol.updateOne(
+    { _id: queryId as any, status: "pending" },
+    { $set: { status: "confirming", updatedAt: new Date() } },
+  );
+  if (claim.modifiedCount !== 1) {
+    return { success: false, reason: "INVALID_STATUS", message: "This hold is already being confirmed." };
+  }
+
   // Atomically update resource: decrement both availableQuantity and heldQuantity
   const resourceQueryId = ObjectId.isValid(hold.resourceId)
     ? new ObjectId(hold.resourceId)
     : hold.resourceId;
 
   const resourceUpdate = await resourcesCol.findOneAndUpdate(
-    { _id: resourceQueryId as any, availableQuantity: { $gte: hold.quantity }, heldQuantity: { $gte: hold.quantity } },
+    { _id: resourceQueryId as any, heldQuantity: { $gte: hold.quantity }, availableQuantity: { $gte: hold.quantity } },
     {
       $inc: {
         availableQuantity: -hold.quantity,
@@ -167,9 +180,11 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
 
   if (!resourceUpdate) {
     await holdsCol.updateOne({ _id: queryId as any, status: "confirming" }, { $set: { status: "pending", updatedAt: new Date() } });
-    return { success: false, reason: "RESOURCE_CHANGED", message: "The held resource is no longer available." };
+    return { success: false, reason: "JUST_TAKEN", message: "Reserved capacity is no longer available." };
   }
-  if (resourceUpdate.availableQuantity <= 0) {
+
+  // Update resource status if availableQuantity reaches 0
+  if (resourceUpdate && resourceUpdate.availableQuantity <= 0) {
     await resourcesCol.updateOne(
       { _id: resourceQueryId as any },
       { $set: { status: "unavailable" } }
@@ -178,7 +193,7 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
 
   // Mark hold as confirmed
   await holdsCol.updateOne(
-    { _id: queryId as any },
+    { _id: queryId as any, status: "confirming" },
     {
       $set: {
         status: "confirmed",
@@ -186,6 +201,7 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
         confirmedByUserId,
         updatedAt: new Date(),
       },
+      $unset: { expiresAt: "" },
     }
   );
 
