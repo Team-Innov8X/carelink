@@ -89,7 +89,7 @@ const MainAppContent: React.FC = () => {
           {activeTab === 'requests' && <EmergencyRequestsView onOpenNewEmergency={() => setIsNewEmergencyOpen(true)} />}
           {activeTab === 'notifications' && <NotificationCenter />}
           {activeTab === 'hospitals' && <HospitalDirectory />}
-          {activeTab === 'recommendations' && <SmartRecommendations />}
+          {activeTab === 'recommendations' && (role === 'patient' ? <section className="mx-auto mt-10 max-w-xl rounded-3xl border border-sky-100 bg-white p-10 text-center shadow-sm"><div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-50 text-sky-700"><Siren className="h-7 w-7" /></div><h1 className="text-2xl font-black text-slate-900">Feature coming soon</h1><p className="mt-2 text-sm text-slate-500">Smart Match is being prepared and will be available here soon.</p></section> : <SmartRecommendations />)}
           {activeTab === 'handoff' && <PatientHandoffView />}
           {activeTab === 'pharmacy' && <MedicineSearch mode="patient" />}
           {activeTab === 'hospital-portal' && <HospitalStaffView />}
@@ -101,7 +101,7 @@ const MainAppContent: React.FC = () => {
       {/* Responsive Mobile Bottom Tab Bar matching Panel 10 */}
       <MobileNav />
 
-      <button
+      {role !== 'patient' && <button
         type="button"
         onClick={handleSOS}
         disabled={sosSubmitting}
@@ -111,8 +111,8 @@ const MainAppContent: React.FC = () => {
       >
         {sosSubmitting ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Siren className="h-5 w-5" />}
         {sosSubmitting ? 'Sending…' : 'SOS Call'}
-      </button>
-      {sosMessage && <p role="status" aria-live="polite" className="fixed bottom-36 right-5 z-50 max-w-sm rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-800 shadow-xl md:bottom-20 md:right-6">{sosMessage}</p>}
+      </button>}
+      {role !== 'patient' && sosMessage && <p role="status" aria-live="polite" className="fixed bottom-36 right-5 z-50 max-w-sm rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-800 shadow-xl md:bottom-20 md:right-6">{sosMessage}</p>}
 
       {/* Modals */}
       <NewEmergencyModal

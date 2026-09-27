@@ -70,6 +70,7 @@ interface CareLinkContextType {
   completeHandoff: (requestId: string) => void;
   orderMedicine: (medicineId: string, pharmacyId: string, quantity: number, isUrgent?: boolean) => void;
   updateMedicineStock: (medicineId: string, pharmacyId: string, newStock: number) => void;
+  addMedicine: (name: string) => void;
   createNewEmergency: (emergency: Pick<EmergencyRequest, 'patientName' | 'condition'> & Partial<EmergencyRequest>) => string;
   
   // Operational controls
@@ -492,6 +493,21 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
     );
   };
 
+  const addMedicine = (name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName || medicines.some((medicine) => medicine.name.toLowerCase() === trimmedName.toLowerCase())) return;
+    setMedicines((prev) => [{
+      id: `med-${Date.now()}`,
+      name: trimmedName,
+      form: 'Not specified',
+      category: 'Other',
+      indication: 'Added by pharmacy',
+      isEmergencyEssential: false,
+      stock: Object.fromEntries(pharmacies.map((pharmacy) => [pharmacy.id, 0])),
+      price: 'Ask pharmacy',
+    }, ...prev]);
+  };
+
   const createNewEmergency = (data: Pick<EmergencyRequest, 'patientName' | 'condition'> & Partial<EmergencyRequest>): string => {
     const newId = `P-${Math.floor(1028 + Math.random() * 900)}`;
     const newEmergency: EmergencyRequest = {
@@ -568,6 +584,7 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
         completeHandoff,
         orderMedicine,
         updateMedicineStock,
+        addMedicine,
         createNewEmergency,
         resetAllData,
       }}

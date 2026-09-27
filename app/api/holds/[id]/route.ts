@@ -13,7 +13,7 @@ export async function GET(_request: Request, { params }: Context) {
     let hold = await (await getHoldsCollection()).findOne({ _id: new ObjectId(id) });
     if (!hold) return errorResponse("Hold not found", 404);
     let autoEscalation = null;
-    if (hold.status === "pending" && hold.expiresAt <= new Date()) {
+    if (hold.status === "pending" && hold.expiresAt && hold.expiresAt <= new Date()) {
       const result = await releaseHold(id, "expired", hold.originLocation);
       if (result.success) autoEscalation = result.nextRankedHospital;
       hold = await (await getHoldsCollection()).findOne({ _id: new ObjectId(id) }) ?? hold;

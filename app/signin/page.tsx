@@ -3,16 +3,9 @@
 import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Heart, Lock, UserRound, ChevronDown } from 'lucide-react';
+import { Heart, Lock, UserRound } from 'lucide-react';
 import { authClient } from '../../lib/auth-client';
 import { routeForRole } from '../../lib/role-route';
-
-const accountTypes = [
-  ['patient', 'Patient'],
-  ['hospital_staff', 'Hospital admin'],
-  ['pharmacy', 'Pharmaceuticals'],
-  ['driver', 'Driver'],
-];
 
 const inputClass = 'w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm font-medium text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100';
 const labelClass = 'mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-700';
@@ -21,7 +14,6 @@ export default function SignInPage() {
   const router = useRouter();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [accountType, setAccountType] = useState('patient');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -36,11 +28,7 @@ export default function SignInPage() {
         : await authClient.signIn.username({ username: normalizedIdentifier, password });
 
       if (result.error) throw new Error(result.error.message || 'Sign in failed. Check your credentials.');
-      const signedInRole = (result.data?.user as (typeof result.data.user & { role?: string }) | undefined)?.role || accountType;
-      if (routeForRole(signedInRole) !== routeForRole(accountType)) {
-        await authClient.signOut();
-        throw new Error('That account belongs to a different workspace. Choose the matching account type.');
-      }
+      const signedInRole = (result.data?.user as (typeof result.data.user & { role?: string }) | undefined)?.role || 'patient';
       router.replace(routeForRole(signedInRole));
       router.refresh();
     } catch (signInError) {
@@ -56,7 +44,7 @@ export default function SignInPage() {
     try {
       const result = await authClient.signIn.social({
         provider: 'google',
-        callbackURL: routeForRole(accountType),
+        callbackURL: routeForRole('patient'),
       });
       if (result.error) throw new Error(result.error.message || 'Google sign in is unavailable.');
       if (result.data?.url) window.location.assign(result.data.url);
@@ -68,7 +56,7 @@ export default function SignInPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
-      <section className="grid max-h-[94vh] w-full max-w-4xl grid-cols-1 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl md:h-[94vh] md:min-h-0 md:grid-cols-2">
+      <section className="grid max-h-[88vh] w-full max-w-3xl grid-cols-1 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl md:h-auto md:min-h-0 md:grid-cols-2">
         <aside className="relative flex flex-col justify-start overflow-hidden bg-gradient-to-br from-slate-900 via-sky-950 to-slate-900 p-8 text-white lg:p-10">
           <div className="pointer-events-none absolute -left-16 -top-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl" />
           <div className="relative">
@@ -86,12 +74,11 @@ export default function SignInPage() {
           <form onSubmit={handleSignIn} className="space-y-4">
             <div><label className={labelClass} htmlFor="signin-identifier">Username or email</label><div className="relative"><UserRound className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signin-identifier" className={inputClass} required autoComplete="username" value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder="Your username or email" /></div></div>
             <div><label className={labelClass} htmlFor="signin-password">Password</label><div className="relative"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signin-password" className={inputClass} type="password" required autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" /></div></div>
-            <div><label className={labelClass} htmlFor="signin-role">Role</label><div className="relative"><select id="signin-role" value={accountType} onChange={event => setAccountType(event.target.value)} className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 pr-10 text-sm font-medium text-slate-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100">{accountTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /></div></div>
             {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
             <button type="submit" disabled={submitting} className="mt-2 w-full rounded-xl bg-sky-600 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-600/20 transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? 'Signing in…' : 'Sign in'}</button>
           </form>
           <div className="relative my-5 text-center"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200" /></div><span className="relative bg-white px-3 text-xs font-medium uppercase text-slate-400">or</span></div>
-          <button type="button" disabled={submitting} onClick={handleGoogleSignIn} className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60"><span className="text-base font-bold">G</span> Continue with Google</button>
+          <button type="button" disabled={submitting} onClick={handleGoogleSignIn} className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60"><svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 3.01 13.22l7.98 6.19C12.9 13.72 18.02 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.75 7.18l7.72 6C44.42 37.95 46.98 31.8 46.98 24.55z"/><path fill="#FBBC05" d="M10.99 28.59A14.4 14.4 0 0 1 10.25 24c0-1.59.27-3.13.74-4.59l-7.98-6.19A23.9 23.9 0 0 0 .98 24c0 3.88.93 7.55 2.57 10.78l7.44-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.72-6c-2.14 1.43-4.88 2.28-8.19 2.28-5.98 0-11.1-4.22-13.01-9.91l-7.44 6.19C7.05 43.1 15.04 48 24 48z"/></svg> Continue with Google</button>
           <p className="mt-6 text-center text-xs text-slate-400">New to CareLink? <Link href="/signup" className="font-semibold text-sky-600 hover:underline">Create an account</Link></p>
         </div>
       </section>

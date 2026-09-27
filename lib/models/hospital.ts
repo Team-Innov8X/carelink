@@ -39,4 +39,3 @@ export interface IHospital {
   createdAt: Date;
   updatedAt: Date;
 }
-import type { ObjectId } from "mongodb";

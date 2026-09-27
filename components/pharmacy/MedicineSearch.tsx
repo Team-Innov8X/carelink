@@ -28,6 +28,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
     pharmacies,
     orderMedicine,
     updateMedicineStock,
+    addMedicine,
     medicineOrders,
     setActiveTab,
   } = useCareLink();
@@ -36,6 +37,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
   const [selectedMedicineId, setSelectedMedicineId] = useState<string>('');
   const [activeSubTab, setActiveSubTab] = useState<'search' | 'manage' | 'orders'>(mode === 'pharmacy' ? 'manage' : 'search');
   const [orderConfirmation, setOrderConfirmation] = useState<string | null>(null);
+  const [newMedicineName, setNewMedicineName] = useState('');
 
   const selectedMed =
     medicines.find((m) => m.id === selectedMedicineId) || medicines[0];
@@ -85,13 +87,13 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Header with Navigation */}
       <div className="flex items-center justify-between">
-        <button
+        {mode === 'patient' && <button
           onClick={() => setActiveTab('dashboard')}
           className="flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Dashboard</span>
-        </button>
+        </button>}
 
         {/* Sub-tabs: Search, Pharmacy Portal, Active Orders */}
         <div className="flex items-center bg-slate-100 p-1 rounded-xl">
@@ -389,6 +391,10 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
               </div>
             ))}
           </div>
+          <form onSubmit={(event) => { event.preventDefault(); addMedicine(newMedicineName); setNewMedicineName(''); }} className="flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row">
+            <input value={newMedicineName} onChange={(event) => setNewMedicineName(event.target.value)} placeholder="Medicine name not listed" aria-label="New medicine name" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100" />
+            <button type="submit" disabled={!newMedicineName.trim() || medicines.some((medicine) => medicine.name.toLowerCase() === newMedicineName.trim().toLowerCase())} className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"><Plus className="h-4 w-4" />Add new medicine</button>
+          </form>
         </div>
       )}
 

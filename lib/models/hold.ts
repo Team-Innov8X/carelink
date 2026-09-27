@@ -38,4 +38,3 @@ export interface IHold {
   createdAt: Date;
   updatedAt: Date;
 }
-import type { ObjectId } from "mongodb";
