@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Document } from "mongodb";
-import clientPromise from "./mongodb";
+import connectMongo from "./mongodb";
 
 export type Coordinates = { latitude: number; longitude: number };
 
@@ -61,7 +61,7 @@ async function ensureHospitalRequestIndexes(hospitalRequests: Awaited<ReturnType
 }
 
 export async function ensureHospitalRequestForSos(sos: SosRequest) {
-  const db = (await clientPromise).db();
+  const db = (await connectMongo()).db();
   const appStateCollection = db.collection<{ _id: string; state?: { hospitals?: Array<Record<string, unknown>> } }>("appState");
   const appState = process.env.NODE_ENV === "development"
     ? await appStateCollection.findOne({ _id: "carelink" })
@@ -222,7 +222,7 @@ export type CareNotification = {
 };
 
 export async function sosCollections() {
-  const db = (await clientPromise).db();
+  const db = (await connectMongo()).db();
   const requests = db.collection<SosRequest>("sosRequests");
   const drivers = db.collection<Document & { userId: string; available: boolean; location?: Coordinates }>("drivers");
   const hospitals = db.collection<Document & { name: string; location: Coordinates; equipment: string[] }>("hospitals");
@@ -230,7 +230,7 @@ export async function sosCollections() {
 }
 
 export async function workflowCollections() {
-  const db = (await clientPromise).db();
+  const db = (await connectMongo()).db();
   return {
     hospitalRequests: db.collection<HospitalAdmissionRequest>("hospitalAdmissionRequests"),
     notifications: db.collection<CareNotification>("notifications"),

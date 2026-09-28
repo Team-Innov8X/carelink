@@ -1,5 +1,5 @@
 import { requireRole } from "@/lib/auth-utils";
-import clientPromise from "@/lib/mongodb";
+import connectMongo from "@/lib/mongodb";
 
 type HospitalDocument = { id: string; name: string; specialties?: string[]; specialtyDoctors?: Record<string, number> };
 type AppStateDocument = { _id: string; state?: { hospitals?: HospitalDocument[] }; revision?: number };
@@ -16,7 +16,7 @@ export async function PATCH(request: Request, context: RouteContext<"/api/hospit
   const specialty = body.specialty.trim();
   const doctors = body.doctors as number;
   const profile = auth.user as typeof auth.user & { hospitalId?: string; hospitalName?: string };
-  const collection = (await clientPromise).db().collection<AppStateDocument>("appState");
+  const collection = (await connectMongo()).db().collection<AppStateDocument>("appState");
   for (let attempt = 0; attempt < 5; attempt++) {
     const stored = await collection.findOne({ _id: "carelink" });
     const hospital = stored?.state?.hospitals?.find((item) => item.id === hospitalId);

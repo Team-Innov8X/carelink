@@ -3,7 +3,7 @@ import { confirmHold, createHold, releaseHold } from "@/lib/services/hold-servic
 import { getResourcesCollection } from "@/lib/models";
 import { chooseRequiredSpecialty, workflowCollections } from "@/lib/sos";
 import type { HospitalAdmissionRequest } from "@/lib/sos";
-import clientPromise from "@/lib/mongodb";
+import connectMongo from "@/lib/mongodb";
 import { INITIAL_HOSPITALS } from "@/data/mockHospitals";
 
 export const runtime = "nodejs";
@@ -44,7 +44,7 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
   let doctorHoldId: string | undefined;
   try {
     if (hospitalRequest.inventorySource === "app-state" && hospitalRequest.bedCategory) {
-      const database = (await clientPromise).db();
+      const database = (await connectMongo()).db();
       const appState = database.collection<{ _id: string }>("appState");
       const category = hospitalRequest.bedCategory;
       const specialty = hospitalRequest.requiredSpecialty;

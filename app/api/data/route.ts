@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
-import clientPromise from "@/lib/mongodb";
-import { auth } from "@/lib/auth";
+import connectMongo from "@/lib/mongodb";
+import { getAuth } from "@/lib/auth";
 import { INITIAL_HOSPITALS } from "@/data/mockHospitals";
 import { INITIAL_EMERGENCIES } from "@/data/mockEmergencies";
 import { INITIAL_PHARMACIES } from "@/data/mockPharmacies";
@@ -20,11 +20,14 @@ const defaultState = {
 };
 
 const stateCollection = async () => {
-  const client = await clientPromise;
+  const client = await connectMongo();
   return client.db().collection<{ _id: string; state: Record<string, unknown>; updatedAt?: Date; revision?: number }>("appState");
 };
 
-const hasSession = async () => Boolean(await auth.api.getSession({ headers: await headers() }));
+const hasSession = async () => {
+  await connectMongo();
+  return Boolean(await getAuth().api.getSession({ headers: await headers() }));
+};
 
 export async function GET() {
   if (!(await hasSession())) {

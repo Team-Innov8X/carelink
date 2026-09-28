@@ -1,12 +1,12 @@
 import { Collection } from "mongodb";
-import clientPromise from "@/lib/mongodb";
+import connectMongo from "@/lib/mongodb";
 import { IHospital } from "./hospital";
 import { IResource } from "./resource";
 import { IHold } from "./hold";
 import { IUser } from "./user";
 
 export async function getDb() {
-  const client = await clientPromise;
+  const client = await connectMongo();
   return client.db();
 }
 

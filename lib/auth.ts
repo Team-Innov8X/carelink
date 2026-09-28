@@ -6,8 +6,9 @@ import { isSelfServiceRole } from "./roles";
 
 export type { UserRole } from "./roles";
 
-export const auth = betterAuth({
-  database: mongodbAdapter(client.db(), { client }),
+function createAuth(mongoClient: typeof client) {
+  return betterAuth({
+  database: mongodbAdapter(mongoClient.db(), { client: mongoClient }),
   secret: process.env.BETTER_AUTH_SECRET || "carelink_default_secret_key_change_in_production",
   baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
   emailAndPassword: {
@@ -68,4 +69,17 @@ export const auth = betterAuth({
       },
     },
   },
-});
+  });
+}
+
+let boundMongoClient = client;
+export let auth = createAuth(boundMongoClient);
+
+/** Rebuild Better Auth if MongoDB replaced a client after a failed handshake. */
+export function getAuth() {
+  if (boundMongoClient !== client) {
+    boundMongoClient = client;
+    auth = createAuth(boundMongoClient);
+  }
+  return auth;
+}

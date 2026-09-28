@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
-import { auth } from "./auth";
+import { getAuth } from "./auth";
+import connectMongo from "./mongodb";
 import type { UserRole } from "./roles";
 import { getHospitalsCollection } from "./models";
 
@@ -8,7 +9,8 @@ import { getHospitalsCollection } from "./models";
  */
 export async function getServerSession() {
   const reqHeaders = await headers();
-  return await auth.api.getSession({
+  await connectMongo();
+  return await getAuth().api.getSession({
     headers: reqHeaders,
   });
 }
