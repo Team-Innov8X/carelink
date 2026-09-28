@@ -1,7 +1,5 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
-import { Medicine } from '../../types';
-import confetti from 'canvas-confetti';
 import {
   Search,
   Pill,
@@ -12,12 +10,8 @@ import {
   CheckCircle2,
   Bell,
   ArrowLeft,
-  Sparkles,
-  MapPin,
-  Clock,
   Check,
   PackageCheck,
-  TrendingDown,
   Plus,
   Minus,
 } from 'lucide-react';
@@ -26,10 +20,10 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
   const {
     medicines,
     pharmacies,
-    orderMedicine,
+    selectedPharmacyId,
     updateMedicineStock,
     addMedicine,
-    medicineOrders,
+    medicineOrders: localMedicineOrders,
     setActiveTab,
   } = useCareLink();
 
@@ -38,6 +32,26 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
   const [activeSubTab, setActiveSubTab] = useState<'search' | 'manage' | 'orders'>(mode === 'pharmacy' ? 'manage' : 'search');
   const [orderConfirmation, setOrderConfirmation] = useState<string | null>(null);
   const [newMedicineName, setNewMedicineName] = useState('');
+  const [orders, setOrders] = useState(localMedicineOrders);
+  const [orderError, setOrderError] = useState('');
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const visibleOrders = mode === 'pharmacy'
+    ? orders.filter((order) => order.pharmacyId === selectedPharmacyId)
+    : orders;
+
+  const refreshOrders = useCallback(async () => {
+    try {
+      const response = await fetch('/api/pharmacy-orders', { cache: 'no-store' });
+      const result = await response.json();
+      if (response.ok) setOrders(result.orders ?? []);
+    } catch { /* Keep the latest available order list when briefly offline. */ }
+  }, []);
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(() => void refreshOrders(), 0);
+    const timer = window.setInterval(() => void refreshOrders(), 5000);
+    return () => { window.clearTimeout(initialTimer); window.clearInterval(timer); };
+  }, [refreshOrders]);
 
   const selectedMed =
     medicines.find((m) => m.id === selectedMedicineId) || medicines[0];
@@ -50,19 +64,25 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
     m.indication.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleOrder = (pharmacyId: string) => {
+  const handleOrder = async (pharmacyId: string) => {
     if (!selectedMed) return;
-    orderMedicine(selectedMed.id, pharmacyId, 1, true);
     const pharm = pharmacies.find((p) => p.id === pharmacyId);
-    setOrderConfirmation(`Medicine reserve request dispatched to ${pharm?.name || 'Pharmacy'}!`);
-    confetti({
-      particleCount: 80,
-      spread: 60,
-      origin: { y: 0.7 },
-    });
-    setTimeout(() => {
-      setOrderConfirmation(null);
-    }, 4000);
+    if (!pharm) return;
+    setIsPlacingOrder(true);
+    setOrderError('');
+    try {
+      const response = await fetch('/api/pharmacy-orders', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ medicineId: selectedMed.id, medicineName: selectedMed.name, pharmacyId, pharmacyName: pharm.name, quantity: 1, isUrgent: true }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not place the pharmacy request.');
+      setOrderConfirmation(`Order request sent to ${pharm.name}.`);
+      await refreshOrders();
+      window.setTimeout(() => setOrderConfirmation(null), 4000);
+    } catch (cause) {
+      setOrderError(cause instanceof Error ? cause.message : 'Could not place the pharmacy request.');
+    } finally { setIsPlacingOrder(false); }
   };
 
   const handleRequestNearest = () => {
@@ -75,7 +95,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
     if (inStockPharmacies.length > 0) {
       handleOrder(inStockPharmacies[0].id);
     } else {
-      alert('All nearby pharmacies are currently out of stock for this formulation. A regional alert has been triggered.');
+      setOrderError('Nearby pharmacies are currently out of stock for this medicine.');
     }
   };
 
@@ -125,7 +145,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
                 : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            Orders ({medicineOrders.length})
+            Orders ({visibleOrders.length})
           </button>
         </div>
       </div>
@@ -151,6 +171,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
           </span>
         </div>
       )}
+      {orderError && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">{orderError}</p>}
 
       {/* Search Bar matching Mockup Screen 7 */}
       {activeSubTab === 'search' && (
@@ -313,11 +334,12 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
 
                       {inStock ? (
                         <button
-                          onClick={() => handleOrder(pharm.id)}
+                          onClick={() => void handleOrder(pharm.id)}
+                          disabled={isPlacingOrder}
                           className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
                         >
                           <Phone className="w-3.5 h-3.5" />
-                          <span>Call / Order</span>
+                            <span>{isPlacingOrder ? 'Sending…' : 'Call / Order'}</span>
                         </button>
                       ) : (
                         <button
@@ -403,13 +425,13 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
           <h3 className="font-bold text-base text-slate-900">Live Dispatched Medicine Orders</h3>
 
-          {medicineOrders.length === 0 ? (
+          {visibleOrders.length === 0 ? (
             <div className="text-center py-10 text-slate-400 text-xs">
               No active pharmacy orders yet. Click &quot;Call / Order&quot; on any in-stock medicine to dispatch an order.
             </div>
           ) : (
             <div className="space-y-3">
-              {medicineOrders.map((ord) => (
+              {visibleOrders.map((ord) => (
                 <div
                   key={ord.id}
                   className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 flex items-center justify-between text-xs"

@@ -87,7 +87,7 @@ export const HospitalDirectory: React.FC = () => {
 
   const handleViewHospital = (hospitalId: string) => {
     setSelectedHospitalId(hospitalId);
-    setActiveTab('hospital-portal');
+    setActiveTab('hospital-view');
   };
 
   return (
