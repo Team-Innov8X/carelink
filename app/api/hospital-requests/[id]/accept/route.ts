@@ -20,9 +20,8 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
   if (!hospitalRequest) return Response.json({ error: "Hospital request not found." }, { status: 404 });
 
   const profile = auth.user as typeof auth.user & { hospitalId?: string; hospitalName?: string };
-  const belongsToHospital = profile.hospitalId
-    ? profile.hospitalId === hospitalRequest.hospitalId
-    : profile.hospitalName === hospitalRequest.hospitalName;
+  const belongsToHospital = profile.hospitalId === hospitalRequest.hospitalId
+    || profile.hospitalName === hospitalRequest.hospitalName;
   if (process.env.NODE_ENV !== "development" && !belongsToHospital) {
     return Response.json({ error: "This request belongs to another hospital." }, { status: 403 });
   }

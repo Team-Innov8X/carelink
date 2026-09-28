@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { submitBedRequest } from '../../utils/hospitalRequests';
 import { StaleDataWarning } from '../common/AlertBanner';
@@ -10,6 +10,7 @@ import {
 
 export const HospitalDirectory: React.FC = () => {
   const {
+    role,
     hospitals,
     emergencies,
     selectedEmergencyId,
@@ -25,9 +26,46 @@ export const HospitalDirectory: React.FC = () => {
   const [dismissedStaleIds, setDismissedStaleIds] = useState<string[]>([]);
   const [requestingHospitalId, setRequestingHospitalId] = useState<string | null>(null);
   const [requestMessage, setRequestMessage] = useState('');
+  const [registeredHospitals, setRegisteredHospitals] = useState<Array<{
+    _id: string;
+    name: string;
+    address?: { street?: string; city?: string; state?: string; zipCode?: string; country?: string };
+    contact?: { phone?: string; emergencyHotline?: string };
+    status: string;
+  }>>([]);
+
+  useEffect(() => {
+    if (role !== 'patient') return;
+    const controller = new AbortController();
+    fetch('/api/hospitals?view=patient', { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Could not load registered hospital names.');
+        return response.json();
+      })
+      .then((records: unknown) => {
+        if (!Array.isArray(records)) throw new Error('Hospital data could not be read.');
+        setRegisteredHospitals(records);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [role]);
+
+  const registeredHospital = registeredHospitals.find((hospital) => hospital.name.trim().toLowerCase() === 'city general hospital');
+  const directoryHospitals = role === 'patient'
+    ? hospitals.map((hospital) => hospital.id === 'hosp-1'
+      ? {
+          ...hospital,
+          name: registeredHospital?.name ?? 'City General Hospital',
+          location: { ...hospital.location, address: registeredHospital?.address
+            ? [registeredHospital.address.street, registeredHospital.address.city, registeredHospital.address.state].filter(Boolean).join(', ')
+            : hospital.location.address },
+          phone: registeredHospital?.contact?.emergencyHotline ?? registeredHospital?.contact?.phone ?? hospital.phone,
+        }
+      : hospital)
+    : hospitals;
 
   // Filter logic
-  const filteredHospitals = hospitals.filter((hosp) => {
+  const filteredHospitals = directoryHospitals.filter((hosp) => {
     // Search query
     if (
       searchQuery &&
@@ -66,7 +104,7 @@ export const HospitalDirectory: React.FC = () => {
   };
 
   const handleRequestBed = async (hospitalId: string) => {
-    const hospital = hospitals.find((item) => item.id === hospitalId);
+    const hospital = directoryHospitals.find((item) => item.id === hospitalId);
     const emergency = emergencies.find((item) => item.id === selectedEmergencyId) ?? emergencies[0];
     if (!hospital || !emergency) {
       setRequestMessage('Select a patient request before requesting a bed.');
@@ -87,7 +125,7 @@ export const HospitalDirectory: React.FC = () => {
 
   const handleViewHospital = (hospitalId: string) => {
     setSelectedHospitalId(hospitalId);
-    setActiveTab('hospital-portal');
+    setActiveTab('hospital-view');
   };
 
   return (

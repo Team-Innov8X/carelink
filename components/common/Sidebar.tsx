@@ -87,7 +87,7 @@ export const Sidebar: React.FC = () => {
         <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
           Navigation
         </div>
-        {navItems.filter((item) => !(role === 'patient' && item.id === 'requests')).map((item) => {
+        {navItems.filter((item) => !(role === 'patient' && ['requests', 'hospital-portal'].includes(item.id))).map((item) => {
           const isActive = activeTab === item.id;
           return (
             <button

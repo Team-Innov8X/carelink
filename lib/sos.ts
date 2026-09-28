@@ -40,9 +40,11 @@ export type HospitalAdmissionRequest = {
   holdId?: string;
   doctorHoldId?: string;
   acceptedByUserId?: string;
+  rejectedByUserId?: string;
   createdAt: Date;
   updatedAt: Date;
   acceptedAt?: Date;
+  rejectedAt?: Date;
 };
 
 let hospitalRequestIndexes: Promise<void> | undefined;
@@ -213,7 +215,7 @@ export function chooseRequiredSpecialty(incidentType: string, equipment: string[
 export type CareNotification = {
   _id: string;
   recipientId: string;
-  type: "hospital_request_accepted";
+  type: "hospital_request_accepted" | "hospital_request_declined";
   title: string;
   message: string;
   relatedRequestId: string;

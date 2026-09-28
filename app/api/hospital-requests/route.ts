@@ -1,5 +1,5 @@
 import { requireRole } from "@/lib/auth-utils";
-import { chooseBedCategory, chooseRequiredSpecialty, createRequestId, distanceKm, sosCollections, validCoordinates, workflowCollections, ensureHospitalRequestForSos } from "@/lib/sos";
+import { chooseBedCategory, chooseRequiredSpecialty, createRequestId, sosCollections, validCoordinates, workflowCollections, ensureHospitalRequestForSos } from "@/lib/sos";
 import connectMongo from "@/lib/mongodb";
 
 export const runtime = "nodejs";
@@ -13,7 +13,11 @@ export async function GET() {
   const profile = auth.user as typeof auth.user & { hospitalId?: string; hospitalName?: string };
   const query: Record<string, unknown> = { status: { $in: ["pending", "accepting", "accepted", "rejected"] } };
   if (process.env.NODE_ENV !== "development") {
-    if (profile.hospitalId) query.hospitalId = profile.hospitalId;
+    if (profile.hospitalId && profile.hospitalName) query.$or = [
+      { hospitalId: profile.hospitalId },
+      { hospitalName: profile.hospitalName },
+    ];
+    else if (profile.hospitalId) query.hospitalId = profile.hospitalId;
     else if (profile.hospitalName) query.hospitalName = profile.hospitalName;
     else return Response.json({ error: "Your account is not linked to a hospital." }, { status: 403 });
   }
@@ -52,27 +56,25 @@ export async function POST(request: Request) {
 
   const database = (await connectMongo()).db();
   const sharedState = await database.collection<{ _id: string; state?: { hospitals?: Array<Record<string, unknown>> } }>("appState").findOne({ _id: "carelink" });
-  const appHospital = process.env.NODE_ENV === "development"
-    ? sharedState?.state?.hospitals?.find((hospital) => hospital.id === body.hospitalId) as Record<string, unknown> | undefined
-    : undefined;
+  const appHospital = sharedState?.state?.hospitals?.find((hospital) => hospital.id === body.hospitalId) as Record<string, unknown> | undefined;
   const { hospitals } = await sosCollections();
   const candidates = await hospitals.find({ status: { $ne: "inactive" } }).toArray();
-  const nearest = candidates.flatMap((hospital) => {
-    const raw = hospital.location as unknown as { latitude?: unknown; longitude?: unknown; coordinates?: unknown };
-    const point = typeof raw?.latitude === "number" && typeof raw.longitude === "number"
-      ? { latitude: raw.latitude, longitude: raw.longitude }
-      : Array.isArray(raw?.coordinates) && typeof raw.coordinates[0] === "number" && typeof raw.coordinates[1] === "number"
-        ? { latitude: raw.coordinates[1], longitude: raw.coordinates[0] }
-        : null;
-    return point ? [{ hospital, distance: distanceKm(patientLocation, point) }] : [];
-  }).sort((a, b) => a.distance - b.distance)[0];
+  const requestedName = typeof body.hospitalName === "string" ? body.hospitalName.trim() : "";
+  const registeredHospital = requestedName
+    ? candidates.find((hospital) => hospital.name.trim().toLowerCase() === requestedName.toLowerCase())
+    : undefined;
   const targetHospital = appHospital
-    ? { id: String(appHospital.id), name: String(appHospital.name), beds: appHospital.beds, inventorySource: "app-state" as const }
-    : nearest
-      ? { id: String(nearest.hospital._id), name: nearest.hospital.name, beds: undefined, inventorySource: undefined }
+    ? {
+        id: String(appHospital.id),
+        name: registeredHospital?.name ?? String(appHospital.name),
+        beds: appHospital.beds,
+        inventorySource: "app-state" as const,
+      }
+    : registeredHospital
+      ? { id: String(registeredHospital._id), name: registeredHospital.name, beds: undefined, inventorySource: undefined }
       : null;
   if (!targetHospital) {
-    return Response.json({ error: "No hospital is registered to receive bed requests yet." }, { status: 503 });
+    return Response.json({ error: "The selected hospital is no longer available. Refresh the hospital list and try again." }, { status: 404 });
   }
 
   const { hospitalRequests } = await workflowCollections();
@@ -99,7 +101,7 @@ export async function POST(request: Request) {
     hospitalName: targetHospital.name,
     inventorySource: targetHospital.inventorySource,
     bedCategory: targetHospital.inventorySource ? chooseBedCategory([incidentType, ...requiredEquipment], targetHospital.beds) : undefined,
-    requiredSpecialty: chooseRequiredSpecialty(incidentType, requiredEquipment, appHospital?.specialties),
+    requiredSpecialty: chooseRequiredSpecialty(incidentType, requiredEquipment, appHospital?.specialties ?? registeredHospital?.specialties),
     requestedHospitalId: body.hospitalId.trim(),
     requestedHospitalName: typeof body.hospitalName === "string" ? body.hospitalName.slice(0, 120) : undefined,
     patientId: auth.user.id,
