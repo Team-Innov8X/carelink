@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
+import { ObjectId, type Filter } from "mongodb";
 import { requireRole } from "@/lib/auth-utils";
 import { errorResponse, validationError } from "@/lib/api-response";
 import { getHospitalsCollection, getResourcesCollection } from "@/lib/models";
+import type { IHospital } from "@/lib/models/hospital";
 import { hospitalCreateSchema } from "@/lib/validation";
 import { expirePendingHolds } from "@/lib/services/hold-service";
 
@@ -10,6 +11,7 @@ export async function GET(request: Request) {
   try {
     await expirePendingHolds();
     const query = new URL(request.url).searchParams;
+    const patientDirectory = query.get("view") === "patient";
     const category = query.get("emergencyType")?.trim() || query.get("specialty")?.trim();
     let hospitalIds: ObjectId[] | undefined;
     if (category) {
@@ -17,7 +19,13 @@ export async function GET(request: Request) {
       const ids = [...new Set(matches.map((item) => item.hospitalId))].filter(ObjectId.isValid).map((id) => new ObjectId(id));
       hospitalIds = ids;
     }
-    const hospitals = await (await getHospitalsCollection()).find(hospitalIds ? { _id: { $in: hospitalIds } } : { status: { $ne: "inactive" } }).project({ name: 1, location: 1, address: 1, status: 1 }).toArray();
+    const filter: Filter<IHospital> = hospitalIds
+      ? { _id: { $in: hospitalIds }, status: { $ne: "inactive" } }
+      : { status: { $ne: "inactive" }, ...(patientDirectory ? { name: { $not: /^CareLink\s/i } } : {}) };
+    const projection = patientDirectory
+      ? { name: 1, location: 1, address: 1, contact: 1, status: 1 }
+      : { name: 1, location: 1, address: 1, status: 1 };
+    const hospitals = await (await getHospitalsCollection()).find(filter).project(projection).toArray();
     return NextResponse.json(hospitals);
   } catch { return errorResponse("Failed to list hospitals", 500); }
 }
