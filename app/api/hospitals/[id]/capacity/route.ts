@@ -1,5 +1,5 @@
 import { requireRole } from "@/lib/auth-utils";
-import clientPromise from "@/lib/mongodb";
+import connectMongo from "@/lib/mongodb";
 
 const bedCategories = ["general", "icu", "trauma", "ventilators"] as const;
 type BedCategory = (typeof bedCategories)[number];
@@ -32,7 +32,7 @@ export async function PATCH(request: Request, context: RouteContext<"/api/hospit
   const bedType = body.bedType as BedCategory;
   const delta = body.delta;
   const profile = auth.user as typeof auth.user & { hospitalId?: string; hospitalName?: string };
-  const collection = (await clientPromise).db().collection<AppStateDocument>("appState");
+  const collection = (await connectMongo()).db().collection<AppStateDocument>("appState");
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const stored = await collection.findOne({ _id: "carelink" });

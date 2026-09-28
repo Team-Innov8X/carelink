@@ -1,7 +1,7 @@
 import { requireRole } from "@/lib/auth-utils";
 import { createRequestId, ensureHospitalRequestForSos, sosCollections, validCoordinates, workflowCollections } from "@/lib/sos";
 import { createHash } from "node:crypto";
-import clientPromise from "@/lib/mongodb";
+import connectMongo from "@/lib/mongodb";
 
 export const runtime = "nodejs";
 
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
   const now = new Date();
   const submissionKey = `${auth.user.id}:${fingerprint}`;
   const requestId = createRequestId();
-  const submissionKeys = (await clientPromise).db().collection<{ _id: string; requestId: string; expiresAt: Date }>("sosSubmissionKeys");
+  const submissionKeys = (await connectMongo()).db().collection<{ _id: string; requestId: string; expiresAt: Date }>("sosSubmissionKeys");
   await submissionKeys.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   let submission;
   try {

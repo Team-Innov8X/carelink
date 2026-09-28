@@ -3,6 +3,7 @@ import type { ObjectId } from "mongodb";
 export type HoldStatus =
   | "pending"    // Hold placed, awaiting hospital confirmation or arrival
   | "confirming"
+  | "releasing"
   | "confirmed"  // Confirmed by hospital staff
   | "fulfilled"  // Patient arrived & resource assigned
   | "expired"    // Auto-expired because hold window lapsed
@@ -25,11 +26,18 @@ export interface IHold {
   id?: string;
   hospitalId: string;
   resourceId: string;
+  ambulanceId?: string;
+  parentHoldId?: string;
+  escalationHoldId?: string;
+  escalationCheckedAt?: Date;
+  escalationAttempts?: number;
+  releaseReason?: "cancelled" | "expired" | "rejected";
   requestedByUserId: string; // User ID of dispatcher or driver placing the hold
   patientDetails: IPatientDetails;
   quantity: number;
   status: HoldStatus;
   expiresAt?: Date;
+  purgeAt?: Date;
   confirmedAt?: Date;
   confirmedByUserId?: string;
   fulfilledAt?: Date;

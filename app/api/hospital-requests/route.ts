@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/auth-utils";
 import { chooseBedCategory, chooseRequiredSpecialty, createRequestId, distanceKm, sosCollections, validCoordinates, workflowCollections, ensureHospitalRequestForSos } from "@/lib/sos";
-import clientPromise from "@/lib/mongodb";
+import connectMongo from "@/lib/mongodb";
 
 export const runtime = "nodejs";
 
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     ? [...new Set(body.requiredEquipment.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))]
     : [];
 
-  const database = (await clientPromise).db();
+  const database = (await connectMongo()).db();
   const sharedState = await database.collection<{ _id: string; state?: { hospitals?: Array<Record<string, unknown>> } }>("appState").findOne({ _id: "carelink" });
   const appHospital = process.env.NODE_ENV === "development"
     ? sharedState?.state?.hospitals?.find((hospital) => hospital.id === body.hospitalId) as Record<string, unknown> | undefined
