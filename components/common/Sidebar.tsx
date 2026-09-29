@@ -35,7 +35,7 @@ export const Sidebar: React.FC = () => {
     },
     {
       id: 'pharmacy',
-      label: 'Medicine & Pharmacy',
+      label: 'Pharmacy',
       icon: <Pill className="w-5 h-5" />,
       badge: outOfStockCount > 0 ? `${outOfStockCount} Alerts` : undefined,
       badgeColor: 'bg-purple-100 text-purple-700',

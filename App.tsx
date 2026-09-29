@@ -19,7 +19,6 @@ import { NotificationCenter } from './components/notifications/NotificationCente
 import { MobileNav } from './components/mobile/MobileNav';
 import { LoaderCircle, Siren } from 'lucide-react';
 import { PatientSOSStatus } from './components/patient/PatientSOSStatus';
-import { PatientDashboard } from './components/patient/PatientDashboard';
 
 const MainAppContent: React.FC = () => {
   const { activeTab, role } = useCareLink();
@@ -28,7 +27,7 @@ const MainAppContent: React.FC = () => {
   const sosSubmittingRef = useRef(false);
   const [sosMessage, setSosMessage] = useState('');
 
-  const handleSOS = () => {
+  const handleSOS = (incidentType = 'Emergency assistance requested') => {
     if (role !== 'patient') {
       setIsNewEmergencyOpen(true);
       return;
@@ -40,7 +39,7 @@ const MainAppContent: React.FC = () => {
         const response = await fetch('/api/sos', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ location }),
+          body: JSON.stringify({ location, incidentType }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Could not send your emergency request.');
@@ -100,11 +99,8 @@ const MainAppContent: React.FC = () => {
 
         {/* Dynamic Center View */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
-          {role === 'patient' && activeTab === 'dashboard' && <>
-            <PatientSOSStatus />
-            <PatientDashboard />
-          </>}
-          {role !== 'patient' && activeTab === 'dashboard' && <DispatcherDashboard />}
+          {role === 'patient' && activeTab === 'dashboard' && <PatientSOSStatus />}
+          {activeTab === 'dashboard' && <DispatcherDashboard onRequestDriver={() => handleSOS('Driver assistance requested')} requestPending={sosSubmitting} />}
           {activeTab === 'requests' && <EmergencyRequestsView onOpenNewEmergency={() => setIsNewEmergencyOpen(true)} />}
           {activeTab === 'notifications' && <NotificationCenter />}
           {activeTab === 'hospitals' && <HospitalDirectory />}
@@ -123,7 +119,7 @@ const MainAppContent: React.FC = () => {
 
       {role === 'patient' && <button
         type="button"
-        onClick={handleSOS}
+        onClick={() => handleSOS()}
         disabled={sosSubmitting}
         aria-label="Create SOS emergency call"
         title="Create SOS emergency call"

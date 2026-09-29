@@ -25,6 +25,8 @@ export async function GET() {
     requiredEquipment: item.requiredEquipment,
     createdAt: item.createdAt,
     acceptedAt: item.acceptedAt,
+    arrivedAt: item.arrivedAt,
+    completedAt: item.completedAt,
     driverAssigned: Boolean(item.driverId),
     hospitalRequest: (() => {
       const hospitalRequest = hospitalRequestBySos.get(item._id);

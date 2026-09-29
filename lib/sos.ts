@@ -18,6 +18,7 @@ export type SosRequest = {
   createdAt: Date;
   acceptedAt?: Date;
   arrivedAt?: Date;
+  completedAt?: Date;
 };
 
 export type HospitalAdmissionRequest = {

@@ -14,7 +14,7 @@ type LiveSOS = {
   createdAt: string;
   distanceKm: number | null;
 };
-type ActiveSOS = Omit<LiveSOS, 'createdAt' | 'distanceKm'> & { acceptedAt?: string; arrivedAt?: string | null; directionsUrl: string; driverLocation?: Coordinates };
+export type ActiveSOS = Omit<LiveSOS, 'createdAt' | 'distanceKm'> & { acceptedAt?: string; arrivedAt?: string | null; directionsUrl: string; driverLocation?: Coordinates };
 type RecommendedHospital = {
   id: string;
   name: string;
@@ -43,7 +43,10 @@ function readError(result: { error?: string; message?: string }, fallback: strin
   return result.error || result.message || fallback;
 }
 
-export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient: [number, number], driver?: [number, number]) => void }) {
+export function LiveSOSRequests({ onShowOnMap, onActiveAssignmentChange }: {
+  onShowOnMap: (patient: [number, number], driver?: [number, number]) => void;
+  onActiveAssignmentChange?: (assignment: ActiveSOS | null) => void;
+}) {
   const [requests, setRequests] = useState<LiveSOS[]>([]);
   const [activeRequest, setActiveRequest] = useState<ActiveSOS | null>(null);
   const [arrivedRequestId, setArrivedRequestId] = useState<string | null>(null);
@@ -82,6 +85,7 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient: [numbe
       if (!response.ok) throw new Error(readError(result, 'Could not load live SOS requests.'));
       setRequests(result.requests ?? []);
       setActiveRequest(result.activeRequest ?? null);
+      onActiveAssignmentChange?.(result.activeRequest ?? null);
       setAvailable(Boolean(result.available));
       setDriverLocation(result.driverLocation ?? result.activeRequest?.driverLocation);
       if (result.activeRequest?.arrivedAt) {
@@ -109,7 +113,7 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient: [numbe
     } finally {
       setLoading(false);
     }
-  }, [loadNearestHospitals, onShowOnMap]);
+  }, [loadNearestHospitals, onActiveAssignmentChange, onShowOnMap]);
 
   useEffect(() => {
     const initialTimer = window.setTimeout(() => void refresh(), 0);
