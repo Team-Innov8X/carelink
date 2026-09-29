@@ -5,7 +5,6 @@ import {
   Pill,
   Store,
   Phone,
-  ShoppingCart,
   AlertCircle,
   CheckCircle2,
   Bell,
@@ -54,7 +53,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
   }, [refreshOrders]);
 
   const selectedMed =
-    medicines.find((m) => m.id === selectedMedicineId) || medicines[0];
+    medicines.find((m) => m.id === selectedMedicineId) || (mode === 'pharmacy' ? medicines[0] : undefined);
   const stockPharmacy = pharmacies[0];
 
   // Filter medicines by search query
@@ -85,21 +84,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
     } finally { setIsPlacingOrder(false); }
   };
 
-  const handleRequestNearest = () => {
-    if (!selectedMed) return;
-    // Find nearest pharmacy with stock > 0
-    const inStockPharmacies = pharmacies
-      .filter((p) => (selectedMed.stock[p.id] || 0) > 0)
-      .sort((a, b) => a.distanceKm - b.distanceKm);
-
-    if (inStockPharmacies.length > 0) {
-      handleOrder(inStockPharmacies[0].id);
-    } else {
-      setOrderError('Nearby pharmacies are currently out of stock for this medicine.');
-    }
-  };
-
-  if (!selectedMed) {
+  if (medicines.length === 0) {
     return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No medicine records are available.</div>;
   }
 
@@ -183,7 +168,16 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
                 type="text"
                 placeholder="Search by medicine name, category, or indication"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  const query = e.target.value;
+                  setSearchQuery(query);
+                  const match = medicines.find((medicine) =>
+                    medicine.name.toLowerCase().includes(query.toLowerCase()) ||
+                    medicine.category.toLowerCase().includes(query.toLowerCase()) ||
+                    medicine.indication.toLowerCase().includes(query.toLowerCase())
+                  );
+                  setSelectedMedicineId(query.trim() ? match?.id ?? '' : '');
+                }}
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-sky-500 focus:ring-1 focus:ring-sky-500 text-xs font-medium outline-none transition-all"
               />
             </div>
@@ -223,8 +217,8 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
             ))}
           </div>
 
-          {/* Requested Medicine Details Card (Mockup Panel 7) */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {/* Keep the request summary empty until the patient searches for or selects a medicine. */}
+          {selectedMed ? <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 border border-purple-200 flex items-center justify-center shrink-0 shadow-xs">
                 <Pill className="w-6 h-6" />
@@ -257,7 +251,11 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
                 {Object.values(selectedMed.stock).reduce((a, b) => a + b, 0)} Units
               </span>
             </div>
-          </div>
+          </div> : <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center">
+            <Pill className="mx-auto h-6 w-6 text-slate-400" />
+            <p className="mt-2 font-semibold text-slate-700">No medicine request</p>
+            <p className="mt-1 text-xs text-slate-500">Search for a medicine or choose one above to view availability.</p>
+          </div>}
 
           {/* Pharmacy Availability List (Mockup Panel 7) */}
           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
@@ -272,7 +270,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
               <span className="text-xs text-slate-400">{pharmacies.length} nearby outlets</span>
             </div>
 
-            <div className="space-y-3">
+            {selectedMed ? <div className="space-y-3">
               {pharmacies.map((pharm) => {
                 const stockQty = selectedMed.stock[pharm.id] || 0;
                 const inStock = stockQty > 0;
@@ -354,18 +352,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
                   </div>
                 );
               })}
-            </div>
-
-            {/* Bottom Full-Width CTA matching mockup */}
-            <div className="pt-3">
-              <button
-                onClick={handleRequestNearest}
-                className="w-full py-3.5 bg-sky-600 hover:bg-sky-500 active:scale-98 text-white font-bold text-sm rounded-xl shadow-md shadow-sky-600/20 transition-all flex items-center justify-center gap-2"
-              >
-                <ShoppingCart className="w-4 h-4" />
-                <span>Request from Nearest Available Pharmacy</span>
-              </button>
-            </div>
+            </div> : <p className="rounded-xl bg-slate-50 px-4 py-5 text-center text-sm text-slate-500">Search for a medicine to see pharmacy availability.</p>}
           </div>
         </>
       )}
