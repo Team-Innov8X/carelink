@@ -13,7 +13,8 @@ export type SosRequest = {
   location: Coordinates;
   incidentType: string;
   requiredEquipment: string[];
-  status: "searching" | "accepted" | "completed" | "cancelled";
+  status: "searching" | "accepted" | "completed" | "cancelled" | "rejected";
+  rejectionReason?: string;
   driverId: string | null;
   createdAt: Date;
   acceptedAt?: Date;

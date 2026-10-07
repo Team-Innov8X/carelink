@@ -4,6 +4,11 @@ import { distanceKm, mapsUrl, sosCollections, validCoordinates } from "@/lib/sos
 export const runtime = "nodejs";
 
 async function getOpenRequests(requests: Awaited<ReturnType<typeof sosCollections>>["requests"]) {
+  const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+  await requests.updateMany(
+    { status: "searching", driverId: null, createdAt: { $lt: oneMinuteAgo } },
+    { $set: { status: "rejected", rejectionReason: "No driver accepted the request within 1 minute", updatedAt: new Date() } },
+  );
   const all = await requests.find({ status: "searching" }).sort({ createdAt: -1 }).toArray();
   const patients = new Set<string>();
   return all.filter((request) => {

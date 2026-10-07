@@ -7,10 +7,15 @@ import { isSelfServiceRole } from "./roles";
 export type { UserRole } from "./roles";
 
 function createAuth(mongoClient: typeof client) {
+  const resolvedBaseUrl = (
+    process.env.BETTER_AUTH_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+  ).replace(/\/+$/, "");
+
   return betterAuth({
   database: mongodbAdapter(mongoClient.db(), { client: mongoClient }),
   secret: process.env.BETTER_AUTH_SECRET || "carelink_default_secret_key_change_in_production",
-  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
+  baseURL: resolvedBaseUrl,
   emailAndPassword: {
     enabled: true,
   },
@@ -57,7 +62,20 @@ function createAuth(mongoClient: typeof client) {
         before: async (user) => {
           const requestedRole = (user as typeof user & { role?: unknown }).role ?? "patient";
           if (!isSelfServiceRole(requestedRole)) return false;
-          return { data: { ...user, role: requestedRole } };
+
+          // Auto-generate username from email or name if absent (e.g. Google OAuth sign-in)
+          const existingUsername = (user as { username?: string }).username;
+          let generatedUsername = existingUsername;
+          if (!generatedUsername || !generatedUsername.trim()) {
+            const rawBase = (user.email ? user.email.split("@")[0] : user.name || "user")
+              .toLowerCase()
+              .replace(/[^a-z0-9_.]/g, "_")
+              .slice(0, 18);
+            const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+            generatedUsername = `${rawBase || "user"}_${randomSuffix}`;
+          }
+
+          return { data: { ...user, role: requestedRole, username: generatedUsername } };
         },
       },
       update: {

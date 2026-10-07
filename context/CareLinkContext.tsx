@@ -56,6 +56,8 @@ interface CareLinkContextType {
   doubleBookingConflict: DoubleBookingConflict | null;
   dismissDoubleBookingModal: () => void;
   retryWithAlternativeBed: (alternativeHospitalId: string) => void;
+  unreadNotificationsCount: number;
+  refreshNotificationsCount: () => Promise<void>;
   
   // Actions
   requestHospitalBed: (requestId: string, hospitalId: string) => boolean;
@@ -108,6 +110,35 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
   const [selectedHospitalId, setSelectedHospitalId] = useState<string>('hosp-1');
   const [selectedPharmacyId, setSelectedPharmacyId] = useState<string>('pharm-1');
   const [doubleBookingConflict, setDoubleBookingConflict] = useState<DoubleBookingConflict | null>(null);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
+
+  const refreshNotificationsCount = React.useCallback(async () => {
+    try {
+      const response = await fetch('/api/notifications', { cache: 'no-store' });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (typeof data.unreadCount === 'number') {
+        setUnreadNotificationsCount(data.unreadCount);
+      }
+    } catch {
+      // silently ignore network errors
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshNotificationsCount();
+    const interval = window.setInterval(() => void refreshNotificationsCount(), 5000);
+    const onNotificationUpdate = () => void refreshNotificationsCount();
+    window.addEventListener('carelink-notification-updated', onNotificationUpdate);
+    window.addEventListener('carelink-sos-updated', onNotificationUpdate);
+    window.addEventListener('carelink-authenticated', onNotificationUpdate);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('carelink-notification-updated', onNotificationUpdate);
+      window.removeEventListener('carelink-sos-updated', onNotificationUpdate);
+      window.removeEventListener('carelink-authenticated', onNotificationUpdate);
+    };
+  }, [refreshNotificationsCount]);
 
   // Restore a fast local copy, then reconcile with the shared MongoDB snapshot.
   useEffect(() => {
@@ -578,6 +609,8 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
         doubleBookingConflict,
         dismissDoubleBookingModal,
         retryWithAlternativeBed,
+        unreadNotificationsCount,
+        refreshNotificationsCount,
         requestHospitalBed,
         acceptEmergency,
         rejectEmergency,

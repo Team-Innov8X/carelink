@@ -118,10 +118,19 @@ export async function seedDatabase(variant: SeedVariant = "demo") {
   if (!hospital1Id || !hospital2Id) throw new Error("Seed hospitals were not available after upsert.");
 
   const sampleResources = [
-    { hospitalId: hospital1Id, type: "bed" as const, category: "icu", name: "ICU Bed Unit A", description: "Negative pressure intensive care bed with continuous telemetry monitor", totalQuantity: 15, availableQuantity: 3 },
-    { hospitalId: hospital1Id, type: "equipment" as const, category: "ventilator", name: "Advanced ICU Ventilator v4", description: "High-frequency oscillatory ventilator", totalQuantity: 10, availableQuantity: 2 },
-    { hospitalId: hospital1Id, type: "specialist" as const, category: "trauma_surgeon", name: "On-Call Trauma Surgeons", description: "Level 1 Trauma Surgical Team on active duty", totalQuantity: 4, availableQuantity: 2 },
-    { hospitalId: hospital2Id, type: "bed" as const, category: "emergency", name: "Emergency Triage Bed", description: "Rapid admission acute trauma bed", totalQuantity: 25, availableQuantity: 5 },
+    { hospitalId: hospital1Id, type: "bed" as const, category: "icu", name: "ICU Bed Unit A", description: "Negative pressure intensive care bed with continuous telemetry monitor", totalQuantity: 15, availableQuantity: 6 },
+    { hospitalId: hospital1Id, type: "bed" as const, category: "general", name: "General Medical Ward Bed", description: "Acute inpatient monitoring bed", totalQuantity: 80, availableQuantity: 24 },
+    { hospitalId: hospital1Id, type: "bed" as const, category: "trauma", name: "Trauma Care Resuscitation Bed", description: "Dedicated acute trauma stabilization bed", totalQuantity: 12, availableQuantity: 4 },
+    { hospitalId: hospital1Id, type: "equipment" as const, category: "ventilator", name: "Advanced ICU Ventilator v4", description: "High-frequency oscillatory ventilator", totalQuantity: 10, availableQuantity: 5 },
+    { hospitalId: hospital1Id, type: "specialist" as const, category: "cardiologist", name: "Dr. Ananya Sen", specialization: "Cardiology", description: "Senior Interventional Cardiologist", totalQuantity: 1, availableQuantity: 1 },
+    { hospitalId: hospital1Id, type: "specialist" as const, category: "emergency_physician", name: "Dr. Rajesh Kumar", specialization: "Emergency Medicine", description: "Head of Emergency Department", totalQuantity: 1, availableQuantity: 1 },
+    { hospitalId: hospital1Id, type: "specialist" as const, category: "trauma_surgeon", name: "Dr. Vikram Mehta", specialization: "Trauma Surgery", description: "Lead Trauma Surgeon on active duty", totalQuantity: 1, availableQuantity: 1 },
+    { hospitalId: hospital1Id, type: "specialist" as const, category: "intensivist", name: "Dr. Arvind Joshi", specialization: "Critical Care & Pulmonology", description: "Chief ICU Intensivist", totalQuantity: 1, availableQuantity: 1 },
+    { hospitalId: hospital2Id, type: "bed" as const, category: "emergency", name: "Emergency Triage Bed", description: "Rapid admission acute trauma bed", totalQuantity: 25, availableQuantity: 8 },
+    { hospitalId: hospital2Id, type: "bed" as const, category: "icu", name: "St. Jude Neuro ICU Bed", description: "Continuous intracranial pressure monitoring ICU bed", totalQuantity: 18, availableQuantity: 3 },
+    { hospitalId: hospital2Id, type: "specialist" as const, category: "neurologist", name: "Dr. Sunita Rao", specialization: "Neurology", description: "Stroke and Neurotrauma Specialist", totalQuantity: 1, availableQuantity: 1 },
+    { hospitalId: hospital2Id, type: "specialist" as const, category: "pediatrician", name: "Dr. Priya Nair", specialization: "Pediatrics", description: "Pediatric Emergency Consultant", totalQuantity: 1, availableQuantity: 1 },
+    { hospitalId: hospital2Id, type: "specialist" as const, category: "orthopedics", name: "Dr. Harish Gupta", specialization: "Orthopedics & Joint Care", description: "Consultant Orthopedic Trauma Surgeon", totalQuantity: 1, availableQuantity: 1 },
   ];
 
   let resourcesInserted = 0;

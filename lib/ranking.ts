@@ -16,9 +16,20 @@ export interface RankingResult {
 }
 
 const DEFAULT_NEEDS: Record<string, string[]> = {
-  cardiac: ["cardiologist", "defibrillator", "icu"], heart_attack: ["cardiologist", "defibrillator", "icu"],
-  trauma: ["trauma_surgeon", "emergency", "icu"], accident: ["trauma_surgeon", "emergency", "icu"],
-  respiratory: ["ventilator", "oxygen_cylinder", "icu"], stroke: ["neurologist", "icu"], pediatric: ["pediatrician", "pediatric"],
+  cardiac: ["cardiologist", "defibrillator", "icu"],
+  cardiac_arrest: ["cardiologist", "defibrillator", "icu"],
+  heart_attack: ["cardiologist", "defibrillator", "icu"],
+  trauma: ["trauma_surgeon", "emergency", "icu"],
+  accident: ["trauma_surgeon", "emergency", "icu"],
+  respiratory: ["ventilator", "oxygen_cylinder", "icu"],
+  respiratory_distress: ["ventilator", "oxygen_cylinder", "icu"],
+  stroke: ["neurologist", "icu"],
+  stroke_symptoms: ["neurologist", "icu"],
+  pediatric: ["pediatrician", "pediatric"],
+  severe_bleeding: ["trauma_surgeon", "emergency", "icu"],
+  allergic_reaction: ["emergency", "icu"],
+  burns: ["emergency", "icu", "trauma_surgeon"],
+  other: ["emergency", "icu"],
 };
 const normalize = (value: string) => value.trim().toLowerCase().replace(/[ -]+/g, "_");
 

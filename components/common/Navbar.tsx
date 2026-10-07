@@ -10,14 +10,10 @@ import { ProfileMenu } from './ProfileMenu';
 export const Navbar: React.FC = () => {
   const {
     setActiveTab,
-    emergencies,
+    unreadNotificationsCount,
   } = useCareLink();
 
   const [searchQuery, setSearchQuery] = useState('');
-
-  const activeEmergenciesCount = emergencies.filter(
-    (e) => e.status !== 'Completed' && e.status !== 'Rejected'
-  ).length;
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-xs">
@@ -64,16 +60,16 @@ export const Navbar: React.FC = () => {
 
         {/* Right Section: Notification and account */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Active Emergency Alert Badge */}
+          {/* Notifications Button */}
           <button
             onClick={() => setActiveTab('notifications')}
             className="relative p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
-            title={`${activeEmergenciesCount} active emergency cases · Open notifications`}
+            title={unreadNotificationsCount > 0 ? `${unreadNotificationsCount} unread notifications` : 'Notifications'}
           >
             <Bell className="w-5 h-5" />
-            {activeEmergenciesCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-rose-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
-                {activeEmergenciesCount}
+            {unreadNotificationsCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 min-w-4 h-4 px-1 bg-rose-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse">
+                {unreadNotificationsCount}
               </span>
             )}
           </button>

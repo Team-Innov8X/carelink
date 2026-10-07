@@ -17,8 +17,10 @@ import { NewEmergencyModal } from './components/dispatcher/NewEmergencyModal';
 import { EmergencyRequestsView } from './components/dispatcher/EmergencyRequestsView';
 import { NotificationCenter } from './components/notifications/NotificationCenter';
 import { MobileNav } from './components/mobile/MobileNav';
-import { LoaderCircle, Siren } from 'lucide-react';
-import { PatientSOSStatus } from './components/patient/PatientSOSStatus';
+import { LoaderCircle, Siren, CheckCircle2, X } from 'lucide-react';
+import { PatientEmergencyRequestsView } from './components/patient/PatientEmergencyRequestsView';
+import { RoutineDriverBookingView } from './components/patient/RoutineDriverBookingView';
+import { TriageChatView } from './components/patient/TriageChatView';
 
 const MainAppContent: React.FC = () => {
   const { activeTab, role } = useCareLink();
@@ -26,6 +28,17 @@ const MainAppContent: React.FC = () => {
   const [sosSubmitting, setSosSubmitting] = useState(false);
   const sosSubmittingRef = useRef(false);
   const [sosMessage, setSosMessage] = useState('');
+  const sosToastTimer = useRef<number | null>(null);
+
+  const showSosToast = (message: string) => {
+    setSosMessage(message);
+    if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current);
+    if (message) {
+      sosToastTimer.current = window.setTimeout(() => {
+        setSosMessage('');
+      }, 30000);
+    }
+  };
 
   const handleSOS = (incidentType = 'Emergency assistance requested') => {
     if (role !== 'patient') {
@@ -48,10 +61,10 @@ const MainAppContent: React.FC = () => {
           : result.request.status === 'completed'
             ? 'This recent SOS was already handled'
             : 'Your SOS request has already been created');
-        setSosMessage(`${statusMessage.replace(/[.\s]+$/, '')}. Reference: ${result.request.id}`);
+        showSosToast(`${statusMessage.replace(/[.\s]+$/, '')}. Reference: ${result.request.id}`);
         window.dispatchEvent(new Event('carelink-sos-updated'));
       } catch (error) {
-        setSosMessage(error instanceof Error ? error.message : 'Could not send your emergency request.');
+        showSosToast(error instanceof Error ? error.message : 'Could not send your emergency request.');
       } finally {
         sosSubmittingRef.current = false;
         setSosSubmitting(false);
@@ -60,19 +73,19 @@ const MainAppContent: React.FC = () => {
 
     if (process.env.NODE_ENV === 'development') {
       setSosSubmitting(true);
-      setSosMessage('Creating your demo emergency request near Connaught Place…');
+      showSosToast('Creating your demo emergency request near Connaught Place…');
       void sendRequest({ latitude: 28.6328, longitude: 77.2195 });
       return;
     }
 
     if (!navigator.geolocation) {
-      setSosMessage('This browser cannot access GPS. Enable location services or use a GPS-enabled device.');
+      showSosToast('This browser cannot access GPS. Enable location services or use a GPS-enabled device.');
       sosSubmittingRef.current = false;
       return;
     }
 
     setSosSubmitting(true);
-    setSosMessage('Getting your GPS location…');
+    showSosToast('Getting your GPS location…');
     navigator.geolocation.getCurrentPosition(({ coords }) => {
       void sendRequest({ latitude: coords.latitude, longitude: coords.longitude });
     }, (error) => {
@@ -81,7 +94,7 @@ const MainAppContent: React.FC = () => {
         : error.code === error.TIMEOUT
           ? 'Could not get your location in time. Please try again.'
           : 'Your location is unavailable. Turn on GPS and try again.';
-      setSosMessage(message);
+      showSosToast(message);
       sosSubmittingRef.current = false;
       setSosSubmitting(false);
     }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
@@ -99,9 +112,16 @@ const MainAppContent: React.FC = () => {
 
         {/* Dynamic Center View */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
-          {role === 'patient' && activeTab === 'dashboard' && <PatientSOSStatus />}
-          {activeTab === 'dashboard' && <DispatcherDashboard onRequestDriver={() => handleSOS('Driver assistance requested')} requestPending={sosSubmitting} />}
-          {activeTab === 'requests' && <EmergencyRequestsView onOpenNewEmergency={() => setIsNewEmergencyOpen(true)} />}
+          {activeTab === 'dashboard' && <DispatcherDashboard />}
+          {activeTab === 'requests' && (
+            role === 'patient' ? (
+              <PatientEmergencyRequestsView />
+            ) : (
+              <EmergencyRequestsView onOpenNewEmergency={() => setIsNewEmergencyOpen(true)} />
+            )
+          )}
+          {activeTab === 'triage' && <TriageChatView />}
+          {activeTab === 'driver-request' && <RoutineDriverBookingView />}
           {activeTab === 'notifications' && <NotificationCenter />}
           {activeTab === 'hospitals' && <HospitalDirectory />}
           {activeTab === 'hospital-view' && <HospitalDetailsView />}
@@ -128,7 +148,40 @@ const MainAppContent: React.FC = () => {
         {sosSubmitting ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Siren className="h-5 w-5" />}
         {sosSubmitting ? 'Sending…' : 'SOS Call'}
       </button>}
-      {role === 'patient' && sosMessage && <p role="status" aria-live="polite" className="fixed bottom-[calc(9rem+env(safe-area-inset-bottom))] right-4 z-50 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-800 shadow-xl sm:max-w-sm md:bottom-20 md:right-6">{sosMessage}</p>}
+      {role === 'patient' && sosMessage && (
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-[calc(9rem+env(safe-area-inset-bottom))] right-4 z-50 max-w-[calc(100vw-2rem)] sm:max-w-md rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl md:bottom-20 md:right-6 animate-in fade-in slide-in-from-bottom-2 duration-200"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                <CheckCircle2 className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="font-bold text-slate-900 text-sm">Emergency SOS Transmitted</p>
+                <p className="mt-1 text-xs text-slate-600 leading-relaxed">{sosMessage}</p>
+                <p className="mt-2 text-[11px] font-medium text-slate-400">
+                  Track live driver status under &quot;Your Emergency Requests&quot; · Closes in 30s
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current);
+                setSosMessage('');
+              }}
+              aria-label="Close notification"
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </aside>
+      )}
 
       {/* Modals */}
       <NewEmergencyModal
