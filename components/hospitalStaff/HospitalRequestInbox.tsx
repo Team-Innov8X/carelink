@@ -18,7 +18,7 @@ type HospitalRequest = {
   createdAt: string;
 };
 
-export function HospitalRequestInbox() {
+export function HospitalRequestInbox({ searchQuery = '' }: { searchQuery?: string }) {
   const [requests, setRequests] = useState<HospitalRequest[]>([]);
   const [tab, setTab] = useState<'incoming' | 'accepted' | 'declined'>('incoming');
   const [loading, setLoading] = useState(true);
@@ -86,9 +86,11 @@ export function HospitalRequestInbox() {
     }
   };
 
-  const incoming = requests.filter((request) => request.status === 'pending' || request.status === 'accepting');
-  const accepted = requests.filter((request) => request.status === 'accepted');
-  const declined = requests.filter((request) => request.status === 'rejected');
+  const query = searchQuery.trim().toLocaleLowerCase();
+  const filteredRequests = query ? requests.filter((request) => `${request.patientName} ${request.patientPhone ?? ''} ${request.incidentType} ${request.hospitalName} ${request.requiredSpecialty ?? ''} ${request.bedCategory ?? ''}`.toLocaleLowerCase().includes(query)) : requests;
+  const incoming = filteredRequests.filter((request) => request.status === 'pending' || request.status === 'accepting');
+  const accepted = filteredRequests.filter((request) => request.status === 'accepted');
+  const declined = filteredRequests.filter((request) => request.status === 'rejected');
   const visibleRequests = tab === 'incoming' ? incoming : tab === 'accepted' ? accepted : declined;
 
   return <section className="rounded-2xl border border-rose-200 bg-white p-5 shadow-xs">

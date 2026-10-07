@@ -58,7 +58,6 @@ export const MapView: React.FC<MapViewProps> = ({
     return point ? [point.lat, point.lng] : null;
   }, [center, emergency?.location, ambulance?.location, hospital?.location]);
   const mapCenterRef = useRef<[number, number] | null>(mapCenter);
-  useEffect(() => { mapCenterRef.current = mapCenter; }, [mapCenter]);
   const hasMapCenter = mapCenter !== null;
   const routeKey = patientLocation && driverLocation
     ? [driverLocation, patientLocation, ...(hospitalLocation ? [hospitalLocation] : [])].map(([lat, lng]) => `${lat},${lng}`).join('|')
@@ -91,7 +90,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
     return () => controller.abort();
   }, [routeKey]);
-  const currentRoutedPath = routeKey && routedPath?.key === routeKey ? routedPath.path : null;
+  const currentRoutedPath = routeKey ? routedPath : null;
 
   useEffect(() => {
     let active = true;
