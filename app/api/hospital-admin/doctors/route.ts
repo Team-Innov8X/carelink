@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { requireRole } from '@/lib/auth-utils';
-import clientPromise from '@/lib/mongodb';
+import connectMongo from '@/lib/mongodb';
 import { hospitalSpecialties } from '@/data/hospitalSpecialties';
 import { writeHospitalAudit } from '@/lib/hospital-audit';
 
@@ -16,10 +16,10 @@ async function getAccountHospital() {
   }
   const hospitalName = (authorization.user as typeof authorization.user & { hospitalName?: string }).hospitalName?.trim();
   if (!hospitalName) return { response: Response.json({ error: 'Your account is not linked to a hospital.' }, { status: 403 }) };
-  const client = await clientPromise;
+  const client = await connectMongo();
   const collection = client.db().collection<{ _id: string; state?: { hospitals?: AdminHospital[] } }>('appState');
   const stored = await collection.findOne({ _id: 'carelink' });
-  const hospital = stored?.state?.hospitals?.find((item) => item.name.trim().toLocaleLowerCase() === hospitalName.toLocaleLowerCase());
+  const hospital = stored?.state?.hospitals?.find((item: AdminHospital) => item.name.trim().toLocaleLowerCase() === hospitalName.toLocaleLowerCase());
   if (!hospital) return { response: Response.json({ error: 'No hospital record is linked to your account.' }, { status: 404 }) };
   return { collection, hospital };
 }

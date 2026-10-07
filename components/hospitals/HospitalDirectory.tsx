@@ -163,14 +163,18 @@ export const HospitalDirectory: React.FC = () => {
       // Adapt hospital object for bed request
       const formattedHospital = {
         ...hospital,
+        status: (hospital.status === 'Available' || hospital.status === 'Limited' ? hospital.status : 'Full') as 'Available' | 'Limited' | 'Full',
         location: {
           lat: hospital.location?.coordinates ? hospital.location.coordinates[1] : 28.6139,
           lng: hospital.location?.coordinates ? hospital.location.coordinates[0] : 77.209,
           address: typeof hospital.address === 'string' ? hospital.address : hospital.address?.street || '',
         },
-        beds: hospital.beds,
+        beds: { ...hospital.beds, ventilators: hospital.beds.ventilators ?? { available: 0, total: 0 } },
         distanceKm: hospital.distanceKm ?? 5,
         etaMin: Math.round((hospital.distanceKm || 5) * 2.5),
+        lastUpdatedMinutesAgo: 0,
+        rating: 0,
+        phone: hospital.phone ?? hospital.contact?.phone ?? '',
         specialtyDoctors: {},
         updatedAt: new Date().toISOString(),
       };

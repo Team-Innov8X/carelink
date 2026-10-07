@@ -1,5 +1,5 @@
 import { requireRole } from '@/lib/auth-utils';
-import clientPromise from '@/lib/mongodb';
+import connectMongo from '@/lib/mongodb';
 import { workflowCollections } from '@/lib/sos';
 import { writeHospitalAudit } from '@/lib/hospital-audit';
 
@@ -12,9 +12,9 @@ type HospitalDoctor = { id: string; name: string; specialty: string; available: 
 type AdminHospital = { id: string; name: string; beds: Record<BedType, Bed>; specialties?: string[]; specialtyDoctors?: Record<string, number>; doctors?: HospitalDoctor[]; acceptingRequests?: boolean; lastCapacityUpdatedAt?: Date; capacitySource?: string };
 
 async function getAssignedHospital(hospitalName: string) {
-  const client = await clientPromise;
+  const client = await connectMongo();
   const state = await client.db().collection<{ _id: string; state?: { hospitals?: AdminHospital[] } }>('appState').findOne({ _id: 'carelink' });
-  return state?.state?.hospitals?.find((hospital) => hospital.name.trim().toLocaleLowerCase() === hospitalName.trim().toLocaleLowerCase()) ?? null;
+  return state?.state?.hospitals?.find((hospital: AdminHospital) => hospital.name.trim().toLocaleLowerCase() === hospitalName.trim().toLocaleLowerCase()) ?? null;
 }
 
 export async function GET() {
@@ -38,7 +38,8 @@ export async function GET() {
       const target = activeIds.has(item._id) ? occupiedByType : reservedByType;
       target.set(item.bedCategory, (target.get(item.bedCategory) ?? 0) + 1);
     }
-    const enriched = { ...hospital, acceptingRequests: hospital.acceptingRequests !== false, lastCapacityUpdatedAt: hospital.lastCapacityUpdatedAt, beds: Object.fromEntries(Object.entries(hospital.beds).map(([key, bed]) => [key, { ...bed, reserved: reservedByType.get(key) ?? 0, occupied: Math.max(occupiedByType.get(key) ?? 0, Math.max(0, bed.total - bed.available - (reservedByType.get(key) ?? 0))) }])) };
+    const enrichedBeds = Object.fromEntries(Object.entries(hospital.beds as Record<string, Bed>).map(([key, bed]) => [key, { ...bed, reserved: reservedByType.get(key) ?? 0, occupied: Math.max(occupiedByType.get(key) ?? 0, Math.max(0, bed.total - bed.available - (reservedByType.get(key) ?? 0))) }]));
+    const enriched = { ...hospital, acceptingRequests: hospital.acceptingRequests !== false, lastCapacityUpdatedAt: hospital.lastCapacityUpdatedAt, beds: enrichedBeds };
     return Response.json({ hospital: enriched });
   }
   return hospital
@@ -62,7 +63,7 @@ export async function PATCH(request: Request) {
     if (!hospital) return Response.json({ error: 'No hospital record is linked to your account.' }, { status: 404 });
     const now = new Date();
     const set = body.action === 'reconfirm' ? { lastCapacityUpdatedAt: now, capacitySource: 'staff-confirmed', updatedAt: now } : body.action === 'simulate-stale' ? { lastCapacityUpdatedAt: new Date(now.getTime() - 60 * 60_000), capacitySource: 'auto-simulated', updatedAt: now } : { acceptingRequests: body.acceptingRequests, updatedAt: now };
-    const client = await clientPromise;
+    const client = await connectMongo();
     const updates = Object.fromEntries(Object.entries(set).map(([key, value]) => [`state.hospitals.$[hospital].${key}`, value]));
     if (body.action === 'reconfirm') for (const bedType of bedTypes) updates[`state.hospitals.$[hospital].beds.${bedType}.lastUpdatedAt`] = now;
     await client.db().collection<{ _id: string }>('appState').updateOne({ _id: 'carelink', 'state.hospitals.id': hospital.id }, { $set: updates }, { arrayFilters: [{ 'hospital.id': hospital.id }] });
@@ -87,7 +88,7 @@ export async function PATCH(request: Request) {
     if (removing && !currentSpecialties.some((item) => item.toLocaleLowerCase() === specialty.toLocaleLowerCase())) {
       return Response.json({ error: 'That specialty is not on this hospital roster.' }, { status: 404 });
     }
-    const client = await clientPromise;
+    const client = await connectMongo();
     const collection = client.db().collection<{ _id: string; state?: { hospitals?: AdminHospital[] } }>('appState');
     const filter = { _id: 'carelink', 'state.hospitals': { $elemMatch: { id: hospital.id, name: hospital.name } } };
     const result = removing
@@ -118,7 +119,7 @@ export async function PATCH(request: Request) {
   const occupied = oldBed.total - oldBed.available;
   if (total < occupied) return Response.json({ error: `Total capacity cannot be less than the ${occupied} currently occupied beds.` }, { status: 400 });
 
-  const client = await clientPromise;
+  const client = await connectMongo();
   const collection = client.db().collection<{ _id: string; state?: { hospitals?: AdminHospital[] } }>('appState');
   const result = await collection.updateOne(
     { _id: 'carelink', state: { $exists: true }, 'state.hospitals': { $elemMatch: { name: hospital.name, [`beds.${bedType}.total`]: oldBed.total, [`beds.${bedType}.available`]: oldBed.available } } },

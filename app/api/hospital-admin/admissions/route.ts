@@ -1,7 +1,7 @@
 import { requireRole } from '@/lib/auth-utils';
 import { workflowCollections } from '@/lib/sos';
 import { ObjectId } from 'mongodb';
-import clientPromise from '@/lib/mongodb';
+import connectMongo from '@/lib/mongodb';
 import { getHoldsCollection, getResourcesCollection } from '@/lib/models';
 import { writeHospitalAudit } from '@/lib/hospital-audit';
 
@@ -10,10 +10,10 @@ export const runtime = 'nodejs';
 async function returnReservedBed(admission: { hospitalId: string; bedCategory?: string; inventorySource?: string; holdId?: string }) {
   if (!admission.bedCategory && !admission.holdId) return true;
   if (admission.inventorySource === 'app-state' && admission.bedCategory) {
-    const client = await clientPromise;
+    const client = await connectMongo();
     const collection = client.db().collection<{ _id: string; state?: { hospitals?: Array<{ id: string; beds?: Record<string, { total: number; available: number }> }> } }>('appState');
     const state = await collection.findOne({ _id: 'carelink' });
-    const hospital = state?.state?.hospitals?.find((item) => item.id === admission.hospitalId);
+    const hospital = state?.state?.hospitals?.find((item: { id: string; beds?: Record<string, { total: number; available: number }> }) => item.id === admission.hospitalId);
     const bed = hospital?.beds?.[admission.bedCategory];
     if (!hospital || !bed) return false;
     if (bed.available >= bed.total) return true;

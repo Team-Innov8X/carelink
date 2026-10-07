@@ -18,8 +18,9 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
 
   const { id } = await context.params;
   const { hospitalRequests, notifications } = await workflowCollections();
-  let hospitalRequest = await hospitalRequests.findOne({ _id: id });
-  if (!hospitalRequest) return Response.json({ error: "Hospital request not found." }, { status: 404 });
+  const foundHospitalRequest = await hospitalRequests.findOne({ _id: id });
+  if (!foundHospitalRequest) return Response.json({ error: "Hospital request not found." }, { status: 404 });
+  let hospitalRequest = foundHospitalRequest;
 
   const profile = auth.user as typeof auth.user & { hospitalId?: string; hospitalName?: string };
   const belongsToHospital = (profile.hospitalId && profile.hospitalId === hospitalRequest.hospitalId)
