@@ -1,12 +1,17 @@
 import { requireRole } from "@/lib/auth-utils";
 import { distanceKm, expireAndReofferDriverOffers, mapsUrl, sosCollections, validCoordinates, workflowCollections } from "@/lib/sos";
-import clientPromise from "@/lib/mongodb";
+import connectMongo from "@/lib/mongodb";
 import { expireHospitalReservations } from '@/lib/hospital-reservations';
 import { ObjectId } from 'mongodb';
 
 export const runtime = "nodejs";
 
 async function getOpenRequests(requests: Awaited<ReturnType<typeof sosCollections>>["requests"], driverId?: string) {
+  const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+  await requests.updateMany(
+    { status: "searching", driverId: null, createdAt: { $lt: oneMinuteAgo } },
+    { $set: { status: "rejected", rejectionReason: "No driver accepted the request within 1 minute", updatedAt: new Date() } },
+  );
   const all = await requests.find({ status: "searching", ...(driverId ? { rejectedDriverIds: { $ne: driverId }, $or: [{ assignedDriverId: driverId }, { assignedDriverId: { $exists: false } }] } : {}) }).sort({ createdAt: -1 }).toArray();
   const patients = new Set<string>();
   return all.filter((request) => {
@@ -44,11 +49,11 @@ export async function GET() {
     hospitalRequest = await hospitalRequests.findOne({ _id: hospitalRequest._id });
   }
   const hospitalState = process.env.NODE_ENV === "development" && hospitalRequest?.inventorySource === "app-state"
-    ? await (await clientPromise).db().collection<{ _id: string; state?: { hospitals?: Array<{ id: string; location?: { lat: number; lng: number; address: string } }> } }>("appState").findOne({ _id: "carelink" })
+    ? await (await connectMongo()).db().collection<{ _id: string; state?: { hospitals?: Array<{ id: string; location?: { lat: number; lng: number; address: string } }> } }>("appState").findOne({ _id: "carelink" })
     : null;
   const appDestination = hospitalRequest ? hospitalState?.state?.hospitals?.find((item) => item.id === hospitalRequest.hospitalId)?.location : null;
   const hospitalDirectory = hospitalRequest && !appDestination
-    ? await (await clientPromise).db().collection<{ location?: unknown }>('hospitals').findOne({ _id: (ObjectId.isValid(hospitalRequest.hospitalId) ? new ObjectId(hospitalRequest.hospitalId) : hospitalRequest.hospitalId) as never })
+    ? await (await connectMongo()).db().collection<{ location?: unknown }>('hospitals').findOne({ _id: (ObjectId.isValid(hospitalRequest.hospitalId) ? new ObjectId(hospitalRequest.hospitalId) : hospitalRequest.hospitalId) as never })
     : null;
   const rawLocation = hospitalDirectory?.location as { latitude?: unknown; longitude?: unknown; coordinates?: unknown } | undefined;
   const destination = appDestination ? { lat: appDestination.lat, lng: appDestination.lng, address: appDestination.address } : rawLocation && typeof rawLocation.latitude === 'number' && typeof rawLocation.longitude === 'number' ? { lat: rawLocation.latitude, lng: rawLocation.longitude, address: '' } : rawLocation && Array.isArray(rawLocation.coordinates) && typeof rawLocation.coordinates[0] === 'number' && typeof rawLocation.coordinates[1] === 'number' ? { lat: rawLocation.coordinates[1], lng: rawLocation.coordinates[0], address: '' } : null;

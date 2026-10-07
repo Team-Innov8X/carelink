@@ -44,7 +44,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const routeRef = useRef<Leaflet.Polyline | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState('');
-  const [routedPath, setRoutedPath] = useState<{ key: string; path: [number, number][] } | null>(null);
+  const [routeResult, setRouteResult] = useState<{ key: string; path: [number, number][] } | null>(null);
   const { ambulances, hospitals, emergencies, selectedEmergencyId, setSelectedEmergencyId } = useCareLink();
 
   const emergency = emergencies.find((item) => item.id === selectedEmergencyId) ?? emergencies[0];
@@ -63,6 +63,8 @@ export const MapView: React.FC<MapViewProps> = ({
   const routeKey = patientLocation && driverLocation
     ? [driverLocation, patientLocation, ...(hospitalLocation ? [hospitalLocation] : [])].map(([lat, lng]) => `${lat},${lng}`).join('|')
     : '';
+  useEffect(() => { mapCenterRef.current = mapCenter; }, [mapCenter]);
+  const routedPath = routeResult?.key === routeKey ? routeResult.path : null;
 
   useEffect(() => {
     if (!routeKey) return;
@@ -79,7 +81,7 @@ export const MapView: React.FC<MapViewProps> = ({
       })
       .then((result: { code?: string; routes?: { geometry?: { coordinates?: [number, number][] } }[] }) => {
         const coordinates = result.code === 'Ok' ? result.routes?.[0]?.geometry?.coordinates : undefined;
-        if (coordinates?.length) setRoutedPath({ key: routeKey, path: coordinates.map(([lng, lat]) => [lat, lng]) });
+        if (coordinates?.length) setRouteResult({ key: routeKey, path: coordinates.map(([lng, lat]) => [lat, lng]) });
       })
       .catch((error: unknown) => {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -120,10 +122,9 @@ export const MapView: React.FC<MapViewProps> = ({
       }).addTo(map);
       layersRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
-      resizeObserver = new ResizeObserver(() => map?.invalidateSize({ pan: false }));
+      resizeObserver = new ResizeObserver(() => map?.invalidateSize({ animate: false, pan: false }));
       resizeObserver.observe(containerRef.current);
-      requestAnimationFrame(() => map?.invalidateSize({ pan: false }));
-      window.setTimeout(() => map?.invalidateSize({ pan: false }), 120);
+      requestAnimationFrame(() => map?.invalidateSize({ animate: false, pan: false }));
       setMapError('');
       setMapReady(true);
     }).catch((error: unknown) => {

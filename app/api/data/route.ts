@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
-import clientPromise from "@/lib/mongodb";
-import { auth } from "@/lib/auth";
+import connectMongo from "@/lib/mongodb";
+import { getAuth } from "@/lib/auth";
 import { INITIAL_HOSPITALS } from "@/data/mockHospitals";
 import { INITIAL_EMERGENCIES } from "@/data/mockEmergencies";
 import { INITIAL_PHARMACIES } from "@/data/mockPharmacies";
@@ -21,11 +21,14 @@ const defaultState = {
 };
 
 const stateCollection = async () => {
-  const client = await clientPromise;
-  return client.db().collection<{ _id: string; state: Record<string, unknown>; updatedAt?: Date }>("appState");
+  const client = await connectMongo();
+  return client.db().collection<{ _id: string; state: Record<string, unknown>; updatedAt?: Date; revision?: number }>("appState");
 };
 
-const hasSession = async () => Boolean(await auth.api.getSession({ headers: await headers() }));
+const hasSession = async () => {
+  await connectMongo();
+  return Boolean(await getAuth().api.getSession({ headers: await headers() }));
+};
 
 export async function GET() {
   if (!(await hasSession())) {
@@ -51,7 +54,7 @@ export async function GET() {
     }
     await collection.updateOne(
       { _id: "carelink" },
-      { $setOnInsert: { state: defaultState, updatedAt: new Date() } },
+      { $setOnInsert: { state: defaultState, updatedAt: new Date(), revision: 0 } },
       { upsert: true },
     );
     const initialized = await collection.findOne({ _id: "carelink" });
@@ -73,26 +76,63 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Invalid CareLink state" }, { status: 400 });
     }
     const collection = await stateCollection();
-    const current = await collection.findOne({ _id: 'carelink' });
-    if (current?.state && Array.isArray(state.hospitals)) {
-      const currentState = current.state as { medicines?: unknown[]; medicineOrders?: unknown[] };
-      // Inventory and order changes use atomic pharmacy endpoints; preserve them
-      // when another portal saves its local dashboard snapshot.
-      state.medicines = currentState.medicines ?? state.medicines;
-      state.medicineOrders = currentState.medicineOrders ?? state.medicineOrders;
-      const currentHospitals = (current.state as { hospitals?: Array<Record<string, unknown>> }).hospitals ?? [];
-      const byId = new Map(currentHospitals.map((hospital) => [hospital.id, hospital]));
-      state.hospitals = state.hospitals.map((hospital: Record<string, unknown>) => {
-        const live = byId.get(hospital.id);
-        return live ? { ...hospital, beds: live.beds, specialties: live.specialties ?? hospital.specialties, doctors: live.doctors, acceptingRequests: live.acceptingRequests, lastCapacityUpdatedAt: live.lastCapacityUpdatedAt, capacitySource: live.capacitySource } : hospital;
+    const incomingHospitals = state.hospitals as Record<string, unknown>[];
+    const bedTypes = ["general", "icu", "trauma", "ventilators"] as const;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const stored = await collection.findOne({ _id: "carelink" });
+      const savedHospitals = Array.isArray(stored?.state?.hospitals)
+        ? stored.state.hospitals as Record<string, unknown>[]
+        : [];
+      const mergedHospitals = incomingHospitals.map((incoming) => {
+        const current = savedHospitals.find((hospital) => hospital.id === incoming.id);
+        if (!current) return incoming;
+        const currentBeds = current.beds && typeof current.beds === "object" ? current.beds as Record<string, unknown> : {};
+        const oldBeds = current.beds && typeof current.beds === "object" ? current.beds as Record<string, unknown> : {};
+        const newBeds = incoming.beds && typeof incoming.beds === "object" ? incoming.beds as Record<string, unknown> : {};
+        const beds = { ...newBeds };
+        for (const bedType of bedTypes) {
+          const oldBed = oldBeds[bedType] as { available?: unknown } | undefined;
+          const newBed = newBeds[bedType] as { available?: unknown; total?: unknown } | undefined;
+          if (typeof oldBed?.available === "number" && typeof newBed?.total === "number") {
+            beds[bedType] = { ...newBed, available: Math.min(oldBed.available, newBed.total), ...(typeof (oldBed as { reserved?: unknown }).reserved === "number" ? { reserved: (oldBed as { reserved: number }).reserved } : {}) };
+          }
+        }
+        const incomingDoctors = incoming.specialtyDoctors && typeof incoming.specialtyDoctors === "object" ? incoming.specialtyDoctors as Record<string, number> : {};
+        const savedDoctors = current.specialtyDoctors && typeof current.specialtyDoctors === "object" ? current.specialtyDoctors as Record<string, number> : {};
+        return {
+          ...incoming,
+          beds: { ...currentBeds, ...beds },
+          specialties: current.specialties ?? incoming.specialties,
+          doctors: current.doctors,
+          acceptingRequests: current.acceptingRequests,
+          lastCapacityUpdatedAt: current.lastCapacityUpdatedAt,
+          capacitySource: current.capacitySource,
+          specialtyDoctors: { ...incomingDoctors, ...savedDoctors },
+        };
       });
+      const currentState = stored?.state as { medicines?: unknown[]; medicineOrders?: unknown[] } | undefined;
+      // Pharmacy updates use dedicated endpoints; preserve them when stale portal snapshots save.
+      const stateToSave = {
+        ...state,
+        medicines: currentState?.medicines ?? state.medicines,
+        medicineOrders: currentState?.medicineOrders ?? state.medicineOrders,
+        hospitals: mergedHospitals,
+      };
+      const filter = stored
+        ? { _id: "carelink", ...(typeof stored.revision === "number" ? { revision: stored.revision } : { revision: { $exists: false } }) }
+        : { _id: "carelink" };
+      try {
+        const result = await collection.updateOne(
+          filter,
+          { $set: { state: stateToSave, updatedAt: new Date() }, $inc: { revision: 1 } },
+          { upsert: !stored },
+        );
+        if (result.modifiedCount === 1 || result.upsertedCount === 1) return NextResponse.json({ success: true });
+      } catch (error) {
+        if (!(error && typeof error === "object" && "code" in error && error.code === 11000)) throw error;
+      }
     }
-    await collection.updateOne(
-      { _id: "carelink" },
-      { $set: { state, updatedAt: new Date() } },
-      { upsert: true },
-    );
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ error: "Shared data changed while saving. Please retry." }, { status: 409 });
   } catch (error) {
     console.error("CareLink database write failed:", error);
     return NextResponse.json({ error: "Could not save CareLink data" }, { status: 503 });

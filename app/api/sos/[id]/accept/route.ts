@@ -24,6 +24,11 @@ export async function POST(request: Request, context: RouteContext<"/api/sos/[id
     return Response.json({ error: "SOS request is no longer available" }, { status: 409 });
   }
   const acceptedAt = new Date();
+  if (Date.now() - new Date(sos.createdAt).getTime() > 60 * 1000) {
+    await requests.updateOne({ _id: id, status: "searching" }, { $set: { status: "rejected", rejectionReason: "No driver accepted the request within 1 minute", updatedAt: new Date() } });
+    await drivers.updateOne({ userId: auth.user.id, activeRequestId: id }, { $set: { available: true }, $unset: { activeRequestId: "" } });
+    return Response.json({ error: "This request has expired and was rejected because no driver accepted within 1 minute" }, { status: 410 });
+  }
   const result = await requests.updateOne({ _id: id, status: "searching", driverId: null, rejectedDriverIds: { $ne: auth.user.id }, $or: [{ assignedDriverId: auth.user.id }, { assignedDriverId: { $exists: false } }] }, { $set: { status: "accepted", driverId: auth.user.id, acceptedAt, tripStage: 'accepted', tripTimestamps: { accepted: acceptedAt } }, $unset: { assignedDriverId: '', assignmentExpiresAt: '' } });
   if (result.modifiedCount !== 1) {
     await drivers.updateOne({ userId: auth.user.id, activeRequestId: id }, { $set: { available: true }, $unset: { activeRequestId: "", pendingOfferRequestId: '', pendingOfferExpiresAt: '' } });

@@ -10,7 +10,8 @@ export async function GET() {
   }
   const { notifications } = await workflowCollections();
   const items = await notifications.find({ recipientId: auth.user.id }).sort({ createdAt: -1 }).limit(100).toArray();
-  return Response.json({ notifications: items });
+  const unreadCount = items.filter((item) => !item.readAt).length;
+  return Response.json({ notifications: items, unreadCount });
 }
 
 export async function PATCH() {

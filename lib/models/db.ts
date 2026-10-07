@@ -1,12 +1,12 @@
 import { Collection } from "mongodb";
-import clientPromise from "@/lib/mongodb";
+import connectMongo from "@/lib/mongodb";
 import { IHospital } from "./hospital";
 import { IResource } from "./resource";
 import { IHold } from "./hold";
 import { IUser } from "./user";
 
 export async function getDb() {
-  const client = await clientPromise;
+  const client = await connectMongo();
   return client.db();
 }
 
@@ -50,10 +50,20 @@ export function initializeIndexes(): Promise<void> {
 
     const holds = await getHoldsCollection();
     await holds.createIndex({ hospitalId: 1, status: 1 });
-    // Expiry must release resource inventory before a hold can disappear.
-    await holds.dropIndex("expiresAt_1").catch(() => undefined);
     await holds.createIndex({ expiresAt: 1 });
     await holds.createIndex({ requestedByUserId: 1 });
+    // The resource's heldQuantity is the cross-request capacity lock. This
+    // index prevents the same requester from creating duplicate pending holds
+    // on the same resource while still allowing multiple units to be held by
+    // different requests when capacity exists.
+    await holds.createIndex(
+      { resourceId: 1, requestedByUserId: 1 },
+      { name: "one_pending_hold_per_requester_resource", unique: true, partialFilterExpression: { status: "pending" } },
+    );
+    // Keep terminal holds for audit and let MongoDB remove them after 90 days.
+    // Pending expiry is handled by the expiry worker so it can release the
+    // resource lock before any hold document is removed.
+    await holds.createIndex({ purgeAt: 1 }, { name: "hold_terminal_ttl", expireAfterSeconds: 0 });
 
     console.log("CareLink MongoDB indexes successfully initialized.");
   })().catch((error: unknown) => {
