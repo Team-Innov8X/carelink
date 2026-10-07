@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { MapView } from '../common/MapView';
+import { PatientHomeRequestBox } from '../patient/PatientHomeRequestBox';
 import {
   Building2,
   Ambulance as AmbulanceIcon,
@@ -9,12 +10,17 @@ import {
   MapPin,
   ChevronRight,
   LocateFixed,
+  Calendar,
+  Clock,
+  ShieldAlert,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 
 type NearbyDriver = { id: string; name?: string; location: { latitude: number; longitude: number }; distanceKm: number };
 type PatientProfile = { name: string; email?: string | null; phone?: string | null };
 
-export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; requestPending?: boolean }> = ({ onRequestDriver, requestPending = false }) => {
+export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; requestPending?: boolean }> = () => {
   const {
     emergencies,
     hospitals,
@@ -149,16 +155,8 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
         </p>
       </div>
 
-      {role === 'patient' && <section className="flex flex-col gap-4 rounded-2xl border border-rose-200 bg-gradient-to-r from-rose-50 to-white p-5 shadow-xs sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <span className="rounded-xl bg-rose-100 p-2.5 text-rose-700"><AmbulanceIcon className="h-5 w-5" /></span>
-          <div><h2 className="font-bold text-slate-900">Request a driver</h2><p className="mt-1 max-w-xl text-sm text-slate-600">Share your location with available emergency drivers. Your request will appear in the live driver feed.</p></div>
-        </div>
-        <button type="button" onClick={onRequestDriver} disabled={requestPending} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-rose-700 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-rose-800 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-200 disabled:cursor-wait disabled:opacity-60">
-          {requestPending ? <LocateFixed className="h-4 w-4 animate-pulse" /> : <AmbulanceIcon className="h-4 w-4" />}
-          {requestPending ? 'Sending request…' : 'Request emergency driver'}
-        </button>
-      </section>}
+      {/* Current Active Request Box under Your Care Dashboard */}
+      {role === 'patient' && <PatientHomeRequestBox />}
 
       {/* Network status cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

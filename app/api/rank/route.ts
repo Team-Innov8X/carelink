@@ -7,7 +7,7 @@ import { requireRole } from "@/lib/auth-utils";
 import { expirePendingHolds } from "@/lib/services/hold-service";
 
 export async function POST(request: Request) {
-  const auth = await requireRole(["ambulance_driver", "driver", "dispatcher"]);
+  const auth = await requireRole(["ambulance_driver", "driver", "dispatcher", "patient"]);
   if (!auth.authorized) return errorResponse(auth.reason, auth.reason === "UNAUTHENTICATED" ? 401 : 403);
   let input;
   try { input = rankRequestSchema.safeParse(await request.json()); }

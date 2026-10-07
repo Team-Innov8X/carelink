@@ -1,6 +1,6 @@
 import type { EmergencyRequest, Hospital } from "../types";
 
-export async function submitBedRequest(hospital: Hospital, emergency: EmergencyRequest) {
+export async function submitBedRequest(hospital: Hospital, emergency: EmergencyRequest, bedType?: keyof Hospital['beds']) {
   const response = await fetch("/api/hospital-requests", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -13,6 +13,7 @@ export async function submitBedRequest(hospital: Hospital, emergency: EmergencyR
       },
       incidentType: emergency.condition,
       requiredEquipment: emergency.requiredFacilities,
+      bedType,
     }),
   });
   const result = await response.json();

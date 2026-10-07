@@ -26,6 +26,7 @@ export interface IResource {
   type: ResourceType;
   category: ResourceCategory;
   name: string;
+  specialization?: string;
   description?: string;
   totalQuantity: number;
   availableQuantity: number;

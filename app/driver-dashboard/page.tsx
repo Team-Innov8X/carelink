@@ -118,7 +118,3 @@ export default function DriverDashboardPage() {
   if (!mounted) return <main className="min-h-screen bg-slate-50" aria-label="Loading driver dashboard" />;
   return <CareLinkProvider><DriverHome /></CareLinkProvider>;
 }
-
-
-
-

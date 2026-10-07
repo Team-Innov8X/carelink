@@ -6,6 +6,7 @@ export type HoldStatus =
   | "releasing"
   | "confirmed"  // Confirmed by hospital staff
   | "fulfilled"  // Patient arrived & resource assigned
+  | "discharged" // Resource returned to inventory after discharge
   | "expired"    // Auto-expired because hold window lapsed
   | "rejected"   // Hospital declined the request
   | "cancelled";  // Cancelled by requester or staff
