@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Document } from "mongodb";
-import clientPromise from "./mongodb";
+import connectMongo from "./mongodb";
 
 export type Coordinates = { latitude: number; longitude: number };
 
@@ -13,7 +13,8 @@ export type SosRequest = {
   location: Coordinates;
   incidentType: string;
   requiredEquipment: string[];
-  status: "searching" | "accepted" | "completed" | "cancelled";
+  status: "searching" | "accepted" | "completed" | "cancelled" | "rejected";
+  rejectionReason?: string;
   driverId: string | null;
   rejectedDriverIds?: string[];
   createdAt: Date;
@@ -33,6 +34,7 @@ export type SosRequest = {
 export type HospitalAdmissionRequest = {
   _id: string;
   sosRequestId: string;
+  idempotencyKey?: string;
   hospitalId: string;
   hospitalName: string;
   patientId: string;
@@ -41,12 +43,15 @@ export type HospitalAdmissionRequest = {
   location: Coordinates;
   incidentType: string;
   requiredEquipment: string[];
+  requiredSpecialty?: string;
   status: "pending" | "accepting" | "accepted" | "expiring" | "rerouting" | "rejected";
   requestType?: "sos" | "bed";
   inventorySource?: "app-state";
   bedCategory?: "general" | "icu" | "trauma" | "ventilators";
   holdId?: string;
+  doctorHoldId?: string;
   acceptedByUserId?: string;
+  rejectedByUserId?: string;
   createdAt: Date;
   updatedAt: Date;
   acceptedAt?: Date;
@@ -59,6 +64,7 @@ export type HospitalAdmissionRequest = {
   driverTripUpdatedAt?: Date;
   driverVitalsUpdate?: { bp: string; heartRate: number; spO2: number; updatedAt: Date };
   driverIssue?: { message: string; updatedAt: Date; etaDelayMinutes?: number };
+  rejectedAt?: Date;
 };
 
 export type HospitalAdmission = {
@@ -77,8 +83,23 @@ export type HospitalAdmission = {
   dischargedAt?: Date;
 };
 
+let hospitalRequestIndexes: Promise<void> | undefined;
+
+async function ensureHospitalRequestIndexes(hospitalRequests: Awaited<ReturnType<typeof workflowCollections>>["hospitalRequests"]) {
+  if (!hospitalRequestIndexes) {
+    hospitalRequestIndexes = hospitalRequests.createIndex(
+      { idempotencyKey: 1 },
+      { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } } },
+    ).then(() => undefined).catch((error: unknown) => {
+      hospitalRequestIndexes = undefined;
+      throw error;
+    });
+  }
+  await hospitalRequestIndexes;
+}
+
 export async function ensureHospitalRequestForSos(sos: SosRequest) {
-  const db = (await clientPromise).db();
+  const db = (await connectMongo()).db();
   const appStateCollection = db.collection<{ _id: string; state?: { hospitals?: Array<Record<string, unknown>> } }>("appState");
   const appState = process.env.NODE_ENV === "development"
     ? await appStateCollection.findOne({ _id: "carelink" })
@@ -92,9 +113,17 @@ export async function ensureHospitalRequestForSos(sos: SosRequest) {
 
   const { hospitals } = await sosCollections();
   const { hospitalRequests } = await workflowCollections();
+  await ensureHospitalRequestIndexes(hospitalRequests);
   const existing = await hospitalRequests.findOne({ sosRequestId: sos._id });
   if (existing) {
-    if (existing.status === "pending" && nearbyDemo && existing.inventorySource !== "app-state") {
+    if (!existing.idempotencyKey) {
+      try {
+        await hospitalRequests.updateOne({ _id: existing._id, idempotencyKey: { $exists: false } }, { $set: { idempotencyKey: sos._id } });
+      } catch (error) {
+        if (!(error && typeof error === "object" && "code" in error && error.code === 11000)) throw error;
+      }
+    }
+    if (existing.status === "pending" && nearbyDemo && (existing.inventorySource !== "app-state" || !existing.requiredSpecialty)) {
       const hospitalId = String(nearbyDemo.hospital.id ?? "");
       const hospitalName = String(nearbyDemo.hospital.name ?? "");
       if (hospitalId && hospitalName) {
@@ -102,7 +131,8 @@ export async function ensureHospitalRequestForSos(sos: SosRequest) {
           hospitalId,
           hospitalName,
           inventorySource: "app-state",
-          bedCategory: chooseBedCategory(sos.requiredEquipment, nearbyDemo.hospital.beds),
+          bedCategory: existing.bedCategory ?? chooseBedCategory([sos.incidentType, ...sos.requiredEquipment], nearbyDemo.hospital.beds),
+          requiredSpecialty: chooseRequiredSpecialty(sos.incidentType, sos.requiredEquipment, nearbyDemo.hospital.specialties),
           updatedAt: new Date(),
         } });
         return { ...existing, hospitalId, hospitalName, inventorySource: "app-state" as const };
@@ -119,9 +149,11 @@ export async function ensureHospitalRequestForSos(sos: SosRequest) {
       const request: HospitalAdmissionRequest = {
         _id: createRequestId(),
         sosRequestId: sos._id,
+        idempotencyKey: sos._id,
         requestType: "sos",
         inventorySource: "app-state",
-        bedCategory: chooseBedCategory(sos.requiredEquipment, nearbyDemo.hospital.beds),
+        bedCategory: chooseBedCategory([sos.incidentType, ...sos.requiredEquipment], nearbyDemo.hospital.beds),
+        requiredSpecialty: chooseRequiredSpecialty(sos.incidentType, sos.requiredEquipment, nearbyDemo.hospital.specialties),
         hospitalId,
         hospitalName,
         patientId: sos.patientId,
@@ -134,8 +166,15 @@ export async function ensureHospitalRequestForSos(sos: SosRequest) {
         createdAt: now,
         updatedAt: now,
       };
-      await hospitalRequests.insertOne(request);
-      return request;
+      try {
+        await hospitalRequests.insertOne(request);
+        return request;
+      } catch (error) {
+        if (!(error && typeof error === "object" && "code" in error && error.code === 11000)) throw error;
+        const concurrent = await hospitalRequests.findOne({ idempotencyKey: sos._id });
+        if (concurrent) return concurrent;
+        throw error;
+      }
     }
   }
 
@@ -155,6 +194,7 @@ export async function ensureHospitalRequestForSos(sos: SosRequest) {
   const request: HospitalAdmissionRequest = {
     _id: createRequestId(),
     sosRequestId: sos._id,
+    idempotencyKey: sos._id,
     requestType: "sos",
     hospitalId: String(nearest.hospital._id),
     hospitalName: nearest.hospital.name,
@@ -164,12 +204,20 @@ export async function ensureHospitalRequestForSos(sos: SosRequest) {
     location: sos.location,
     incidentType: sos.incidentType,
     requiredEquipment: sos.requiredEquipment,
+    requiredSpecialty: chooseRequiredSpecialty(sos.incidentType, sos.requiredEquipment, nearest.hospital.specialties),
     status: "pending",
     createdAt: now,
     updatedAt: now,
   };
-  await hospitalRequests.insertOne(request);
-  return request;
+  try {
+    await hospitalRequests.insertOne(request);
+    return request;
+  } catch (error) {
+    if (!(error && typeof error === "object" && "code" in error && error.code === 11000)) throw error;
+    const concurrent = await hospitalRequests.findOne({ idempotencyKey: sos._id });
+    if (concurrent) return concurrent;
+    throw error;
+  }
 }
 
 export function chooseBedCategory(
@@ -181,16 +229,29 @@ export function chooseBedCategory(
   const preference: NonNullable<HospitalAdmissionRequest["bedCategory"]>[] = /trauma|orthopedic/.test(needs)
     ? ["trauma", "icu", "general"]
     : /icu|cardiac|ventilat|critical/.test(needs)
-      ? ["icu", "general", "trauma"]
+      ? ["icu"]
       : ["general", "icu", "trauma"];
   return preference.find((category) => typeof beds[category]?.available === "number" && beds[category].available > 0)
     ?? preference[0];
 }
 
+export function chooseRequiredSpecialty(incidentType: string, equipment: string[], specialtiesValue: unknown) {
+  const specialties = Array.isArray(specialtiesValue) ? specialtiesValue.filter((value): value is string => typeof value === "string") : [];
+  const needs = `${incidentType} ${equipment.join(" ")}`.toLowerCase();
+  const preferred = /cardiac|heart/.test(needs) ? ["Cardiac", "ICU"]
+    : /stroke|neuro|brain/.test(needs) ? ["Neurology", "ICU"]
+      : /trauma|injur|fracture|accident|orthop/.test(needs) ? ["Trauma Care", "Orthopedics", "ICU"]
+        : /icu|critical|ventilat|breath|respirat/.test(needs) ? ["ICU", "General Care"]
+          : ["General Care", "Trauma Care", "ICU"];
+  return preferred.find((name) => specialties.some((specialty) => specialty.toLowerCase() === name.toLowerCase()))
+    ?? specialties[0]
+    ?? preferred[0];
+}
+
 export type CareNotification = {
   _id: string;
   recipientId: string;
-  type: "hospital_request_pending" | "hospital_request_accepted" | "hospital_request_rejected" | "hospital_patient_admitted" | "hospital_request_rerouted" | "hospital_data_stale";
+  type: "hospital_request_pending" | "hospital_request_accepted" | "hospital_request_rejected" | "hospital_patient_admitted" | "hospital_request_rerouted" | "hospital_data_stale" | "hospital_request_declined";
   title: string;
   message: string;
   relatedRequestId: string;
@@ -199,7 +260,7 @@ export type CareNotification = {
 };
 
 export async function sosCollections() {
-  const db = (await clientPromise).db();
+  const db = (await connectMongo()).db();
   const requests = db.collection<SosRequest>("sosRequests");
   const drivers = db.collection<Document & { userId: string; available: boolean; location?: Coordinates }>("drivers");
   const hospitals = db.collection<Document & { name: string; location: Coordinates; equipment: string[] }>("hospitals");
@@ -207,7 +268,7 @@ export async function sosCollections() {
 }
 
 export async function workflowCollections() {
-  const db = (await clientPromise).db();
+  const db = (await connectMongo()).db();
   return {
     hospitalRequests: db.collection<HospitalAdmissionRequest>("hospitalAdmissionRequests"),
     hospitalAdmissions: db.collection<HospitalAdmission>("hospitalAdmissions"),

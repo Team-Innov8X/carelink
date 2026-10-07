@@ -1,6 +1,6 @@
 declare global {
   interface Window {
-    google?: any;
+    google?: { maps?: Record<string, unknown> };
     careLinkGoogleMapsPromise?: Promise<void>;
   }
 }

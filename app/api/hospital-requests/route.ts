@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/auth-utils";
-import { chooseBedCategory, createRequestId, distanceKm, sosCollections, validCoordinates, workflowCollections, ensureHospitalRequestForSos } from "@/lib/sos";
-import clientPromise from "@/lib/mongodb";
+import { chooseBedCategory, chooseRequiredSpecialty, createRequestId, distanceKm, sosCollections, validCoordinates, workflowCollections, ensureHospitalRequestForSos } from "@/lib/sos";
+import connectMongo from "@/lib/mongodb";
 import { expireHospitalReservations } from '@/lib/hospital-reservations';
 import { writeHospitalAudit } from '@/lib/hospital-audit';
 
@@ -15,7 +15,11 @@ export async function GET() {
   const profile = auth.user as typeof auth.user & { hospitalId?: string; hospitalName?: string };
   await expireHospitalReservations({ hospitalId: profile.hospitalId, hospitalName: profile.hospitalName });
   const query: Record<string, unknown> = { status: { $in: ["pending", "accepting", "accepted", "rejected"] } };
-  if (profile.hospitalId) query.hospitalId = profile.hospitalId;
+  if (profile.hospitalId && profile.hospitalName) query.$or = [
+    { hospitalId: profile.hospitalId },
+    { hospitalName: profile.hospitalName },
+  ];
+  else if (profile.hospitalId) query.hospitalId = profile.hospitalId;
   else if (profile.hospitalName) query.hospitalName = profile.hospitalName;
   else return Response.json({ error: "Your account is not linked to a hospital." }, { status: 403 });
 
@@ -44,7 +48,7 @@ export async function GET() {
     const driversFound = await drivers.find({ userId: { $in: driverIds } }).project({ userId: 1, location: 1 }).toArray();
     for (const driver of driversFound) driverById.set(driver.userId, driver);
   }
-  const sharedState = await (await clientPromise).db().collection<{ _id: string; state?: { hospitals?: Array<{ id: string; name?: string; location?: { lat?: number; lng?: number } }> } }>('appState').findOne({ _id: 'carelink' });
+  const sharedState = await (await connectMongo()).db().collection<{ _id: string; state?: { hospitals?: Array<{ id: string; name?: string; location?: { lat?: number; lng?: number } }> } }>('appState').findOne({ _id: 'carelink' });
   const hospitalPoint = sharedState?.state?.hospitals?.find((item) => profile.hospitalId ? item.id === profile.hospitalId : item.name === profile.hospitalName)?.location;
   const destination = hospitalPoint && typeof hospitalPoint.lat === 'number' && typeof hospitalPoint.lng === 'number' ? { latitude: hospitalPoint.lat, longitude: hospitalPoint.lng } : null;
   return Response.json({ requests: requests.map((item) => {
@@ -77,29 +81,27 @@ export async function POST(request: Request) {
     ? [...new Set(body.requiredEquipment.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))]
     : [];
 
-  const database = (await clientPromise).db();
+  const database = (await connectMongo()).db();
   const sharedState = await database.collection<{ _id: string; state?: { hospitals?: Array<Record<string, unknown>> } }>("appState").findOne({ _id: "carelink" });
-  const appHospital = process.env.NODE_ENV === "development"
-    ? sharedState?.state?.hospitals?.find((hospital) => hospital.id === body.hospitalId) as Record<string, unknown> | undefined
-    : undefined;
+  const appHospital = sharedState?.state?.hospitals?.find((hospital) => hospital.id === body.hospitalId) as Record<string, unknown> | undefined;
   const { hospitals } = await sosCollections();
   const candidates = await hospitals.find({ status: { $ne: "inactive" } }).toArray();
-  const nearest = candidates.flatMap((hospital) => {
-    const raw = hospital.location as unknown as { latitude?: unknown; longitude?: unknown; coordinates?: unknown };
-    const point = typeof raw?.latitude === "number" && typeof raw.longitude === "number"
-      ? { latitude: raw.latitude, longitude: raw.longitude }
-      : Array.isArray(raw?.coordinates) && typeof raw.coordinates[0] === "number" && typeof raw.coordinates[1] === "number"
-        ? { latitude: raw.coordinates[1], longitude: raw.coordinates[0] }
-        : null;
-    return point ? [{ hospital, distance: distanceKm(patientLocation, point) }] : [];
-  }).sort((a, b) => a.distance - b.distance)[0];
+  const requestedName = typeof body.hospitalName === "string" ? body.hospitalName.trim() : "";
+  const registeredHospital = requestedName
+    ? candidates.find((hospital) => hospital.name.trim().toLowerCase() === requestedName.toLowerCase())
+    : undefined;
   const targetHospital = appHospital
-    ? { id: String(appHospital.id), name: String(appHospital.name), beds: appHospital.beds, inventorySource: "app-state" as const }
-    : nearest
-      ? { id: String(nearest.hospital._id), name: nearest.hospital.name, beds: undefined, inventorySource: undefined }
+    ? {
+        id: String(appHospital.id),
+        name: registeredHospital?.name ?? String(appHospital.name),
+        beds: appHospital.beds,
+        inventorySource: "app-state" as const,
+      }
+    : registeredHospital
+      ? { id: String(registeredHospital._id), name: registeredHospital.name, beds: undefined, inventorySource: undefined }
       : null;
   if (!targetHospital) {
-    return Response.json({ error: "No hospital is registered to receive bed requests yet." }, { status: 503 });
+    return Response.json({ error: "The selected hospital is no longer available. Refresh the hospital list and try again." }, { status: 404 });
   }
 
   const { hospitalRequests, notifications } = await workflowCollections();
@@ -109,7 +111,13 @@ export async function POST(request: Request) {
     requestType: "bed",
     status: { $in: ["pending", "accepting", "accepted"] },
   });
-  if (existing) return Response.json({ request: existing, existing: true });
+  if (existing) return Response.json({
+    request: existing,
+    existing: true,
+    message: existing.status === "accepted"
+      ? `${existing.hospitalName} has already accepted this request.`
+      : "A request has already been created for you at this hospital.",
+  });
 
   const now = new Date();
   const bedRequest = {
@@ -119,7 +127,8 @@ export async function POST(request: Request) {
     hospitalId: targetHospital.id,
     hospitalName: targetHospital.name,
     inventorySource: targetHospital.inventorySource,
-    bedCategory: targetHospital.inventorySource ? (typeof body.bedType === 'string' && ['general', 'icu', 'trauma', 'ventilators'].includes(body.bedType) ? body.bedType as 'general' | 'icu' | 'trauma' | 'ventilators' : chooseBedCategory(requiredEquipment, targetHospital.beds)) : undefined,
+    bedCategory: targetHospital.inventorySource ? (typeof body.bedType === 'string' && ['general', 'icu', 'trauma', 'ventilators'].includes(body.bedType) ? body.bedType as 'general' | 'icu' | 'trauma' | 'ventilators' : chooseBedCategory([incidentType, ...requiredEquipment], targetHospital.beds)) : undefined,
+    requiredSpecialty: chooseRequiredSpecialty(incidentType, requiredEquipment, appHospital?.specialties ?? registeredHospital?.specialties),
     requestedHospitalId: body.hospitalId.trim(),
     requestedHospitalName: typeof body.hospitalName === "string" ? body.hospitalName.slice(0, 120) : undefined,
     patientId: auth.user.id,
