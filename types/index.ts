@@ -3,6 +3,7 @@ export type Role = 'dispatcher' | 'hospital' | 'pharmacy' | 'paramedic' | 'patie
 export interface BedAvailability {
   available: number;
   total: number;
+  reserved?: number;
 }
 
 export interface HospitalBeds {
@@ -24,6 +25,9 @@ export interface Hospital {
   specialtyDoctors?: Record<string, number>;
   status: HospitalStatus;
   lastUpdatedMinutesAgo: number; // Stale warning if > 10
+  lastCapacityUpdatedAt?: string | Date;
+  capacitySource?: string;
+  acceptingRequests?: boolean;
   location: {
     lat: number;
     lng: number;
@@ -38,9 +42,15 @@ export type PriorityLevel = 'Critical' | 'High' | 'Medium' | 'Low';
 export type RequestStatus =
   | 'Finding hospital'
   | 'Pending'
+  | 'Pending hospital confirmation'
+  | 'Accepted'
   | 'Assigned'
   | 'En Route'
+  | 'Arrived'
+  | 'Handed over'
   | 'Handoff'
+  | 'Timed out'
+  | 'Rerouted'
   | 'Completed'
   | 'Rejected';
 
@@ -82,6 +92,10 @@ export interface EmergencyRequest {
   vitals: PatientVitals;
   checklist: HandoffChecklist;
   requestedAt: string;
+  acceptedAt?: string;
+  enRouteAt?: string;
+  arrivedAt?: string;
+  handedOverAt?: string;
   doubleBookingConflict?: boolean;
 }
 
@@ -108,6 +122,8 @@ export interface Medicine {
   isEmergencyEssential: boolean;
   stock: Record<string, number>; // pharmacyId -> quantity
   price: string;
+  minimumStock?: number;
+  updatedAt?: string;
 }
 
 export interface Ambulance {

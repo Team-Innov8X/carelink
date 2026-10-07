@@ -1,185 +1,36 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
-import {
-  BarChart3,
-  TrendingUp,
-  Clock,
-  Activity,
-  CheckCircle2,
-  AlertTriangle,
-  FileText,
-  Download,
-  ShieldCheck,
-} from 'lucide-react';
+import { Download } from 'lucide-react';
+
+type Collision = { _id: string; hospitalName: string; bedCategory: string; winnerRequestId: string; loserRequestId: string; occurredAt: string };
 
 export const ReportsView: React.FC = () => {
-  const { emergencies, hospitals, medicines } = useCareLink();
+  const { hospitals, emergencies } = useCareLink();
+  const [collisions, setCollisions] = useState<Collision[]>([]);
+  const [showCollisions, setShowCollisions] = useState(false);
+  const [staleThreshold, setStaleThreshold] = useState(10);
+  useEffect(() => { fetch('/api/hospital-reservation-collisions', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null).then((result) => { if (result) setCollisions(result.entries ?? []); }).catch(() => {}); fetch('/api/settings', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null).then((result) => { if (result?.settings) setStaleThreshold(result.settings.staleThresholdMinutes); }).catch(() => {}); }, []);
+  const allBeds = hospitals.flatMap((hospital) => Object.values(hospital.beds));
+  const totalBedsAvailable = allBeds.reduce((sum, bed) => sum + bed.available, 0);
+  const totalBedsCapacity = allBeds.reduce((sum, bed) => sum + bed.total, 0);
+  const bedOccupancyRate = totalBedsCapacity ? Math.round(((totalBedsCapacity - totalBedsAvailable) / totalBedsCapacity) * 100) : 0;
+  const staleCount = hospitals.filter((hospital) => hospital.lastUpdatedMinutesAgo >= staleThreshold).length;
+  const accepted = emergencies.filter((item) => ['Assigned', 'Accepted', 'En Route', 'Arrived', 'Completed'].includes(item.status)).length;
+  const rejected = emergencies.filter((item) => item.status === 'Rejected' || item.status === 'Timed out').length;
+  const etaValues = emergencies.map((item) => item.currentEtaMin).filter((value): value is number => typeof value === 'number');
+  const avgEta = etaValues.length ? (etaValues.reduce((sum, value) => sum + value, 0) / etaValues.length).toFixed(1) : '—';
+  const exportCsv = () => {
+    const rows = [['Hospital', 'General available', 'ICU available', 'Trauma available', 'Ventilators available', 'Freshness minutes'], ...hospitals.map((hospital) => [hospital.name, hospital.beds.general.available, hospital.beds.icu.available, hospital.beds.trauma.available, hospital.beds.ventilators.available, hospital.lastUpdatedMinutesAgo])];
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'carelink-analytics.csv'; link.click(); URL.revokeObjectURL(url);
+  };
 
-  const totalCases = emergencies.length;
-  const completedCases = emergencies.filter((e) => e.status === 'Completed').length;
-  const avgEta = 7.4; // minutes
-  const totalBedsAvailable = hospitals.reduce((acc, h) => acc + h.beds.general.available + h.beds.icu.available + h.beds.trauma.available, 0);
-  const totalBedsCapacity = hospitals.reduce((acc, h) => acc + h.beds.general.total + h.beds.icu.total + h.beds.trauma.total, 0);
-  const bedOccupancyRate = Math.round(((totalBedsCapacity - totalBedsAvailable) / totalBedsCapacity) * 100);
-
-  return (
-    <div className="space-y-6 max-w-6xl mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Emergency Health Analytics & Reports
-          </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Regional ER response times, bed occupancy velocity, and pharmacy supply chains
-          </p>
-        </div>
-
-        <button
-          onClick={() => alert('Exporting CareLink regional audit report (PDF/CSV)...')}
-          className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-xl shadow-2xs flex items-center gap-2 self-start sm:self-auto"
-        >
-          <Download className="w-4 h-4 text-slate-500" />
-          <span>Export Analytics</span>
-        </button>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
-            Golden Hour Response
-          </span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-emerald-600">{avgEta}m</span>
-            <span className="text-xs text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">
-              -2.1m faster
-            </span>
-          </div>
-          <span className="text-[11px] text-slate-400 mt-1 block">Average triage-to-bed time</span>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
-            ER Bed Occupancy
-          </span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-slate-900">{bedOccupancyRate}%</span>
-            <span className="text-xs text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded">
-              High Load
-            </span>
-          </div>
-          <span className="text-[11px] text-slate-400 mt-1 block">
-            {totalBedsAvailable} beds currently free
-          </span>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
-            Double Booking Defended
-          </span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-sky-600">14</span>
-            <span className="text-xs text-sky-700 font-bold bg-sky-50 px-1.5 py-0.5 rounded">
-              100% Lock
-            </span>
-          </div>
-          <span className="text-[11px] text-slate-400 mt-1 block">Collisions automatically prevented</span>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
-            Critical Drug Fill Rate
-          </span>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-purple-600">96.8%</span>
-            <span className="text-xs text-purple-700 font-bold bg-purple-50 px-1.5 py-0.5 rounded">
-              4 Shortages
-            </span>
-          </div>
-          <span className="text-[11px] text-slate-400 mt-1 block">Across registered pharmacies</span>
-        </div>
-      </div>
-
-      {/* Hospital Occupancy Comparison Table */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs">
-        <h3 className="font-bold text-base text-slate-900 mb-4">
-          Hospital Capacity & Specialty Bed Utilization
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
-                <th className="pb-3 px-3">Hospital</th>
-                <th className="pb-3 px-3">Status</th>
-                <th className="pb-3 px-3">General Bed Load</th>
-                <th className="pb-3 px-3">ICU Load</th>
-                <th className="pb-3 px-3">Trauma Load</th>
-                <th className="pb-3 px-3">Telemetric Sync</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {hospitals.map((hosp) => {
-                const icuLoad = Math.round(
-                  ((hosp.beds.icu.total - hosp.beds.icu.available) / hosp.beds.icu.total) * 100
-                );
-                const traumaLoad = Math.round(
-                  ((hosp.beds.trauma.total - hosp.beds.trauma.available) / hosp.beds.trauma.total) * 100
-                );
-
-                return (
-                  <tr key={hosp.id} className="hover:bg-slate-50">
-                    <td className="py-3 px-3 font-bold text-slate-900">{hosp.name}</td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-slate-100 text-slate-700">
-                        {hosp.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <div className="w-32 bg-slate-100 h-2 rounded-full overflow-hidden">
-                        <div
-                          className="bg-sky-500 h-full rounded-full"
-                          style={{
-                            width: `${
-                              ((hosp.beds.general.total - hosp.beds.general.available) /
-                                hosp.beds.general.total) *
-                              100
-                            }%`,
-                          }}
-                        />
-                      </div>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span
-                        className={`font-mono font-bold ${
-                          icuLoad > 80 ? 'text-rose-600' : 'text-slate-700'
-                        }`}
-                      >
-                        {icuLoad}%
-                      </span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span
-                        className={`font-mono font-bold ${
-                          traumaLoad > 80 ? 'text-rose-600' : 'text-slate-700'
-                        }`}
-                      >
-                        {traumaLoad}%
-                      </span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="text-[11px] text-slate-400 font-mono">
-                        {hosp.lastUpdatedMinutesAgo === 0
-                          ? 'Real-time'
-                          : `${hosp.lastUpdatedMinutesAgo}m ago`}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
+  return <div className="mx-auto max-w-6xl space-y-6">
+    <div className="flex flex-wrap items-center justify-between gap-4"><div><h1 className="text-2xl font-bold tracking-tight text-slate-900">Emergency Health Analytics</h1><p className="mt-0.5 text-xs text-slate-500">Live summaries from shared hospital inventory and request records.</p></div><button type="button" onClick={exportCsv} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700"><Download className="h-4 w-4" />Export CSV</button></div>
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4"><article className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs font-bold uppercase text-slate-500">Average ETA</p><p className="mt-2 text-3xl font-extrabold text-sky-700">{avgEta}{avgEta !== '—' && 'm'}</p><p className="mt-1 text-[11px] text-slate-500">Across active emergency cases</p></article><article className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs font-bold uppercase text-slate-500">Bed occupancy</p><p className="mt-2 text-3xl font-extrabold text-slate-900">{bedOccupancyRate}%</p><p className="mt-1 text-[11px] text-slate-500">High load is defined as 80% or more · {totalBedsAvailable} beds free</p></article><article className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs font-bold uppercase text-slate-500">Collisions defended</p><button type="button" onClick={() => setShowCollisions((value) => !value)} className="mt-2 text-3xl font-extrabold text-sky-700">{collisions.length}</button><p className="mt-1 text-[11px] text-slate-500">Atomic reservation race log · click count to inspect</p></article><article className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs font-bold uppercase text-slate-500">Stale hospital feeds</p><p className={`mt-2 text-3xl font-extrabold ${staleCount ? 'text-amber-700' : 'text-emerald-700'}`}>{staleCount}</p><p className="mt-1 text-[11px] text-slate-500">Past the configured freshness threshold</p></article></div>
+    {showCollisions && <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Prevented reservation collisions</h2>{collisions.length ? <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[600px] text-left text-xs"><thead className="border-b text-slate-500"><tr><th className="py-2">Hospital / resource</th><th>Winner request</th><th>Returned request</th><th>When</th></tr></thead><tbody className="divide-y">{collisions.map((item) => <tr key={item._id}><td className="py-2">{item.hospitalName} · {item.bedCategory}</td><td>{item.winnerRequestId}</td><td>{item.loserRequestId}</td><td>{new Date(item.occurredAt).toLocaleString()}</td></tr>)}</tbody></table></div> : <p className="mt-3 text-sm text-slate-500">No inventory collision has been recorded yet.</p>}</section>}
+    <div className="grid gap-6 lg:grid-cols-2"><section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Acceptance vs rejection</h2><p className="mt-1 text-xs text-slate-500">Current emergency case states</p><div className="mt-4 space-y-3"><div><div className="mb-1 flex justify-between text-xs"><span>Accepted / assigned</span><b>{accepted}</b></div><div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-emerald-500" style={{ width: `${emergencies.length ? accepted / emergencies.length * 100 : 0}%` }} /></div></div><div><div className="mb-1 flex justify-between text-xs"><span>Rejected / timed out</span><b>{rejected}</b></div><div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-rose-500" style={{ width: `${emergencies.length ? rejected / emergencies.length * 100 : 0}%` }} /></div></div></div></section><section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Occupancy by hospital</h2><div className="mt-3 space-y-3">{hospitals.map((hospital) => { const total = Object.values(hospital.beds).reduce((sum, bed) => sum + bed.total, 0); const free = Object.values(hospital.beds).reduce((sum, bed) => sum + bed.available, 0); const occupancy = total ? Math.round((total - free) / total * 100) : 0; return <div key={hospital.id}><div className="mb-1 flex justify-between text-xs"><span>{hospital.name}</span><b>{occupancy}%</b></div><div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-sky-600" style={{ width: `${occupancy}%` }} /></div></div>; })}</div></section></div>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Stale data incidents</h2><p className="mt-1 text-xs text-slate-500">Hospitals currently past the configured {staleThreshold}-minute threshold.</p><div className="mt-3 flex flex-wrap gap-2">{hospitals.filter((hospital) => hospital.lastUpdatedMinutesAgo >= staleThreshold).map((hospital) => <span key={hospital.id} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">{hospital.name} · {hospital.lastUpdatedMinutesAgo} min old</span>)}{!staleCount && <span className="text-sm text-slate-500">No stale hospitals.</span>}</div></section>
+  </div>;
 };

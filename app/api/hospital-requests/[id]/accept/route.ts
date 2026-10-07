@@ -3,6 +3,8 @@ import { confirmHold, createHold, releaseHold } from "@/lib/services/hold-servic
 import { getResourcesCollection } from "@/lib/models";
 import { workflowCollections } from "@/lib/sos";
 import clientPromise from "@/lib/mongodb";
+import { writeHospitalAudit } from '@/lib/hospital-audit';
+import { randomUUID } from 'node:crypto';
 
 export const runtime = "nodejs";
 
@@ -21,9 +23,13 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
   const belongsToHospital = profile.hospitalId
     ? profile.hospitalId === hospitalRequest.hospitalId
     : profile.hospitalName === hospitalRequest.hospitalName;
-  if (process.env.NODE_ENV !== "development" && !belongsToHospital) {
+  if (!belongsToHospital) {
     return Response.json({ error: "This request belongs to another hospital." }, { status: 403 });
   }
+  const appStateDb = (await clientPromise).db();
+  const hospitalSnapshot = await appStateDb.collection<{ _id: string; state?: { hospitals?: Array<{ id: string; name: string; acceptingRequests?: boolean }> } }>('appState').findOne({ _id: 'carelink' });
+  const hospitalState = hospitalSnapshot?.state?.hospitals?.find((item) => item.id === hospitalRequest.hospitalId);
+  if (hospitalState?.acceptingRequests === false) return Response.json({ error: 'This hospital is currently diverted and cannot accept requests.' }, { status: 409 });
 
   const locked = await hospitalRequests.updateOne(
     { _id: id, status: "pending" },
@@ -52,14 +58,19 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
       );
       if (result.modifiedCount !== 1) {
         await hospitalRequests.updateOne({ _id: id, status: "accepting" }, { $set: { status: "pending", updatedAt: new Date() }, $unset: { acceptedByUserId: "" } });
+        const occurredAt = new Date();
+        const winner = await hospitalRequests.findOne({ hospitalId: hospitalRequest.hospitalId, bedCategory: category, status: 'accepted', acceptedAt: { $gte: new Date(occurredAt.getTime() - 60_000) } }, { sort: { acceptedAt: -1 } });
+        await appStateDb.collection<{ _id: string; hospitalId: string; hospitalName: string; bedCategory: string; winnerRequestId: string; loserRequestId: string; occurredAt: Date }>('hospitalReservationCollisions').insertOne({ _id: randomUUID(), hospitalId: hospitalRequest.hospitalId, hospitalName: hospitalRequest.hospitalName, bedCategory: category, winnerRequestId: winner?._id ?? 'unknown', loserRequestId: id, occurredAt });
         return Response.json({ error: "No bed of the required type is currently available. The request remains pending." }, { status: 409 });
       }
 
       const acceptedAt = new Date();
+      const reservationExpiresAt = new Date(acceptedAt.getTime() + 30 * 60_000);
       await hospitalRequests.updateOne(
         { _id: id, status: "accepting" },
-        { $set: { status: "accepted", acceptedAt, updatedAt: acceptedAt } },
+        { $set: { status: "accepted", acceptedAt, reservationExpiresAt, updatedAt: acceptedAt } },
       );
+      await writeHospitalAudit({ hospitalId: hospitalRequest.hospitalId, hospitalName: hospitalRequest.hospitalName, actorId: auth.user.id, actorName: auth.user.name, action: 'Request accepted · bed reserved', entityType: 'request', entityId: id, details: { bedCategory: category, expiresAt: reservationExpiresAt }, createdAt: acceptedAt });
       await notifications.updateOne(
         { _id: `hospital-accepted-${id}` },
         { $setOnInsert: {
@@ -73,7 +84,7 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
         } },
         { upsert: true },
       );
-      return Response.json({ success: true, request: { id, status: "accepted", acceptedAt }, message: "Request accepted and a bed reserved. The patient was notified." });
+      return Response.json({ success: true, request: { id, status: "accepted", acceptedAt, reservationExpiresAt }, message: "Request accepted and a bed reserved for 30 minutes. The patient was notified." });
     }
 
     const resources = await getResourcesCollection();
@@ -120,6 +131,7 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
       { _id: id, status: "accepting" },
       { $set: { status: "accepted", holdId, acceptedAt, updatedAt: acceptedAt } },
     );
+    await writeHospitalAudit({ hospitalId: hospitalRequest.hospitalId, hospitalName: hospitalRequest.hospitalName, actorId: auth.user.id, actorName: auth.user.name, action: 'Request accepted · bed reserved', entityType: 'request', entityId: id, details: { holdId }, createdAt: acceptedAt });
     const notificationId = `hospital-accepted-${id}`;
     await notifications.updateOne(
       { _id: notificationId },

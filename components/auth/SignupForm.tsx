@@ -99,21 +99,10 @@ export default function SignupForm({ role }: { role: string }) {
   const labelClass = 'mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-700';
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
-      <section className="grid max-h-[94vh] w-full max-w-4xl grid-cols-1 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl md:h-[94vh] md:min-h-0 md:grid-cols-2">
-        <aside className="relative flex flex-col justify-start overflow-hidden bg-gradient-to-br from-slate-900 via-sky-950 to-slate-900 p-8 text-white lg:p-10">
-          <div className="pointer-events-none absolute -left-16 -top-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl" />
-          <div className="relative">
-            <div className="mb-2 flex items-center gap-2.5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-rose-500 to-rose-600 shadow-lg"><Heart className="h-6 w-6 fill-white text-white" /></div>
-              <div><h1 className="text-2xl font-black tracking-tight">Care<span className="text-rose-400">Link</span></h1><span className="text-[11px] font-medium text-sky-200">Faster Care, Healthier Tomorrow</span></div>
-            </div>
-            <h2 className="mb-3 mt-10 text-2xl font-bold leading-snug tracking-tight lg:text-3xl">Care, connected.</h2>
-            <p className="max-w-sm text-sm leading-relaxed text-slate-300">One place for patients, hospitals, drivers, and pharmacies.</p>
-          </div>
-        </aside>
-
-        <div className="overflow-y-auto p-6 md:min-h-0 lg:p-8">
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+      <section className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="max-h-[94vh] overflow-y-auto p-6 sm:p-8">
+          <div className="mb-6 flex items-center gap-2 text-lg font-bold text-slate-900"><Heart className="h-5 w-5 fill-rose-600 text-rose-600" />Care<span className="-ml-2 text-rose-600">Link</span></div>
           <header className="mb-6"><h2 className="text-2xl font-bold text-slate-900">Create your account</h2><p className="mt-1 text-sm text-slate-500">Join CareLink to coordinate better care</p></header>
           <form onSubmit={handleSignup} className="space-y-4">
             <div><label className={labelClass} htmlFor="signup-name">Full name</label><div className="relative"><User className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-name" className={inputClass} required autoComplete="name" value={name} onChange={event => setName(event.target.value)} placeholder="Your full name" /></div></div>

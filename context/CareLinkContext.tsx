@@ -175,7 +175,18 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
     };
     window.addEventListener('carelink-authenticated', reloadSharedState);
     window.addEventListener('carelink-data-refresh', reloadSharedState);
+    const refreshInventory = () => {
+      fetch('/api/data', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null).then(({ state } = {}) => {
+        if (!state?.hospitals) return;
+        const incoming = mergeInitialRecords(state.hospitals, INITIAL_HOSPITALS);
+        setHospitals((current) => JSON.stringify(current) === JSON.stringify(incoming) ? current : incoming);
+        if (Array.isArray(state.medicines)) setMedicines((current) => JSON.stringify(current) === JSON.stringify(state.medicines) ? current : mergeInitialRecords(state.medicines, INITIAL_MEDICINES));
+        if (Array.isArray(state.medicineOrders)) setMedicineOrders((current) => JSON.stringify(current) === JSON.stringify(state.medicineOrders) ? current : state.medicineOrders);
+      }).catch(() => {});
+    };
+    const inventoryTimer = window.setInterval(refreshInventory, 10000);
     return () => {
+      window.clearInterval(inventoryTimer);
       window.removeEventListener('carelink-authenticated', reloadSharedState);
       window.removeEventListener('carelink-data-refresh', reloadSharedState);
     };
@@ -286,6 +297,8 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
           return {
             ...req,
             status: 'En Route',
+            acceptedAt: req.acceptedAt || new Date().toISOString(),
+            enRouteAt: req.enRouteAt || new Date().toISOString(),
             checklist: {
               ...req.checklist,
               detailsShared: true,
@@ -364,11 +377,15 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
   };
 
   const setBedAvailability = (hospitalId: string, bedType: keyof HospitalBeds, available: number, total: number) => {
-    const safeTotal = Math.max(0, Math.floor(total));
-    const safeAvailable = Math.min(safeTotal, Math.max(0, Math.floor(available)));
+    if (!Number.isInteger(total) || !Number.isInteger(available) || total < 0 || available < 0) return;
+    const currentHospital = hospitals.find((hospital) => hospital.id === hospitalId);
+    const currentBed = currentHospital?.beds[bedType];
+    if (!currentBed) return;
+    const occupied = currentBed.total - currentBed.available;
+    if (total < occupied || available > total) return;
     setHospitals((prev) => prev.map((hospital) => hospital.id !== hospitalId ? hospital : ({
       ...hospital,
-      beds: { ...hospital.beds, [bedType]: { total: safeTotal, available: safeAvailable } },
+      beds: { ...hospital.beds, [bedType]: { total, available } },
       lastUpdatedMinutesAgo: 0,
     })));
   };
@@ -397,6 +414,7 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
         if (req.id === requestId) {
           return {
             ...req,
+            ...(key === 'arrivedAtHospital' && value ? { status: 'Arrived' as const, arrivedAt: new Date().toISOString() } : {}),
             checklist: {
               ...req.checklist,
               [key]: value,
@@ -415,6 +433,7 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
           return {
             ...req,
             status: 'Completed',
+            handedOverAt: new Date().toISOString(),
             checklist: {
               arrivedAtHospital: true,
               detailsShared: true,
@@ -438,38 +457,15 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
     const pharm = pharmacies.find((p) => p.id === pharmacyId);
     if (!med || !pharm) return;
 
-    // Deduct stock
-    setMedicines((prev) =>
-      prev.map((m) => {
-        if (m.id === medicineId) {
-          const currentStock = m.stock[pharmacyId] || 0;
-          return {
-            ...m,
-            stock: {
-              ...m.stock,
-              [pharmacyId]: Math.max(0, currentStock - quantity),
-            },
-          };
-        }
-        return m;
+    void fetch('/api/pharmacy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'order', medicineId, pharmacyId, quantity, isUrgent }) })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'This medicine is no longer available.');
+        setMedicines(result.medicines);
+        setMedicineOrders(result.medicineOrders);
+        window.dispatchEvent(new Event('carelink-data-refresh'));
       })
-    );
-
-    // Create order entry
-    const newOrder: MedicineOrder = {
-      id: `ORD-${Date.now().toString().slice(-4)}`,
-      medicineId,
-      medicineName: med.name,
-      pharmacyId,
-      pharmacyName: pharm.name,
-      requestedBy: role === 'dispatcher' ? 'Ambulance Unit DL-01' : 'General Patient',
-      quantity,
-      status: 'Confirmed',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isUrgent,
-    };
-
-    setMedicineOrders((prev) => [newOrder, ...prev]);
+      .catch((error: unknown) => window.alert(error instanceof Error ? error.message : 'This medicine is no longer available.'));
   };
 
   const updateMedicineStock = (

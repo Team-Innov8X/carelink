@@ -15,9 +15,19 @@ export type SosRequest = {
   requiredEquipment: string[];
   status: "searching" | "accepted" | "completed" | "cancelled";
   driverId: string | null;
+  rejectedDriverIds?: string[];
   createdAt: Date;
   acceptedAt?: Date;
   arrivedAt?: Date;
+  tripStage?: 'accepted' | 'arrived_patient' | 'patient_on_board' | 'en_route_hospital' | 'arrived_hospital' | 'handover_complete';
+  tripTimestamps?: Record<string, Date>;
+  vitalsUpdate?: { bp: string; heartRate: number; spO2: number; updatedAt: Date };
+  issue?: { message: string; updatedAt: Date; etaDelayMinutes?: number };
+  driverResponses?: { driverId: string; reason?: string; rejectedAt: Date }[];
+  assignedDriverId?: string;
+  assignmentExpiresAt?: Date;
+  assignmentOfferedAt?: Date;
+  completedAt?: Date;
 };
 
 export type HospitalAdmissionRequest = {
@@ -31,7 +41,7 @@ export type HospitalAdmissionRequest = {
   location: Coordinates;
   incidentType: string;
   requiredEquipment: string[];
-  status: "pending" | "accepting" | "accepted" | "rejected";
+  status: "pending" | "accepting" | "accepted" | "expiring" | "rerouting" | "rejected";
   requestType?: "sos" | "bed";
   inventorySource?: "app-state";
   bedCategory?: "general" | "icu" | "trauma" | "ventilators";
@@ -40,6 +50,31 @@ export type HospitalAdmissionRequest = {
   createdAt: Date;
   updatedAt: Date;
   acceptedAt?: Date;
+  reservationExpiresAt?: Date;
+  rejectionReason?: 'no_icu_bed' | 'specialist_unavailable' | 'diverted' | 'other' | 'reservation_timeout';
+  reroutedHospitalIds?: string[];
+  reroutedToRequestId?: string;
+  reroutedHospitalName?: string;
+  driverTripStage?: string;
+  driverTripUpdatedAt?: Date;
+  driverVitalsUpdate?: { bp: string; heartRate: number; spO2: number; updatedAt: Date };
+  driverIssue?: { message: string; updatedAt: Date; etaDelayMinutes?: number };
+};
+
+export type HospitalAdmission = {
+  _id: string;
+  hospitalRequestId: string;
+  hospitalId: string;
+  hospitalName: string;
+  patientId: string;
+  patientName: string;
+  patientPhone?: string;
+  incidentType: string;
+  bedCategory?: HospitalAdmissionRequest['bedCategory'];
+  inventorySource?: HospitalAdmissionRequest['inventorySource'];
+  holdId?: string;
+  admittedAt: Date;
+  dischargedAt?: Date;
 };
 
 export async function ensureHospitalRequestForSos(sos: SosRequest) {
@@ -155,7 +190,7 @@ export function chooseBedCategory(
 export type CareNotification = {
   _id: string;
   recipientId: string;
-  type: "hospital_request_accepted";
+  type: "hospital_request_pending" | "hospital_request_accepted" | "hospital_request_rejected" | "hospital_patient_admitted" | "hospital_request_rerouted" | "hospital_data_stale";
   title: string;
   message: string;
   relatedRequestId: string;
@@ -175,6 +210,7 @@ export async function workflowCollections() {
   const db = (await clientPromise).db();
   return {
     hospitalRequests: db.collection<HospitalAdmissionRequest>("hospitalAdmissionRequests"),
+    hospitalAdmissions: db.collection<HospitalAdmission>("hospitalAdmissions"),
     notifications: db.collection<CareNotification>("notifications"),
   };
 }
@@ -198,6 +234,32 @@ export function distanceKm(a: Coordinates, b: Coordinates) {
   const dLon = radians(b.longitude - a.longitude);
   const value = Math.sin(dLat / 2) ** 2 + Math.cos(radians(a.latitude)) * Math.cos(radians(b.latitude)) * Math.sin(dLon / 2) ** 2;
   return 6371 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+}
+
+/** Expire unanswered offers and atomically offer each SOS to its next nearest available driver. */
+export async function expireAndReofferDriverOffers() {
+  const { requests, drivers } = await sosCollections();
+  const now = new Date();
+  const expired = await requests.find({ status: 'searching', assignedDriverId: { $exists: true }, assignmentExpiresAt: { $lte: now } }).limit(100).toArray();
+  for (const request of expired) {
+    const previousDriverId = request.assignedDriverId;
+    if (!previousDriverId) continue;
+    const releasedRequest = await requests.updateOne({ _id: request._id, status: 'searching', assignedDriverId: previousDriverId, assignmentExpiresAt: { $lte: now } }, { $addToSet: { rejectedDriverIds: previousDriverId }, $unset: { assignedDriverId: '', assignmentExpiresAt: '' } });
+    if (!releasedRequest.modifiedCount) continue;
+    await drivers.updateOne({ userId: previousDriverId, pendingOfferRequestId: request._id }, { $unset: { pendingOfferRequestId: '', pendingOfferExpiresAt: '' }, $set: { updatedAt: now } });
+    const excluded = [...(request.rejectedDriverIds ?? []), previousDriverId];
+    const candidates = await drivers.find({ available: true, activeRequestId: { $exists: false }, pendingOfferRequestId: { $exists: false }, location: { $exists: true }, userId: { $nin: excluded } }).toArray();
+    const nearest = candidates.filter((driver) => validCoordinates(driver.location)).sort((a, b) => distanceKm(request.location, a.location!) - distanceKm(request.location, b.location!));
+    for (const candidate of nearest) {
+      const expiresAt = new Date(now.getTime() + 15_000);
+      const reservation = await drivers.updateOne({ userId: candidate.userId, available: true, activeRequestId: { $exists: false }, pendingOfferRequestId: { $exists: false } }, { $set: { pendingOfferRequestId: request._id, pendingOfferExpiresAt: expiresAt, updatedAt: now } });
+      if (!reservation.modifiedCount) continue;
+      const reoffered = await requests.updateOne({ _id: request._id, status: 'searching', assignedDriverId: { $exists: false }, rejectedDriverIds: { $ne: candidate.userId } }, { $set: { assignedDriverId: candidate.userId, assignmentExpiresAt: expiresAt, assignmentOfferedAt: now } });
+      if (reoffered.modifiedCount) break;
+      await drivers.updateOne({ userId: candidate.userId, pendingOfferRequestId: request._id }, { $unset: { pendingOfferRequestId: '', pendingOfferExpiresAt: '' } });
+      break;
+    }
+  }
 }
 
 export function createRequestId() { return randomUUID(); }

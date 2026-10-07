@@ -10,7 +10,7 @@ import {
 export const MobileNav: React.FC = () => {
   const { activeTab, setActiveTab, medicines } = useCareLink();
   const outOfStockCount = medicines.filter((medicine) =>
-    Object.values(medicine.stock).some((quantity) => quantity === 0)
+    Object.values(medicine.stock).some((quantity) => quantity <= (medicine.minimumStock ?? (medicine.isEmergencyEssential ? 8 : 10)))
   ).length;
 
   const tabs: { id: string; label: string; icon: React.ReactNode; badge?: number }[] = [

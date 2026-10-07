@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { BedDouble, Check, Clock, RefreshCw } from 'lucide-react';
+import { Clock, RefreshCw } from 'lucide-react';
+import { classifyEmergencyLevel, EmergencyLevelTag } from '../common/EmergencyLevelTag';
 
 type HospitalRequest = {
   _id: string;
@@ -15,20 +16,39 @@ type HospitalRequest = {
   status: 'pending' | 'accepting' | 'accepted' | 'rejected';
   createdAt: string;
   holdId?: string;
+  driverAssigned?: boolean;
+  location?: { latitude: number; longitude: number };
+  sosStatus?: string;
+  admitted?: boolean;
+  etaMinutes?: number;
+  driverAcceptedAt?: string;
+  bedCategory?: string;
+  rejectionReason?: string;
+  reservationExpiresAt?: string;
+  acceptedAt?: string;
+  admittedAt?: string;
+  driverTripStage?: string;
+  driverTripTimestamps?: Record<string, string>;
+  driverVitalsUpdate?: { bp: string; heartRate: number; spO2: number; updatedAt: string } | null;
+  driverIssue?: { message: string; updatedAt: string; etaDelayMinutes?: number } | null;
 };
 
-export function HospitalRequestInbox() {
+export function HospitalRequestInbox({ searchQuery = '' }: { searchQuery?: string }) {
   const [requests, setRequests] = useState<HospitalRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
+  const [clockNow, setClockNow] = useState(0);
+  const query = searchQuery.trim().toLocaleLowerCase();
 
   const refresh = useCallback(async () => {
     try {
       const response = await fetch('/api/hospital-requests', { cache: 'no-store' });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Could not load patient requests.');
-      setRequests(result.requests ?? []);
+      const liveRequests = result.requests ?? [];
+      setRequests(liveRequests);
       setMessage('');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not load patient requests.');
@@ -45,6 +65,7 @@ export function HospitalRequestInbox() {
       window.clearInterval(timer);
     };
   }, [refresh]);
+  useEffect(() => { const timer = window.setTimeout(() => setClockNow(Date.now()), 0); const interval = window.setInterval(() => setClockNow(Date.now()), 30_000); return () => { window.clearTimeout(timer); window.clearInterval(interval); }; }, []);
 
   const accept = async (request: HospitalRequest) => {
     setBusyId(request._id);
@@ -64,15 +85,47 @@ export function HospitalRequestInbox() {
     }
   };
 
-  return <section className="rounded-2xl border border-rose-200 bg-white p-5 shadow-xs">
+  const admit = async (request: HospitalRequest) => {
+    setBusyId(request._id);
+    setMessage('');
+    try {
+      const response = await fetch('/api/hospital-admin/admissions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hospitalRequestId: request._id }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not record patient admission.');
+      setMessage(`${request.patientName} was recorded as admitted.`);
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not record patient admission.');
+    } finally { setBusyId(null); }
+  };
+
+  const reject = async (request: HospitalRequest) => {
+    const reason = rejectReason[request._id];
+    if (!reason) { setMessage('Choose a reason before rejecting this request.'); return; }
+    setBusyId(request._id); setMessage('');
+    try {
+      const response = await fetch(`/api/hospital-requests/${encodeURIComponent(request._id)}/reject`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not reject this patient request.');
+      setMessage(`${request.patientName}'s request was rejected.`);
+      await refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not reject this patient request.'); }
+    finally { setBusyId(null); }
+  };
+
+  const visibleRequests = requests.filter((request) => `${request.patientName} ${request.patientPhone || ''} ${request.incidentType} ${request.status} ${request.requiredEquipment.join(' ')}`.toLocaleLowerCase().includes(query)).sort((a, b) => {
+    const rank = (value: HospitalRequest) => classifyEmergencyLevel(`${value.incidentType} ${value.requiredEquipment.join(' ')}`) === 'HIGH EMERGENCY' ? 0 : classifyEmergencyLevel(`${value.incidentType} ${value.requiredEquipment.join(' ')}`) === 'URGENT' ? 1 : 2;
+    return rank(a) - rank(b) || (a.etaMinutes ?? Infinity) - (b.etaMinutes ?? Infinity) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+
+  return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
     <div className="mb-4 flex items-center justify-between gap-3">
-      <div><h2 className="font-bold text-slate-900">Incoming Patient Requests</h2><p className="mt-1 text-xs text-slate-500">Bed and SOS requests refresh automatically. Accepting reserves one available bed.</p></div>
+      <div><h2 className="font-bold text-slate-900">Incoming Patient Requests</h2><p className="mt-1 text-xs text-slate-500">Bed and SOS requests refresh automatically. Accepting a live request reserves one available bed.</p></div>
       <button type="button" onClick={() => void refresh()} aria-label="Refresh patient requests" className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"><RefreshCw className="h-4 w-4" /></button>
     </div>
     {message && <p role="status" className="mb-3 rounded-lg bg-sky-50 px-3 py-2 text-xs font-medium text-sky-900">{message}</p>}
-    {loading ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Loading patient requests…</p> : requests.length ? <div className="space-y-3">{requests.map((request) => <article key={request._id} className="rounded-xl border border-rose-100 bg-rose-50/40 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><p className="font-bold text-slate-900">{request.patientName} · {request.incidentType}</p><span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-600">{request.requestType === 'bed' ? 'Bed request' : 'SOS'}</span></div><p className="mt-1 text-xs text-slate-600">{request.patientPhone || 'No phone provided'} · Ref {request.sosRequestId.slice(0, 8)}</p>{request.requiredEquipment.length > 0 && <p className="mt-1 text-xs text-slate-600">Needs: {request.requiredEquipment.join(', ')}</p>}</div><span className={`rounded-full px-2.5 py-1 text-[11px] font-bold uppercase ${request.status === 'accepted' ? 'bg-emerald-100 text-emerald-800' : request.status === 'pending' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>{request.status}</span></div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="flex items-center gap-1 text-[11px] text-slate-500"><Clock className="h-3.5 w-3.5" />{new Date(request.createdAt).toLocaleString()}</p>{request.status === 'pending' && <button type="button" disabled={busyId === request._id} onClick={() => void accept(request)} className="flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-60"><BedDouble className="h-3.5 w-3.5" />{busyId === request._id ? 'Reserving bed…' : 'Accept & reserve one bed'}</button>}{request.status === 'accepted' && <span className="flex items-center gap-1 text-xs font-semibold text-emerald-800"><Check className="h-4 w-4" />Bed reserved</span>}</div>
-    </article>)}</div> : <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500">No patient requests are waiting for this hospital.</p>}
+    {requests.some((request) => request.driverTripStage || request.driverVitalsUpdate || request.driverIssue) && <section className="mb-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4"><h3 className="font-bold text-slate-900">Paramedic updates</h3><div className="mt-2 space-y-2">{requests.filter((request) => request.driverTripStage || request.driverVitalsUpdate || request.driverIssue).map((request) => <article key={`paramedic-${request._id}`} className="rounded-lg border border-amber-100 bg-white p-3 text-sm"><p className="font-semibold text-slate-900">{request.patientName} · {request.driverTripStage?.replaceAll('_', ' ') || 'Trip in progress'}</p>{request.driverTripTimestamps && <p className="mt-1 text-xs text-slate-500">{Object.entries(request.driverTripTimestamps).map(([stage, date]) => `${stage.replaceAll('_', ' ')} ${new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`).join(' · ')}</p>}{request.driverVitalsUpdate && <p className="mt-1 text-xs text-slate-700">Vitals · BP {request.driverVitalsUpdate.bp} · HR {request.driverVitalsUpdate.heartRate} bpm · SpO₂ {request.driverVitalsUpdate.spO2}% · {new Date(request.driverVitalsUpdate.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>}{request.driverIssue && <p className="mt-1 text-xs font-medium text-amber-900">Driver issue · {request.driverIssue.message}{request.driverIssue.etaDelayMinutes ? ` · ETA +${request.driverIssue.etaDelayMinutes} min` : ''}</p>}</article>)}</div></section>}
+    {loading ? <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Loading patient requests…</p> : visibleRequests.length ? <div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-sm"><thead className="border-b border-slate-200 text-xs uppercase text-slate-500"><tr><th className="px-3 py-3">Patient</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Priority</th><th className="px-3 py-3">ETA / workflow</th><th className="px-3 py-3">Impact</th><th className="px-3 py-3">Vitals & notes</th><th className="px-3 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{visibleRequests.map((request) => <tr key={request._id} className="align-middle">
+      <td className="px-3 py-3"><p className="font-bold text-slate-900">{request.patientName}</p><p className="mt-1 text-xs text-slate-500">Ref {request.sosRequestId}</p></td><td className="px-3 py-3">{request.incidentType}<p className="mt-1 text-xs text-slate-500">{request.requestType === 'bed' ? 'Bed request' : 'SOS'}{request.requiredEquipment.length ? ` · ${request.requiredEquipment.join(', ')}` : ''}</p></td><td className="px-3 py-3"><EmergencyLevelTag description={`${request.incidentType} ${request.requiredEquipment.join(' ')}`} /></td><td className="px-3 py-3 whitespace-nowrap text-xs text-slate-600"><Clock className="mr-1 inline h-3.5 w-3.5" />{request.etaMinutes != null ? `${request.etaMinutes} min${request.driverAcceptedAt ? ' · estimated' : ''}` : request.driverAssigned ? 'ETA pending' : 'Awaiting driver'}<p className="mt-1">{request.status === 'pending' ? `Await ${Math.max(0, 15 - Math.floor((clockNow - new Date(request.createdAt).getTime()) / 60000))} min response` : <span className="block">Requested {new Date(request.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{request.acceptedAt && <> → Accepted {new Date(request.acceptedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>}{request.driverAcceptedAt && <> → En route {new Date(request.driverAcceptedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>}{request.admittedAt && <> → Arrived {new Date(request.admittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} → Handed over</>}</span>}</p></td><td className="px-3 py-3 text-xs text-slate-700">{request.status === 'pending' ? <>{request.bedCategory || 'Bed'}: current availability will decrement by 1</> : request.status === 'accepted' ? `Reserved: ${request.bedCategory || 'bed'}` : request.rejectionReason ? `Reason: ${request.rejectionReason.replaceAll('_', ' ')}` : '—'}{request.status === 'pending' && <select aria-label={`Reason for rejecting ${request.patientName}`} value={rejectReason[request._id] || ''} onChange={(event) => setRejectReason((current) => ({ ...current, [request._id]: event.target.value }))} className="mt-1 block rounded border border-slate-200 bg-white px-2 py-1 text-xs"><option value="">Reject reason…</option><option value="no_icu_bed">No ICU bed</option><option value="specialist_unavailable">Specialist unavailable</option><option value="diverted">Hospital diverted</option><option value="other">Other</option></select>}</td><td className="px-3 py-3 text-xs text-slate-600">{request.requestType === 'sos' ? 'Vitals pending from paramedic' : `Needs ${request.requiredEquipment.join(', ') || 'bed assessment'}`}</td><td className="px-3 py-3"><div className="flex justify-end gap-2">{request.status === 'pending' && <><button type="button" disabled={busyId === request._id} onClick={() => void accept(request)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-60">{busyId === request._id ? 'Saving…' : '✓ Accept'}</button><button type="button" disabled={busyId === request._id || !rejectReason[request._id]} onClick={() => void reject(request)} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 disabled:opacity-60">✕ Reject</button></>}{request.status === 'accepted' && <div className="flex items-center gap-2"><span className="text-xs font-semibold text-emerald-800">{request.admitted ? 'Admission recorded' : 'Bed reserved'}</span>{!request.admitted && <button type="button" disabled={busyId === request._id} onClick={() => void admit(request)} className="rounded-lg border border-emerald-300 bg-white px-2 py-1.5 text-xs font-semibold text-emerald-800 disabled:opacity-50">Mark admitted</button>}</div>}{request.status === 'rejected' && <span className="text-xs font-semibold text-rose-700">Rejected</span>}</div></td></tr>)}</tbody></table></div> : <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500">{requests.length ? 'No cases match this search.' : 'No patient requests are waiting for this hospital.'}</p>}
   </section>;
 }

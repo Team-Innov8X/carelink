@@ -6,7 +6,6 @@ import { Sidebar } from './components/common/Sidebar';
 import { DispatcherDashboard } from './components/dispatcher/DispatcherDashboard';
 import { HospitalDirectory } from './components/hospitals/HospitalDirectory';
 import { SmartRecommendations } from './components/hospitals/SmartRecommendations';
-import { HospitalStaffView } from './components/hospitalStaff/HospitalStaffView';
 import { PatientHandoffView } from './components/handoff/PatientHandoffView';
 import { MedicineSearch } from './components/pharmacy/MedicineSearch';
 import { ReportsView } from './components/reports/ReportsView';
@@ -16,6 +15,7 @@ import { NewEmergencyModal } from './components/dispatcher/NewEmergencyModal';
 import { EmergencyRequestsView } from './components/dispatcher/EmergencyRequestsView';
 import { NotificationCenter } from './components/notifications/NotificationCenter';
 import { MobileNav } from './components/mobile/MobileNav';
+import { PatientSOSStatus } from './components/sos/PatientSOSStatus';
 import { LoaderCircle, Siren } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
@@ -29,6 +29,7 @@ const MainAppContent: React.FC = () => {
       setIsNewEmergencyOpen(true);
       return;
     }
+    if (!window.confirm('Emergency SOS\n\nAre you sure you want to request emergency assistance?')) return;
     const sendRequest = async (location: { latitude: number; longitude: number }) => {
       try {
         const response = await fetch('/api/sos', {
@@ -43,6 +44,7 @@ const MainAppContent: React.FC = () => {
         setSosMessage(error instanceof Error ? error.message : 'Could not send your emergency request.');
       } finally {
         setSosSubmitting(false);
+        window.setTimeout(() => setSosMessage(''), 7000);
       }
     };
 
@@ -84,15 +86,14 @@ const MainAppContent: React.FC = () => {
         <Sidebar />
 
         {/* Dynamic Center View */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
-          {activeTab === 'dashboard' && <DispatcherDashboard />}
+        <main className="flex-1 p-4 pb-32 sm:p-6 sm:pb-32 lg:p-8 lg:pb-32 max-w-7xl mx-auto w-full overflow-y-auto">
+          {activeTab === 'dashboard' && <DispatcherDashboard onOpenNewEmergency={() => setIsNewEmergencyOpen(true)} />}
           {activeTab === 'requests' && <EmergencyRequestsView onOpenNewEmergency={() => setIsNewEmergencyOpen(true)} />}
           {activeTab === 'notifications' && <NotificationCenter />}
           {activeTab === 'hospitals' && <HospitalDirectory />}
-          {activeTab === 'recommendations' && (role === 'patient' ? <section className="mx-auto mt-10 max-w-xl rounded-3xl border border-sky-100 bg-white p-10 text-center shadow-sm"><div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-50 text-sky-700"><Siren className="h-7 w-7" /></div><h1 className="text-2xl font-black text-slate-900">Feature coming soon</h1><p className="mt-2 text-sm text-slate-500">Smart Match is being prepared and will be available here soon.</p></section> : <SmartRecommendations />)}
+          {activeTab === 'recommendations' && <SmartRecommendations />}
           {activeTab === 'handoff' && <PatientHandoffView />}
           {activeTab === 'pharmacy' && <MedicineSearch mode="patient" />}
-          {activeTab === 'hospital-portal' && <HospitalStaffView />}
           {activeTab === 'reports' && <ReportsView />}
           {activeTab === 'settings' && <SettingsView />}
         </main>
@@ -101,18 +102,19 @@ const MainAppContent: React.FC = () => {
       {/* Responsive Mobile Bottom Tab Bar matching Panel 10 */}
       <MobileNav />
 
-      {role !== 'patient' && <button
+      <button
         type="button"
         onClick={handleSOS}
         disabled={sosSubmitting}
-        aria-label="Create SOS emergency call"
-        title="Create SOS emergency call"
-        className="fixed bottom-20 right-5 z-50 flex items-center gap-2 rounded-full bg-rose-600 px-5 py-3.5 text-sm font-bold text-white shadow-xl shadow-rose-900/30 transition hover:-translate-y-0.5 hover:bg-rose-500 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-300 disabled:cursor-wait disabled:opacity-80 md:bottom-6 md:right-6"
+        aria-label={role === 'patient' ? 'Request emergency assistance with SOS' : 'Create SOS emergency call'}
+        title={role === 'patient' ? 'Request emergency assistance' : 'Create SOS emergency call'}
+        className="fixed bottom-20 right-4 z-50 flex min-h-14 items-center gap-2 rounded-full bg-rose-700 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-rose-900/25 transition hover:bg-rose-800 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-300 disabled:cursor-wait disabled:opacity-80 md:bottom-6 md:right-6"
       >
         {sosSubmitting ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Siren className="h-5 w-5" />}
-        {sosSubmitting ? 'Sending…' : 'SOS Call'}
-      </button>}
-      {role !== 'patient' && sosMessage && <p role="status" aria-live="polite" className="fixed bottom-36 right-5 z-50 max-w-sm rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-800 shadow-xl md:bottom-20 md:right-6">{sosMessage}</p>}
+        {sosSubmitting ? 'Sending…' : role === 'patient' ? 'SOS' : 'SOS Call'}
+      </button>
+      {sosMessage && <p role="status" aria-live="polite" className="fixed bottom-36 right-5 z-50 max-w-sm rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-800 shadow-xl md:bottom-20 md:right-6">{sosMessage}</p>}
+      {role === 'patient' && <PatientSOSStatus />}
 
       {/* Modals */}
       <NewEmergencyModal

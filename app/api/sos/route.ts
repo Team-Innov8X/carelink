@@ -1,5 +1,5 @@
 import { requireRole } from "@/lib/auth-utils";
-import { createRequestId, ensureHospitalRequestForSos, sosCollections, validCoordinates } from "@/lib/sos";
+import { createRequestId, ensureHospitalRequestForSos, sosCollections, validCoordinates, workflowCollections } from "@/lib/sos";
 
 export const runtime = "nodejs";
 
@@ -10,6 +10,9 @@ export async function GET() {
   const role = (auth.user as { role?: string }).role;
   const query = role === "dispatcher" ? {} : { patientId: auth.user.id };
   const items = await requests.find(query).sort({ createdAt: -1 }).limit(50).toArray();
+  const { hospitalRequests } = await workflowCollections();
+  const linkedHospitalRequests = items.length ? await hospitalRequests.find({ sosRequestId: { $in: items.map((item) => item._id) } }).toArray() : [];
+  const hospitalBySosId = new Map(linkedHospitalRequests.map((item) => [item.sosRequestId, item]));
   return Response.json({ requests: items.map((item) => ({
     id: item._id,
     status: item.status,
@@ -19,6 +22,11 @@ export async function GET() {
     requiredEquipment: item.requiredEquipment,
     createdAt: item.createdAt,
     acceptedAt: item.acceptedAt,
+    tripStage: item.tripStage,
+    tripTimestamps: item.tripTimestamps,
+    vitalsUpdate: item.vitalsUpdate,
+    issue: item.issue,
+    destination: (() => { const target = hospitalBySosId.get(item._id); return target ? { name: target.hospitalName, status: target.status, bedCategory: target.bedCategory, rejectionReason: target.rejectionReason } : null; })(),
     driverAssigned: Boolean(item.driverId),
   })) });
 }
