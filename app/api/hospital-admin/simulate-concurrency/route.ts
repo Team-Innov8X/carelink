@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { requireRole } from '@/lib/auth-utils';
-import connectMongo from '@/lib/mongodb';
+import clientPromise from '@/lib/mongodb';
 
 export const runtime = 'nodejs';
 
@@ -11,7 +11,7 @@ export async function POST() {
   const hospitalName = (auth.user as typeof auth.user & { hospitalName?: string }).hospitalName;
   if (!hospitalName) return Response.json({ error: 'Your account is not linked to a hospital.' }, { status: 403 });
   const key = `race-demo-${randomUUID()}`;
-  const client = await connectMongo();
+  const client = await clientPromise;
   const inventory = client.db().collection<{ _id: string; available: number }>('hospitalReservationSimulations');
   await inventory.insertOne({ _id: key, available: 1 });
   try {

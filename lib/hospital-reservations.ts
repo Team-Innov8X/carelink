@@ -1,4 +1,4 @@
-import connectMongo from '@/lib/mongodb';
+import clientPromise from '@/lib/mongodb';
 import { workflowCollections } from '@/lib/sos';
 import { ObjectId } from 'mongodb';
 import { getHoldsCollection, getResourcesCollection } from '@/lib/models';
@@ -16,7 +16,7 @@ export async function expireHospitalReservations(scope: { hospitalId?: string; h
     await notifications.updateOne({ _id: `hospital-response-timeout-${request._id}` }, { $setOnInsert: { _id: `hospital-response-timeout-${request._id}`, recipientId: request.patientId, type: 'hospital_request_rejected', title: 'Hospital response window expired', message: `${request.hospitalName} did not respond within 15 minutes. Your request has been returned to emergency dispatch.`, relatedRequestId: request.sosRequestId, createdAt: now } }, { upsert: true });
   }
   const expired = await hospitalRequests.find({ status: 'accepted', reservationExpiresAt: { $lte: now }, ...hospitalScope }).limit(100).toArray();
-  const database = (await connectMongo()).db();
+  const database = (await clientPromise).db();
   const appState = database.collection<{ _id: string }>('appState');
   for (const request of expired) {
     const lock = await hospitalRequests.updateOne({ _id: request._id, status: 'accepted', reservationExpiresAt: { $lte: now } }, { $set: { status: 'expiring', updatedAt: now } });
