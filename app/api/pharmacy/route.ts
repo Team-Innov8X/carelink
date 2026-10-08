@@ -1,5 +1,5 @@
 import { requireRole } from '@/lib/auth-utils';
-import connectMongo from '@/lib/mongodb';
+import clientPromise from '@/lib/mongodb';
 import { INITIAL_MEDICINES } from '@/data/mockMedicines';
 import { INITIAL_PHARMACIES } from '@/data/mockPharmacies';
 import { INITIAL_HOSPITALS } from '@/data/mockHospitals';
@@ -14,7 +14,7 @@ type StateOrder = { id: string; medicineId: string; medicineName: string; pharma
 type State = { medicines: StateMedicine[]; medicineOrders: StateOrder[]; pharmacies: typeof INITIAL_PHARMACIES; [key: string]: unknown };
 
 async function appState() {
-  const db = (await connectMongo()).db();
+  const db = (await clientPromise).db();
   const collection = db.collection<{ _id: string; state: State; updatedAt?: Date | string; pharmacyUpdatedAt?: Date | string }>('appState');
   let current = await collection.findOne({ _id: 'carelink' });
   if (!current) {
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   const requestedPharmacy = body.pharmacyId;
   const pharmacyId = pharmacyRole ? pharmacyForUser(auth.user as typeof auth.user & { pharmacyId?: string }) : requestedPharmacy && INITIAL_PHARMACIES.some((p) => p.id === requestedPharmacy) ? requestedPharmacy : 'pharm-1';
   const now = new Date();
-  const db = (await connectMongo()).db();
+  const db = (await clientPromise).db();
   try {
     const { collection } = await appState();
     for (let attempt = 0; attempt < 6; attempt++) {

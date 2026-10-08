@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import connectMongo from "@/lib/mongodb";
+import clientPromise from "@/lib/mongodb";
 
 export async function GET() {
   let database: "connected" | "unavailable" = "connected";
   try {
-    const client = await connectMongo();
+    const client = await clientPromise;
     await client.db().command({ ping: 1 });
   } catch {
     database = "unavailable";

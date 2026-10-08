@@ -44,7 +44,7 @@ export default function SignInPage() {
     try {
       const result = await authClient.signIn.social({
         provider: 'google',
-        callbackURL: '/auth-callback',
+        callbackURL: routeForRole('patient'),
       });
       if (result.error) throw new Error(result.error.message || 'Google sign in is unavailable.');
       if (result.data?.url) window.location.assign(result.data.url);

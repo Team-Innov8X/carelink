@@ -56,15 +56,13 @@ interface CareLinkContextType {
   doubleBookingConflict: DoubleBookingConflict | null;
   dismissDoubleBookingModal: () => void;
   retryWithAlternativeBed: (alternativeHospitalId: string) => void;
-  unreadNotificationsCount: number;
-  refreshNotificationsCount: () => Promise<void>;
   
   // Actions
   requestHospitalBed: (requestId: string, hospitalId: string) => boolean;
   acceptEmergency: (requestId: string) => void;
   rejectEmergency: (requestId: string, reason?: string) => void;
   rejectDriverEmergency: (requestId: string) => void;
-  updateBedCounts: (hospitalId: string, bedType: keyof HospitalBeds, delta: number) => Promise<boolean>;
+  updateBedCounts: (hospitalId: string, bedType: keyof HospitalBeds, delta: number) => void;
   setBedAvailability: (hospitalId: string, bedType: keyof HospitalBeds, available: number, total: number) => void;
   updateHospitalSpecialty: (hospitalId: string, specialty: string, doctors: number) => void;
   refreshHospitalData: (hospitalId: string) => void;
@@ -84,13 +82,7 @@ const CareLinkContext = createContext<CareLinkContextType | undefined>(undefined
 const mergeInitialRecords = <T extends { id: string }>(saved: T[] | undefined, initial: T[]): T[] => {
   const records = new Map((Array.isArray(saved) ? saved : []).map((record) => [record.id, record]));
   initial.forEach((record) => {
-    const current = records.get(record.id);
-    if (!current) records.set(record.id, record);
-    else if ('specialtyDoctors' in record) {
-      const defaults = (record as { specialtyDoctors?: Record<string, number> }).specialtyDoctors ?? {};
-      const existing = (current as T & { specialtyDoctors?: Record<string, number> }).specialtyDoctors ?? {};
-      records.set(record.id, { ...current, specialtyDoctors: { ...defaults, ...existing } });
-    }
+    if (!records.has(record.id)) records.set(record.id, record);
   });
   return Array.from(records.values());
 };
@@ -110,35 +102,6 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
   const [selectedHospitalId, setSelectedHospitalId] = useState<string>('hosp-1');
   const [selectedPharmacyId, setSelectedPharmacyId] = useState<string>('pharm-1');
   const [doubleBookingConflict, setDoubleBookingConflict] = useState<DoubleBookingConflict | null>(null);
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
-
-  const refreshNotificationsCount = React.useCallback(async () => {
-    try {
-      const response = await fetch('/api/notifications', { cache: 'no-store' });
-      if (!response.ok) return;
-      const data = await response.json();
-      if (typeof data.unreadCount === 'number') {
-        setUnreadNotificationsCount(data.unreadCount);
-      }
-    } catch {
-      // silently ignore network errors
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshNotificationsCount();
-    const interval = window.setInterval(() => void refreshNotificationsCount(), 5000);
-    const onNotificationUpdate = () => void refreshNotificationsCount();
-    window.addEventListener('carelink-notification-updated', onNotificationUpdate);
-    window.addEventListener('carelink-sos-updated', onNotificationUpdate);
-    window.addEventListener('carelink-authenticated', onNotificationUpdate);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener('carelink-notification-updated', onNotificationUpdate);
-      window.removeEventListener('carelink-sos-updated', onNotificationUpdate);
-      window.removeEventListener('carelink-authenticated', onNotificationUpdate);
-    };
-  }, [refreshNotificationsCount]);
 
   // Restore a fast local copy, then reconcile with the shared MongoDB snapshot.
   useEffect(() => {
@@ -367,26 +330,37 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
     setEmergencies((prev) => prev.map((req) => req.id === requestId ? { ...req, status: 'Rejected' } : req));
   };
 
-  const updateBedCounts = async (
+  const updateBedCounts = (
     hospitalId: string,
     bedType: keyof HospitalBeds,
     delta: number
-  ): Promise<boolean> => {
-    try {
-      const response = await fetch(`/api/hospitals/${encodeURIComponent(hospitalId)}/capacity`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bedType, delta }),
-      });
-      if (!response.ok) return false;
-      window.dispatchEvent(new Event('carelink-data-refresh'));
-      return true;
-    } catch {
-      return false;
-    }
+  ) => {
+    setHospitals((prev) =>
+      prev.map((h) => {
+        if (h.id === hospitalId) {
+          const current = h.beds[bedType];
+          const newAvail = Math.min(
+            current.total,
+            Math.max(0, current.available + delta)
+          );
+          return {
+            ...h,
+            lastUpdatedMinutesAgo: 0, // Freshly updated!
+            beds: {
+              ...h.beds,
+              [bedType]: {
+                ...current,
+                available: newAvail,
+              },
+            },
+          };
+        }
+        return h;
+      })
+    );
   };
 
-  const updateHospitalSpecialty = async (hospitalId: string, specialty: string, doctors: number) => {
+  const updateHospitalSpecialty = (hospitalId: string, specialty: string, doctors: number) => {
     const normalized = specialty.trim();
     if (!normalized) return;
     setHospitals((prev) => prev.map((hospital) => {
@@ -400,17 +374,6 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
         lastUpdatedMinutesAgo: 0,
       };
     }));
-    try {
-      const response = await fetch(`/api/hospitals/${encodeURIComponent(hospitalId)}/staffing`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ specialty: normalized, doctors: Math.max(0, Math.floor(doctors)) }),
-      });
-      if (!response.ok) window.dispatchEvent(new Event('carelink-data-refresh'));
-      else window.dispatchEvent(new Event('carelink-data-refresh'));
-    } catch {
-      window.dispatchEvent(new Event('carelink-data-refresh'));
-    }
   };
 
   const setBedAvailability = (hospitalId: string, bedType: keyof HospitalBeds, available: number, total: number) => {
@@ -605,8 +568,6 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
         doubleBookingConflict,
         dismissDoubleBookingModal,
         retryWithAlternativeBed,
-        unreadNotificationsCount,
-        refreshNotificationsCount,
         requestHospitalBed,
         acceptEmergency,
         rejectEmergency,
