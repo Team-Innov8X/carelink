@@ -1,6 +1,7 @@
 import type { ObjectId } from "mongodb";
 
 export type HoldStatus =
+  | "queued"     // In queue for a bed
   | "pending"    // Hold placed, awaiting hospital confirmation or arrival
   | "confirming"
   | "releasing"
@@ -23,19 +24,22 @@ export interface IPatientDetails {
 }
 
 export interface IHold {
-  _id?: ObjectId;
+  _id?: ObjectId | string;
   id?: string;
+  patientId?: string; // Patient ID
   hospitalId: string;
   resourceId: string;
+  seq?: number;
+  queuePosition?: number;
   ambulanceId?: string;
   parentHoldId?: string;
   escalationHoldId?: string;
   escalationCheckedAt?: Date;
   escalationAttempts?: number;
   releaseReason?: "cancelled" | "expired" | "rejected";
-  requestedByUserId: string; // User ID of dispatcher or driver placing the hold
-  patientDetails: IPatientDetails;
-  quantity: number;
+  requestedByUserId?: string; // User ID of dispatcher, driver, or patient placing the hold
+  patientDetails?: IPatientDetails;
+  quantity?: number;
   status: HoldStatus;
   expiresAt?: Date;
   purgeAt?: Date;

@@ -1,29 +1,84 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Filter } from "mongodb";
 import type { HoldStatus } from "@/lib/models";
-import { createHold, expirePendingHolds } from "@/lib/services/hold-service";
+import {
+  createHold,
+  expirePendingHolds,
+  requestBedHold,
+} from "@/lib/services/hold-service";
 import { getHoldsCollection, getResourcesCollection } from "@/lib/models";
-import { createHoldSchema } from "@/lib/validation";
+import { createHoldSchema, bedHoldRequestSchema } from "@/lib/validation";
 import { errorResponse, validationError } from "@/lib/api-response";
 import { requireRole, resolveHospitalId } from "@/lib/auth-utils";
 import { ObjectId } from "mongodb";
 
 /**
  * POST /api/holds
- * Creates a hold-and-confirm reservation using atomic findOneAndUpdate.
- * Prevents double booking: first request wins; second gets "JUST_TAKEN" + next-ranked hospital.
+ * Bed request for patients (or hold reservation for drivers/dispatchers).
+ * Role: patient (also allows dispatcher/driver)
+ * Returns pending or queued plus position. 409 on duplicate.
  */
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requireRole(["ambulance_driver", "driver", "dispatcher"]);
-    if (!auth.authorized || !auth.user) return errorResponse(auth.reason, auth.reason === "UNAUTHENTICATED" ? 401 : 403);
-    const parsed = createHoldSchema.safeParse(await req.json());
+    const auth = await requireRole(["patient", "ambulance_driver", "driver", "dispatcher", "admin"]);
+    if (!auth.authorized || !auth.user) {
+      return errorResponse(auth.reason, auth.reason === "UNAUTHENTICATED" ? 401 : 403);
+    }
+
+    let bodyJson: unknown;
+    try {
+      bodyJson = await req.json();
+    } catch {
+      return errorResponse("Request body must be valid JSON", 400);
+    }
+
+    const role = (auth.user as { role?: string }).role || "patient";
+
+    // If role is patient or body is a bed request (without category/ambulanceId)
+    const isPatientOrBedRequest = role === "patient" || (
+      typeof bodyJson === "object" && bodyJson !== null &&
+      !("category" in bodyJson) && !("resourceType" in bodyJson) && !("ambulanceId" in bodyJson)
+    );
+
+    if (isPatientOrBedRequest) {
+      const parsed = bedHoldRequestSchema.safeParse(bodyJson);
+      if (!parsed.success) return validationError(parsed.error);
+
+      const result = await requestBedHold({
+        patientId: auth.user.id,
+        hospitalId: parsed.data.hospitalId,
+        resourceId: parsed.data.resourceId,
+        notes: parsed.data.notes,
+      });
+
+      if (!result.success) {
+        return errorResponse(result.error || "Request failed", result.status || 400);
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          status: result.status,
+          queuePosition: result.queuePosition,
+          holdId: result.hold?.id ?? (result.hold as { _id?: string })?._id?.toString(),
+          hold: result.hold,
+          expiresAt: result.expiresAt,
+        },
+        { status: 201 },
+      );
+    }
+
+    // Driver / dispatcher hold request
+    const parsed = createHoldSchema.safeParse(bodyJson);
     if (!parsed.success) return validationError(parsed.error);
 
     const resources = await getResourcesCollection();
     const requestedResourceId = parsed.data.resourceId;
     const resource = requestedResourceId
-      ? await resources.findOne({ _id: ObjectId.isValid(requestedResourceId) ? new ObjectId(requestedResourceId) : requestedResourceId, hospitalId: parsed.data.hospitalId })
+      ? await resources.findOne({
+          _id: ObjectId.isValid(requestedResourceId) ? new ObjectId(requestedResourceId) : requestedResourceId,
+          hospitalId: parsed.data.hospitalId,
+        })
       : null;
     if (requestedResourceId && !resource) return errorResponse("Resource not found at this hospital", 404);
     const resourceType = resource?.type ?? parsed.data.resourceType;
@@ -45,10 +100,18 @@ export async function POST(req: NextRequest) {
       return errorResponse(result.message || "Requested resource is unavailable", 409);
     }
 
-    return NextResponse.json({ ...result, holdId: result.hold?.id, status: result.hold?.status, expiresAt: result.hold?.expiresAt }, { status: 201 });
+    return NextResponse.json(
+      {
+        ...result,
+        holdId: result.hold?.id,
+        status: result.hold?.status,
+        expiresAt: result.hold?.expiresAt,
+      },
+      { status: 201 },
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to create hold";
-    return errorResponse(error instanceof SyntaxError ? "Request body must be valid JSON" : message, error instanceof SyntaxError ? 400 : 500);
+    return errorResponse(message, 500);
   }
 }
 
@@ -76,11 +139,13 @@ export async function GET(req: NextRequest) {
       query.hospitalId = linkedHospitalId;
     } else if (role !== "admin" && role !== "dispatcher") {
       if (requestedByUserId && requestedByUserId !== auth.user.id) return errorResponse("Forbidden", 403);
-      query.requestedByUserId = auth.user.id;
-    } else if (requestedByUserId) query.requestedByUserId = requestedByUserId;
+      query.$or = [{ patientId: auth.user.id }, { requestedByUserId: auth.user.id }];
+    } else if (requestedByUserId) {
+      query.$or = [{ patientId: requestedByUserId }, { requestedByUserId }];
+    }
 
     if (hospitalId && role !== "hospital" && role !== "hospital_staff") query.hospitalId = hospitalId;
-    const validStatuses: HoldStatus[] = ["pending", "confirming", "confirmed", "fulfilled", "expired", "rejected", "cancelled"];
+    const validStatuses: HoldStatus[] = ["queued", "pending", "confirming", "confirmed", "fulfilled", "expired", "rejected", "cancelled"];
     if (status) {
       if (!validStatuses.includes(status as HoldStatus)) return errorResponse("Invalid hold status", 400);
       query.status = status as HoldStatus;

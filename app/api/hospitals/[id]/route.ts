@@ -50,17 +50,23 @@ export async function GET(request: Request, { params }: Context) {
 
     const directionsUrl = mapsUrl(hospitalLocation, patientOrigin);
 
-    // Extract doctors/specialists
-    const doctors = resources
-      .filter((r) => r.type === "specialist")
-      .map((r) => ({
-        id: r._id?.toString() ?? r.name,
-        name: r.name,
-        specialization: r.specialization || (typeof r.category === "string" ? r.category.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "General Medicine"),
-        description: r.description || "",
-        available: r.availableQuantity > 0,
-        status: r.status,
-      }));
+    // Extract doctors/specialists from doctors collection
+    const doctorsCol = await (await import("@/lib/models")).getDoctorsCollection();
+    const realDoctors = await doctorsCol.find({
+      $or: [{ hospitalId: hospitalIdStr }, { hospitalId: id }, ...(hospital.code ? [{ hospitalId: hospital.code }] : [])],
+    }).sort({ updatedAt: -1 }).toArray();
+
+    const doctors = realDoctors.map((d) => ({
+      id: d._id?.toString() ?? d.id,
+      name: d.name,
+      qualification: d.qualification,
+      specialization: d.specialization,
+      availability: d.availability,
+      available: d.availability === "available",
+      phone: d.phone,
+      experienceYears: d.experienceYears,
+      status: d.availability,
+    }));
 
     // Extract bed availability breakdown
     const bedResources = resources.filter((r) => r.type === "bed");

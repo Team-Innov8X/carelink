@@ -37,6 +37,7 @@ export interface IHospital {
   capacitySummary?: IHospitalCapacitySummary;
   responseRate?: number;
   status: "active" | "busy" | "full" | "inactive";
+  placeId?: string;
   createdAt: Date;
   updatedAt: Date;
 }

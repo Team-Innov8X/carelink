@@ -5,6 +5,7 @@ import {
   getHospitalsCollection,
   getResourcesCollection,
   getHoldsCollection,
+  getDb,
   initializeIndexes,
   IHold,
   IResource,
@@ -292,15 +293,43 @@ export async function releaseHold(
   };
 }
 
-/** Expire due pending holds, release their inventory, and return rerank candidates. */
+/** Expire due pending holds, release their inventory, and promote next queued requests. */
 export async function expirePendingHolds(hospitalId?: string) {
-  const holds = await getHoldsCollection();
-  const due = await holds.find({ status: "pending", expiresAt: { $lte: new Date() }, ...(hospitalId ? { hospitalId } : {}) }).sort({ expiresAt: 1 }).limit(100).toArray();
+  const holdsCol = await getHoldsCollection();
+  const resourcesCol = await getResourcesCollection();
+  const now = new Date();
+  const due = await holdsCol.find({
+    status: "pending",
+    expiresAt: { $lte: now },
+    ...(hospitalId ? { hospitalId } : {}),
+  }).sort({ expiresAt: 1 }).limit(100).toArray();
+
   const results = [];
+  const affectedHospitals = new Set<string>();
+
   for (const hold of due) {
     if (!hold._id) continue;
-    results.push(await releaseHold(hold._id.toString(), "expired", hold.originLocation));
+    const queryId = typeof hold._id === "string" && ObjectId.isValid(hold._id) ? new ObjectId(hold._id) : hold._id;
+    const updated = await holdsCol.findOneAndUpdate(
+      { _id: queryId as ObjectId, status: "pending" },
+      { $set: { status: "expired", updatedAt: now } },
+      { returnDocument: "after" }
+    );
+    if (updated) {
+      const resQueryId = ObjectId.isValid(updated.resourceId) ? new ObjectId(updated.resourceId) : updated.resourceId;
+      await resourcesCol.updateOne(
+        { $or: [{ _id: resQueryId as ObjectId }, { hospitalId: updated.hospitalId, type: "bed" }], heldQuantity: { $gt: 0 } },
+        { $inc: { heldQuantity: -1 }, $set: { updatedAt: now } }
+      );
+      affectedHospitals.add(updated.hospitalId);
+      results.push(updated);
+    }
   }
+
+  for (const hid of affectedHospitals) {
+    await promoteNext(hid);
+  }
+
   return results;
 }
 
@@ -379,3 +408,507 @@ export async function findNextRankedHospital(params: {
     scoreBreakdown: winner.scoreBreakdown,
   };
 }
+
+/**
+ * Atomic monotonic sequence generator for hold requests.
+ */
+export async function getNextSeq(): Promise<number> {
+  const db = await getDb();
+  const counter = await db.collection("counters").findOneAndUpdate(
+    { _id: "holds_seq" as unknown as ObjectId },
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: "after" },
+  );
+  return counter?.seq ?? 1;
+}
+
+/**
+ * Finds or initializes the bed resource for a hospital.
+ */
+export async function ensureBedResource(hospitalId: string, resourceId?: string): Promise<IResource> {
+  const resourcesCol = await getResourcesCollection();
+  if (resourceId) {
+    const queryId = ObjectId.isValid(resourceId) ? new ObjectId(resourceId) : resourceId;
+    const found = await resourcesCol.findOne({
+      $or: [{ _id: queryId as ObjectId }, { id: resourceId }],
+      hospitalId,
+    });
+    if (found) return found;
+  }
+
+  const existingBed = await resourcesCol.findOne({
+    hospitalId,
+    type: "bed",
+  });
+  if (existingBed) return existingBed;
+
+  const hospitalsCol = await getHospitalsCollection();
+  const hospQueryId = ObjectId.isValid(hospitalId) ? new ObjectId(hospitalId) : hospitalId;
+  const hospital = await hospitalsCol.findOne({
+    $or: [{ _id: hospQueryId as ObjectId }, { id: hospitalId }, { code: hospitalId }],
+  });
+
+  const totalBeds = hospital?.capacitySummary?.totalBeds || 1;
+  const now = new Date();
+  const newResource: IResource = {
+    hospitalId,
+    type: "bed",
+    category: "general",
+    name: "General Inpatient Bed",
+    totalQuantity: totalBeds,
+    availableQuantity: totalBeds,
+    heldQuantity: 0,
+    status: "available",
+    createdAt: now,
+    updatedAt: now,
+  };
+  const inserted = await resourcesCol.insertOne(newResource);
+  return { ...newResource, _id: inserted.insertedId, id: inserted.insertedId.toString() };
+}
+
+/**
+ * Request a bed at a hospital:
+ * Rule A: One active request (queued, pending, confirmed) per patient per hospital. Return 409 on duplicate.
+ * Rule B: Atomic claim (total beds - confirmed - active unexpired pending holds > 0).
+ * If bed is available: sets pending with expiresAt (now + 90s).
+ * If no bed free: sets queued with queuePosition.
+ */
+export async function requestBedHold(params: {
+  patientId: string;
+  hospitalId: string;
+  resourceId?: string;
+  notes?: string;
+}) {
+  await initializeIndexes();
+  const holdsCol = await getHoldsCollection();
+  const resourcesCol = await getResourcesCollection();
+  const { patientId, hospitalId, notes } = params;
+
+  await expirePendingHolds(hospitalId);
+
+  // Rule A: Enforce one active request per patient per hospital
+  const existing = await holdsCol.findOne({
+    patientId,
+    hospitalId,
+    status: { $in: ["queued", "pending", "confirmed"] },
+  });
+  if (existing) {
+    return {
+      success: false as const,
+      duplicate: true,
+      status: 409,
+      error: "You already have an active request at this hospital.",
+    };
+  }
+
+  const seq = await getNextSeq();
+  const resource = await ensureBedResource(hospitalId, params.resourceId);
+  const resourceId = (resource._id?.toString() ?? resource.id)!;
+  const resourceQueryId = ObjectId.isValid(resourceId) ? new ObjectId(resourceId) : resourceId;
+
+  // Atomic claim: bed availability is total beds - confirmed - active unexpired pending holds > 0
+  const claimed = await resourcesCol.findOneAndUpdate(
+    {
+      _id: resourceQueryId as ObjectId,
+      $expr: {
+        $gt: [
+          {
+            $subtract: [
+              "$totalQuantity",
+              {
+                $add: [
+                  { $ifNull: ["$confirmedQuantity", 0] },
+                  { $ifNull: ["$heldQuantity", 0] },
+                ],
+              },
+            ],
+          },
+          0,
+        ],
+      },
+    },
+    {
+      $inc: { heldQuantity: 1 },
+      $set: { updatedAt: new Date() },
+    },
+    { returnDocument: "after" },
+  );
+
+  const now = new Date();
+
+  if (claimed) {
+    const expiresAt = new Date(now.getTime() + 90 * 1000);
+    const holdDoc: IHold = {
+      patientId,
+      requestedByUserId: patientId,
+      hospitalId,
+      resourceId,
+      seq,
+      status: "pending",
+      expiresAt,
+      notes,
+      createdAt: now,
+      updatedAt: now,
+    };
+    try {
+      const inserted = await holdsCol.insertOne(holdDoc);
+      return {
+        success: true as const,
+        status: "pending" as const,
+        hold: { ...holdDoc, _id: inserted.insertedId, id: inserted.insertedId.toString() },
+        expiresAt,
+      };
+    } catch (err: unknown) {
+      await resourcesCol.updateOne(
+        { _id: resourceQueryId as ObjectId },
+        { $inc: { heldQuantity: -1 } },
+      );
+      if (err && typeof err === "object" && "code" in err && (err as { code: number }).code === 11000) {
+        return {
+          success: false as const,
+          duplicate: true,
+          status: 409,
+          error: "You already have an active request at this hospital.",
+        };
+      }
+      throw err;
+    }
+  }
+
+  // Bed unavailable: queue the request
+  const activeQueuedCount = await holdsCol.countDocuments({ hospitalId, status: "queued" });
+  const queuePosition = activeQueuedCount + 1;
+  const holdDoc: IHold = {
+    patientId,
+    requestedByUserId: patientId,
+    hospitalId,
+    resourceId,
+    seq,
+    queuePosition,
+    status: "queued",
+    notes,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    const inserted = await holdsCol.insertOne(holdDoc);
+    return {
+      success: true as const,
+      status: "queued" as const,
+      queuePosition,
+      hold: { ...holdDoc, _id: inserted.insertedId, id: inserted.insertedId.toString() },
+    };
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && (err as { code: number }).code === 11000) {
+      return {
+        success: false as const,
+        duplicate: true,
+        status: 409,
+        error: "You already have an active request at this hospital.",
+      };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Atomically promotes the queued hold with lowest seq for this hospital into pending status.
+ */
+export async function promoteNext(hospitalId: string): Promise<IHold | null> {
+  const holdsCol = await getHoldsCollection();
+  const resourcesCol = await getResourcesCollection();
+
+  const hasQueued = await holdsCol.findOne({ hospitalId, status: "queued" });
+  if (!hasQueued) return null;
+
+  // Atomically claim bed capacity
+  const claimed = await resourcesCol.findOneAndUpdate(
+    {
+      hospitalId,
+      type: "bed",
+      $expr: {
+        $gt: [
+          {
+            $subtract: [
+              "$totalQuantity",
+              {
+                $add: [
+                  { $ifNull: ["$confirmedQuantity", 0] },
+                  { $ifNull: ["$heldQuantity", 0] },
+                ],
+              },
+            ],
+          },
+          0,
+        ],
+      },
+    },
+    {
+      $inc: { heldQuantity: 1 },
+      $set: { updatedAt: new Date() },
+    },
+    { returnDocument: "after" },
+  );
+
+  if (!claimed) return null;
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 90 * 1000);
+
+  const promoted = await holdsCol.findOneAndUpdate(
+    {
+      hospitalId,
+      status: "queued",
+    },
+    {
+      $set: {
+        status: "pending",
+        expiresAt,
+        updatedAt: now,
+      },
+      $unset: { queuePosition: "" },
+    },
+    {
+      sort: { seq: 1 },
+      returnDocument: "after",
+    },
+  );
+
+  if (!promoted) {
+    await resourcesCol.updateOne(
+      { _id: claimed._id },
+      { $inc: { heldQuantity: -1 } },
+    );
+    return null;
+  }
+
+  return promoted;
+}
+
+/**
+ * Cancel a bed hold by patient owner and promote the next queued patient.
+ */
+export async function cancelPatientBedHold(holdId: string, patientId: string) {
+  const holdsCol = await getHoldsCollection();
+  const resourcesCol = await getResourcesCollection();
+  const queryId = ObjectId.isValid(holdId) ? new ObjectId(holdId) : holdId;
+
+  const hold = await holdsCol.findOne({
+    $or: [{ _id: queryId as ObjectId }, { id: holdId }],
+  });
+  if (!hold) return { success: false, status: 404, error: "Hold not found" };
+
+  if (hold.patientId !== patientId && hold.requestedByUserId !== patientId) {
+    return { success: false, status: 403, error: "Forbidden" };
+  }
+
+  if (hold.status === "cancelled" || hold.status === "rejected" || hold.status === "expired") {
+    return { success: true, message: `Hold is already ${hold.status}` };
+  }
+
+  const wasPending = hold.status === "pending";
+  const now = new Date();
+
+  await holdsCol.updateOne(
+    { _id: hold._id },
+    {
+      $set: { status: "cancelled", updatedAt: now },
+      $unset: { expiresAt: "" },
+    },
+  );
+
+  if (wasPending) {
+    await resourcesCol.updateOne(
+      { hospitalId: hold.hospitalId, type: "bed" },
+      { $inc: { heldQuantity: -1 } },
+    );
+  }
+
+  await promoteNext(hold.hospitalId);
+
+  return { success: true, message: "Request cancelled." };
+}
+
+/**
+ * Confirm a pending bed hold by hospital staff, enforce Rule C (cancel patient's other active holds
+ * across all hospitals and promote their queues).
+ */
+export async function confirmPatientBedHold(holdId: string, hospitalId: string, confirmedByUserId?: string) {
+  const holdsCol = await getHoldsCollection();
+  const resourcesCol = await getResourcesCollection();
+  const queryId = ObjectId.isValid(holdId) ? new ObjectId(holdId) : holdId;
+
+  const hold = await holdsCol.findOne({
+    $or: [{ _id: queryId as ObjectId }, { id: holdId }],
+    hospitalId,
+    status: "pending",
+  });
+  if (!hold) return { success: false, status: 404, error: "Pending hold not found for this hospital" };
+
+  const now = new Date();
+  await holdsCol.updateOne(
+    { _id: hold._id },
+    {
+      $set: {
+        status: "confirmed",
+        confirmedAt: now,
+        confirmedByUserId,
+        updatedAt: now,
+      },
+      $unset: { expiresAt: "" },
+    },
+  );
+
+  await resourcesCol.updateOne(
+    { hospitalId: hold.hospitalId, type: "bed" },
+    {
+      $inc: { heldQuantity: -1, confirmedQuantity: 1 },
+      $set: { updatedAt: now },
+    },
+  );
+
+  // Rule C: cancel patient's other active requests across all hospitals and promote their queues
+  if (hold.patientId) {
+    const otherActive = await holdsCol.find({
+      patientId: hold.patientId,
+      _id: { $ne: hold._id },
+      status: { $in: ["queued", "pending"] },
+    }).toArray();
+
+    for (const other of otherActive) {
+      if (other.status === "pending") {
+        await resourcesCol.updateOne(
+          { hospitalId: other.hospitalId, type: "bed" },
+          { $inc: { heldQuantity: -1 } },
+        );
+      }
+      await holdsCol.updateOne(
+        { _id: other._id },
+        {
+          $set: { status: "cancelled", updatedAt: now },
+          $unset: { expiresAt: "" },
+        },
+      );
+      await promoteNext(other.hospitalId);
+    }
+  }
+
+  const updatedHold = await holdsCol.findOne({ _id: hold._id });
+  return { success: true, hold: updatedHold };
+}
+
+/**
+ * Reject a pending bed hold by hospital staff and promote next in queue.
+ */
+export async function rejectPatientBedHold(holdId: string, hospitalId: string) {
+  const holdsCol = await getHoldsCollection();
+  const resourcesCol = await getResourcesCollection();
+  const queryId = ObjectId.isValid(holdId) ? new ObjectId(holdId) : holdId;
+
+  const hold = await holdsCol.findOne({
+    $or: [{ _id: queryId as ObjectId }, { id: holdId }],
+    hospitalId,
+    status: "pending",
+  });
+  if (!hold) return { success: false, status: 404, error: "Pending hold not found for this hospital" };
+
+  const now = new Date();
+  await holdsCol.updateOne(
+    { _id: hold._id },
+    {
+      $set: { status: "rejected", updatedAt: now },
+      $unset: { expiresAt: "" },
+    },
+  );
+
+  await resourcesCol.updateOne(
+    { hospitalId: hold.hospitalId, type: "bed" },
+    { $inc: { heldQuantity: -1 } },
+  );
+
+  await promoteNext(hospitalId);
+
+  return { success: true };
+}
+
+/**
+ * Fetch patient's bed holds across hospitals with live queue positions.
+ */
+export async function getPatientBedHolds(patientId: string) {
+  await initializeIndexes();
+  await expirePendingHolds();
+  const holdsCol = await getHoldsCollection();
+  const hospitalsCol = await getHospitalsCollection();
+
+  const list = await holdsCol.find({
+    $or: [{ patientId }, { requestedByUserId: patientId }],
+  }).sort({ createdAt: -1 }).toArray();
+
+  const hospitals = await hospitalsCol.find({}).toArray();
+  const hospitalMap = new Map<string, string>();
+  for (const h of hospitals) {
+    const hid = (h._id?.toString() ?? h.id ?? h.code)!;
+    hospitalMap.set(hid, h.name);
+    if (h.code) hospitalMap.set(h.code, h.name);
+  }
+
+  const enriched = await Promise.all(list.map(async (h) => {
+    let queuePosition = h.queuePosition;
+    if (h.status === "queued" && typeof h.seq === "number") {
+      queuePosition = await holdsCol.countDocuments({
+        hospitalId: h.hospitalId,
+        status: "queued",
+        seq: { $lte: h.seq },
+      });
+    }
+
+    const hospitalName = hospitalMap.get(h.hospitalId) || `Hospital ${h.hospitalId.slice(0, 8)}`;
+    return {
+      ...h,
+      id: h._id?.toString() ?? h.id,
+      hospitalName,
+      queuePosition,
+    };
+  }));
+
+  return enriched;
+}
+
+/**
+ * Fetch pending bed requests for a hospital with remaining seconds countdown and queue length.
+ */
+export async function getHospitalPendingBedHolds(hospitalId: string) {
+  await initializeIndexes();
+  await expirePendingHolds(hospitalId);
+  const holdsCol = await getHoldsCollection();
+  const now = new Date();
+
+  const pendingHolds = await holdsCol.find({
+    hospitalId,
+    status: "pending",
+    expiresAt: { $gt: now },
+  }).sort({ createdAt: 1 }).toArray();
+
+  const queueLength = await holdsCol.countDocuments({
+    hospitalId,
+    status: "queued",
+  });
+
+  const formattedHolds = pendingHolds.map((h) => {
+    const secondsRemaining = h.expiresAt
+      ? Math.max(0, Math.floor((new Date(h.expiresAt).getTime() - Date.now()) / 1000))
+      : 90;
+    return {
+      ...h,
+      id: h._id?.toString() ?? h.id,
+      secondsRemaining,
+    };
+  });
+
+  return {
+    holds: formattedHolds,
+    queueLength,
+  };
+}
+

@@ -33,9 +33,9 @@ export async function requireRole(
   sessionOrRoles?: Awaited<ReturnType<typeof getServerSession>> | UserRole | UserRole[],
   explicitRoles?: UserRole | UserRole[],
 ): Promise<RoleAuthorization> {
-  const hasSessionArgument = arguments.length > 1;
-  const session = hasSessionArgument ? sessionOrRoles as Awaited<ReturnType<typeof getServerSession>> : await getServerSession();
-  const allowedRoles = hasSessionArgument ? explicitRoles : sessionOrRoles as UserRole | UserRole[] | undefined;
+  const isSession = Boolean(sessionOrRoles && typeof sessionOrRoles === "object" && !Array.isArray(sessionOrRoles) && ("user" in sessionOrRoles || "session" in sessionOrRoles));
+  const session = isSession ? (sessionOrRoles as Awaited<ReturnType<typeof getServerSession>>) : await getServerSession();
+  const allowedRoles = isSession ? explicitRoles : (sessionOrRoles as UserRole | UserRole[] | undefined);
   if (!session || !session.user) {
     return { authorized: false, reason: "UNAUTHENTICATED" as const, user: null };
   }
