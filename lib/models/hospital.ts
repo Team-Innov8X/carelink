@@ -35,7 +35,6 @@ export interface IHospital {
   location: IGeoLocation;
   contact: IHospitalContact;
   capacitySummary?: IHospitalCapacitySummary;
-  responseRate?: number;
   status: "active" | "busy" | "full" | "inactive";
   createdAt: Date;
   updatedAt: Date;

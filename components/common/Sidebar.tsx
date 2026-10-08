@@ -10,12 +10,10 @@ import {
   Activity,
   HeartHandshake,
   Bell,
-  Car,
-  Sparkles,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
-  const { activeTab, setActiveTab, medicines, emergencies, role, unreadNotificationsCount } = useCareLink();
+  const { activeTab, setActiveTab, medicines, emergencies, role } = useCareLink();
   const activeEmergenciesCount = emergencies.filter((request) => !['Completed', 'Handed over', 'Rejected', 'Timed out', 'Rerouted'].includes(request.status)).length;
   const [networkOnline, setNetworkOnline] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
@@ -53,27 +51,13 @@ export const Sidebar: React.FC = () => {
       id: 'requests',
       label: 'Emergency Requests',
       icon: <Siren className="w-5 h-5" />,
-      badge: activeEmergenciesCount > 0 ? activeEmergenciesCount : undefined,
-      badgeColor: 'bg-rose-500 text-white',
-    },
-    {
-      id: 'driver-request',
-      label: 'Request Driver',
-      icon: <Car className="w-5 h-5" />,
-    },
-    {
-      id: 'triage',
-      label: 'Symptom Triage',
-      icon: <Sparkles className="w-5 h-5 text-amber-400" />,
-      badge: 'SOS AI',
+      badge: activeEmergenciesCount,
       badgeColor: 'bg-rose-500 text-white',
     },
     {
       id: 'notifications',
       label: 'Notifications',
       icon: <Bell className="w-5 h-5" />,
-      badge: unreadNotificationsCount > 0 ? unreadNotificationsCount : undefined,
-      badgeColor: 'bg-rose-500 text-white',
     },
     {
       id: 'recommendations',
@@ -105,16 +89,7 @@ export const Sidebar: React.FC = () => {
         <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
           Navigation
         </div>
-        {navItems
-          .filter((item) => {
-            if (role === 'patient') {
-              if (['hospital-portal', 'handoff'].includes(item.id)) return false;
-            } else {
-              if (item.id === 'driver-request') return false;
-            }
-            return true;
-          })
-          .map((item) => {
+        {navItems.filter((item) => !(role === 'patient' && item.id === 'requests')).map((item) => {
           const isActive = activeTab === item.id;
           return (
             <button

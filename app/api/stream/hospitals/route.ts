@@ -1,4 +1,4 @@
-import { requireRole, resolveHospitalId } from "@/lib/auth-utils";
+import { requireRole } from "@/lib/auth-utils";
 import { errorResponse } from "@/lib/api-response";
 import { getHoldsCollection, getResourcesCollection } from "@/lib/models";
 import { expirePendingHolds } from "@/lib/services/hold-service";
@@ -7,10 +7,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const auth = await requireRole(["hospital", "hospital_staff", "admin"]);
+  const auth = await requireRole(["hospital", "admin"]);
   if (!auth.authorized) return errorResponse(auth.reason, auth.reason === "UNAUTHENTICATED" ? 401 : 403);
   const isAdmin = (auth.user as typeof auth.user & { role?: string }).role === "admin";
-  const hospitalId = await resolveHospitalId(auth.user as typeof auth.user & { hospitalId?: string; hospitalName?: string });
+  const hospitalId = (auth.user as typeof auth.user & { hospitalId?: string }).hospitalId;
   if (!isAdmin && !hospitalId) return errorResponse("Hospital account is not linked to a hospital", 403);
   let holds;
   let resources;
