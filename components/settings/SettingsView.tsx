@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCareLink } from '../../context/CareLinkContext';
-import { LogOut } from 'lucide-react';
+import { LogOut } from '@/components/icons';
 import { authClient } from '../../lib/auth-client';
 
 export const SettingsView: React.FC = () => {

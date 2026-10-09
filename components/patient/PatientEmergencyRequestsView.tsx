@@ -19,7 +19,7 @@ import {
   Plus,
   AlertCircle,
   XCircle,
-} from 'lucide-react';
+} from '../icons';
 
 export type PatientRequest = {
   id: string;

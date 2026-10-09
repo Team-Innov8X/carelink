@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
-import { Download } from 'lucide-react';
+import { Download } from '@/components/icons';
 
 type Collision = { _id: string; hospitalName: string; bedCategory: string; winnerRequestId: string; loserRequestId: string; occurredAt: string };
 

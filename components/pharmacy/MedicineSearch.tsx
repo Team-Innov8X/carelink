@@ -20,7 +20,7 @@ import {
   TrendingDown,
   Plus,
   Minus,
-} from 'lucide-react';
+} from '@/components/icons';
 
 export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mode = 'patient' }) => {
   const {

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { HospitalBeds } from '../../types';
 import { HospitalRequestInbox } from './HospitalRequestInbox';
-import { Minus, Plus, Stethoscope } from 'lucide-react';
+import { Minus, Plus, Stethoscope } from '../icons';
 
 export const HospitalStaffView: React.FC = () => {
   const { hospitals, updateBedCounts, updateHospitalSpecialty } = useCareLink();

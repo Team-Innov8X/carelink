@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ClipboardList, PackagePlus, Pill, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ClipboardList, PackagePlus, Pill, RefreshCw, Search } from '@/components/icons';
 import { Medicine, MedicineOrder, Pharmacy } from '@/types';
 
 type PharmacyMedicine = Medicine & { minimumStock?: number; updatedAt?: string };

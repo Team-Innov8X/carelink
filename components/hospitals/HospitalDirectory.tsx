@@ -7,7 +7,7 @@ import {
   Search,
   RotateCcw,
   Sparkles,
-} from 'lucide-react';
+} from '@/components/icons';
 
 export const HospitalDirectory: React.FC = () => {
   const {

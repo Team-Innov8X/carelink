@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Ambulance, Clock, Siren } from 'lucide-react';
+import { Ambulance, Clock, Siren } from '@/components/icons';
 
 type PatientSOS = { id: string; status: 'searching' | 'accepted' | 'completed' | 'cancelled'; incidentType: string; createdAt: string; driverAssigned: boolean; tripStage?: string; destination?: { name: string; status: string; bedCategory?: string } | null; vitalsUpdate?: { bp: string; heartRate: number; spO2: number } | null };
 

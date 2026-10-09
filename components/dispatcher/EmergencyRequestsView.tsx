@@ -13,7 +13,7 @@ import {
   AlertTriangle,
   User,
   HeartPulse,
-} from 'lucide-react';
+} from '@/components/icons';
 
 interface EmergencyRequestsViewProps {
   onOpenNewEmergency: () => void;

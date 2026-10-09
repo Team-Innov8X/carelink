@@ -1,6 +1,6 @@
 'use client';
 
-import { Search } from 'lucide-react';
+import { Search } from '@/components/icons';
 
 export function SearchField({ value, onChange, placeholder, label, className = '' }: {
   value: string;

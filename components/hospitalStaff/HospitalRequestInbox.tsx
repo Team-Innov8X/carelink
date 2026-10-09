@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Clock, RefreshCw } from 'lucide-react';
+import { Clock, RefreshCw } from '@/components/icons';
 import { classifyEmergencyLevel, EmergencyLevelTag } from '../common/EmergencyLevelTag';
 
 type HospitalRequest = {

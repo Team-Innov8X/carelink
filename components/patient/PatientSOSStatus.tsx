@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, BedDouble, CheckCircle2, Clock, Stethoscope } from 'lucide-react';
+import { Activity, BedDouble, CheckCircle2, Clock, Stethoscope } from '../icons';
 
 type PatientRequest = {
   id: string;

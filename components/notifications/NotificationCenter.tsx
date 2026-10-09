@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Bell, Check, CheckCheck, RefreshCw } from 'lucide-react';
+import { Bell, Check, CheckCheck, RefreshCw } from '@/components/icons';
 import { useCareLink } from '../../context/CareLinkContext';
 
 type CareNotification = {

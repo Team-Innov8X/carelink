@@ -15,7 +15,7 @@ import {
   MapPin,
   Mail,
   AlertCircle,
-} from 'lucide-react';
+} from '../icons';
 import { useCareLink } from '../../context/CareLinkContext';
 
 type DoctorInfo = {

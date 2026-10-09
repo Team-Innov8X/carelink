@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, Check, MapPin, Phone, Radio, RefreshCw, Siren, X, Clock, AlertTriangle } from 'lucide-react';
+import { Activity, Check, MapPin, Phone, Radio, RefreshCw, Siren, X, Clock, AlertTriangle } from '@/components/icons';
 
 type Coordinates = { latitude: number; longitude: number };
 type LiveSOS = {

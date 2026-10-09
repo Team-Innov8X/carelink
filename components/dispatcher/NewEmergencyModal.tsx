@@ -6,7 +6,7 @@ import {
   X,
   Siren,
   Sparkles,
-} from 'lucide-react';
+} from '@/components/icons';
 
 interface NewEmergencyModalProps {
   isOpen: boolean;

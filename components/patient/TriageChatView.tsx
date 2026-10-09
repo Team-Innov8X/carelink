@@ -19,7 +19,7 @@ import {
   ChevronRight,
   Info,
   Car,
-} from 'lucide-react';
+} from '../icons';
 import { useCareLink } from '../../context/CareLinkContext';
 
 export interface ChatMessage {
