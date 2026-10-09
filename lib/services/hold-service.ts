@@ -1,5 +1,5 @@
 import { ObjectId } from "mongodb";
-import connectMongo from "../mongodb.ts";
+import clientPromise from "../mongodb.ts";
 import { addTravelTimes, rankHospitals } from "../ranking.ts";
 import type { RankingHospital } from "../ranking.ts";
 import {
@@ -55,7 +55,7 @@ export async function createHold(params: ICreateHoldParams) {
 
   // Atomic reservation check: resource exists at hospital AND availableQuantity - heldQuantity >= quantityToHold
   const resourceId = params.resourceId && ObjectId.isValid(params.resourceId) ? new ObjectId(params.resourceId) : params.resourceId;
-  const client = await connectMongo();
+  const client = await clientPromise;
   const session = client.startSession();
   let updatedResource: IResource | null = null;
   let holdDoc: IHold | null = null;
@@ -146,7 +146,7 @@ export async function confirmHold(holdId: string, confirmedByUserId?: string) {
   const resourcesCol = await getResourcesCollection();
 
   const queryId = ObjectId.isValid(holdId) ? new ObjectId(holdId) : holdId;
-  const client = await connectMongo();
+  const client = await clientPromise;
   const session = client.startSession();
   let result: { success: true; message: string; hold: IHold | null; resource: IResource | null } | { success: false; reason: string; message: string } = {
     success: false, reason: "NOT_FOUND", message: "Hold not found or no longer pending.",
@@ -203,7 +203,7 @@ export async function releaseHold(
   const resourcesCol = await getResourcesCollection();
 
   const queryId = ObjectId.isValid(holdId) ? new ObjectId(holdId) : holdId;
-  const client = await connectMongo();
+  const client = await clientPromise;
   const session = client.startSession();
   const transactionResult: { hold: IHold | null; resource: IResource | null; failure: { success: false; reason: string; message: string } | null } = { hold: null, resource: null, failure: null };
   try {
@@ -320,7 +320,7 @@ export async function expirePendingHolds(hospitalId?: string) {
       { hospitalId: hold.hospitalId, type: "bed" },
       { $inc: { heldQuantity: -1 } },
     );
-    results.push({ success: true, releasedHoldId: hold._id.toString() });
+    results.push({ success: true, releasedHoldId: hold._id.toString(), nextRankedHospital: null });
     if (hold.hospitalId) {
       affectedHospitals.add(hold.hospitalId);
     }

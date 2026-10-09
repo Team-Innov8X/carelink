@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { confirmPatientBedHold } from "@/lib/services/hold-service";
+import { confirmHold, confirmPatientBedHold } from "@/lib/services/hold-service";
 import { requireRole, resolveHospitalId } from "@/lib/auth-utils";
 import { errorResponse } from "@/lib/api-response";
 import { getHoldsCollection } from "@/lib/models";
@@ -32,8 +32,14 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
 
     if (!ownedHold) return errorResponse("Pending hold not found for this hospital", 404);
 
-    const result = await confirmPatientBedHold(id, ownedHold.hospitalId, auth.user.id);
-    if (!result.success) return errorResponse(result.error || "Failed to confirm hold", result.status || 400);
+    const result = ownedHold.patientId
+      ? await confirmPatientBedHold(id, ownedHold.hospitalId, auth.user.id)
+      : await confirmHold(id, auth.user.id);
+    if (!result.success) {
+      const message = "message" in result ? result.message : "error" in result ? result.error : undefined;
+      const status = "status" in result ? result.status : 409;
+      return errorResponse(message || "Failed to confirm hold", status || 400);
+    }
 
     return NextResponse.json(result);
   } catch (error: unknown) {

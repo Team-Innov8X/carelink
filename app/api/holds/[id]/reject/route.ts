@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireRole, resolveHospitalId } from "@/lib/auth-utils";
 import { errorResponse } from "@/lib/api-response";
 import { getHoldsCollection } from "@/lib/models";
-import { rejectPatientBedHold } from "@/lib/services/hold-service";
+import { rejectPatientBedHold, releaseHold } from "@/lib/services/hold-service";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -34,8 +34,14 @@ export async function PATCH(_request: Request, { params }: Context) {
 
     if (!hold) return errorResponse("Pending hold not found for this hospital", 404);
 
-    const result = await rejectPatientBedHold(id, hold.hospitalId);
-    if (!result.success) return errorResponse(result.error || "Failed to reject hold", result.status || 400);
+    const result = hold.patientId
+      ? await rejectPatientBedHold(id, hold.hospitalId)
+      : await releaseHold(id, "rejected", hold.originLocation);
+    if (!result.success) {
+      const message = "error" in result ? result.error : result.message;
+      const status = "status" in result ? result.status : 409;
+      return errorResponse(message || "Failed to reject hold", status || 400);
+    }
 
     return NextResponse.json({ success: true, message: "Hold rejected and next queued patient promoted." });
   } catch (error: unknown) {

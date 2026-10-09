@@ -1,5 +1,5 @@
 import { Collection } from "mongodb";
-import connectMongo from "../mongodb.ts";
+import clientPromise from "../mongodb.ts";
 import type { IHospital } from "./hospital.ts";
 import type { IResource } from "./resource.ts";
 import type { IHold } from "./hold.ts";
@@ -7,7 +7,7 @@ import type { IUser } from "./user.ts";
 import type { IDoctor } from "./doctor.ts";
 
 export async function getDb() {
-  const client = await connectMongo();
+  const client = await clientPromise;
   return client.db();
 }
 
@@ -60,6 +60,8 @@ export function initializeIndexes(): Promise<void> {
 
     const holds = await getHoldsCollection();
     await holds.createIndex({ hospitalId: 1, status: 1 });
+    // Expiry must release resource inventory before a hold can disappear.
+    await holds.dropIndex("expiresAt_1").catch(() => undefined);
     await holds.createIndex({ expiresAt: 1 });
     await holds.createIndex({ requestedByUserId: 1 });
     await holds.createIndex({ patientId: 1 });

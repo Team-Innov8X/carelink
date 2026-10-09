@@ -1,5 +1,5 @@
 import { requireRole } from '@/lib/auth-utils';
-import connectMongo from '@/lib/mongodb';
+import clientPromise from '@/lib/mongodb';
 import { distanceKm, sosCollections, workflowCollections } from '@/lib/sos';
 import { getResourcesCollection } from '@/lib/models';
 
@@ -16,13 +16,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const current = await hospitalRequests.findOne({ sosRequestId: id });
   if (!current || !['rejected', 'pending'].includes(current.status) || (current.status === 'pending' && Date.now() - current.createdAt.getTime() < 15 * 60_000)) return Response.json({ error: 'This hospital has not rejected or timed out the request.' }, { status: 409 });
   const excluded = new Set([current.hospitalId, ...(current.reroutedHospitalIds ?? [])]);
-  const db = (await connectMongo()).db();
+  const db = (await clientPromise).db();
   let next: { id: string; name: string; location: { lat: number; lng: number; address: string } } | undefined;
   if (process.env.NODE_ENV === 'development') {
     const appState = await db.collection<{ _id: string; state?: { hospitals?: Array<{ id: string; name: string; location: { lat: number; lng: number; address: string }; beds?: Record<string, { available: number }> }> } }>('appState').findOne({ _id: 'carelink' });
-    const candidates = (appState?.state?.hospitals ?? []).filter((hospital: { id: string; name: string; location: { lat: number; lng: number; address: string }; beds?: Record<string, { available: number }> }) => !excluded.has(hospital.id) && (!current.bedCategory || (hospital.beds?.[current.bedCategory]?.available ?? 0) > 0));
-    candidates.sort((a: { id: string; name: string; location: { lat: number; lng: number; address: string } }, b: { id: string; name: string; location: { lat: number; lng: number; address: string } }) => distanceKm(sos.location, { latitude: a.location.lat, longitude: a.location.lng }) - distanceKm(sos.location, { latitude: b.location.lat, longitude: b.location.lng }));
-    next = candidates[0];
+    next = (appState?.state?.hospitals ?? []).filter((hospital) => !excluded.has(hospital.id) && (!current.bedCategory || (hospital.beds?.[current.bedCategory]?.available ?? 0) > 0)).sort((a, b) => distanceKm(sos.location, { latitude: a.location.lat, longitude: a.location.lng }) - distanceKm(sos.location, { latitude: b.location.lat, longitude: b.location.lng }))[0];
   } else {
     const { hospitals } = await sosCollections();
     const [registered, resources] = await Promise.all([hospitals.find({ status: { $ne: 'inactive' } }).toArray(), (await getResourcesCollection()).find({ status: { $ne: 'unavailable' } }).toArray()]);

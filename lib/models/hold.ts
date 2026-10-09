@@ -42,7 +42,6 @@ export interface IHold {
   quantity: number;
   status: HoldStatus;
   expiresAt?: Date;
-  purgeAt?: Date;
   confirmedAt?: Date;
   confirmedByUserId?: string;
   fulfilledAt?: Date;

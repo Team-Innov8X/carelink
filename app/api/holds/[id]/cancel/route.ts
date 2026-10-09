@@ -34,10 +34,23 @@ async function handleCancel(req: NextRequest, { params }: Context) {
       return errorResponse("Forbidden", 403);
     }
 
-    // Patient bed hold cancellation
-    const cancelRes = await cancelPatientBedHold(id, hold.patientId || auth.user.id);
+    let body: unknown = {};
+    try {
+      body = await req.json();
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+    }
+    const parsed = cancelHoldSchema.safeParse(body);
+    if (!parsed.success) return validationError(parsed.error);
+
+    const cancelRes = hold.patientId
+      ? await cancelPatientBedHold(id, hold.patientId)
+      : await releaseHold(id, parsed.data?.reason ?? "cancelled", parsed.data?.originLocation);
     if (!cancelRes.success) {
-      return errorResponse(cancelRes.error || "Failed to cancel hold", cancelRes.status || 400);
+      return errorResponse(
+        ("error" in cancelRes && cancelRes.error) || ("message" in cancelRes && cancelRes.message) || "Failed to cancel hold",
+        ("status" in cancelRes && cancelRes.status) || 400,
+      );
     }
 
     return NextResponse.json(cancelRes, { status: 200 });

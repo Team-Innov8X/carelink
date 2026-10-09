@@ -3,8 +3,6 @@ import { ObjectId } from "mongodb";
 import { getHospitalsCollection, getResourcesCollection } from "@/lib/models";
 import { distanceKm, mapsUrl, type Coordinates } from "@/lib/sos";
 
-export const runtime = "nodejs";
-
 type Context = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, { params }: Context) {

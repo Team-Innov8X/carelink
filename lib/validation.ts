@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { ROLES, isValidRole } from "./roles";
 
 const coordinateSchema = z.tuple([
   z.number().finite().min(-180).max(180),
@@ -19,34 +18,34 @@ export const resourceUpdateSchema = z.object({
   count: z.number().int().nonnegative(),
 });
 
-const normalizedCoordinatesSchema = z.union([
-  z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180) }),
-  z.object({ lat: z.number().finite().min(-90).max(90), lng: z.number().finite().min(-180).max(180) }).transform(({ lat, lng }) => ({ latitude: lat, longitude: lng })),
-]);
-
 export const rankRequestSchema = z.object({
   emergencyType: z.string().trim().min(1).max(100),
-  ambulanceLocation: normalizedCoordinatesSchema,
+  ambulanceLocation: z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180) }),
   requiredResources: z.array(z.string().trim().min(1)).optional(),
 });
 
 export const createHoldSchema = z.object({
   hospitalId: z.string().min(1),
-  resourceId: z.string().min(1).optional(),
-  resourceType: z.enum(["bed", "equipment", "specialist"]).optional(),
-  category: z.string().trim().min(1).optional(),
-  ambulanceId: z.string().trim().max(120).optional(),
+  resourceId: z.string().trim().optional(),
+  ambulanceId: z.string().trim().optional(),
+  resourceType: z.enum(["bed", "equipment", "specialist"]),
+  category: z.string().trim().min(1),
+  requestedByUserId: z.string().min(1),
   patientDetails: z.object({
     name: z.string().optional(), age: z.number().int().nonnegative().optional(), gender: z.string().optional(),
-    conditionSummary: z.string().optional(), priority: z.enum(["critical", "urgent", "standard"]).default("urgent"), etaMinutes: z.number().nonnegative().optional(),
-  }).default({ priority: "urgent" }),
+    conditionSummary: z.string().optional(), priority: z.enum(["critical", "urgent", "standard"]), etaMinutes: z.number().nonnegative().optional(),
+  }),
   quantity: z.number().int().positive().default(1),
   originLocation: coordinateSchema.optional(),
   holdTimeoutMinutes: z.number().int().positive().max(120).optional(),
   notes: z.string().max(2000).optional(),
-}).refine((value) => Boolean(value.resourceId || (value.resourceType && value.category)), { message: "resourceId or both resourceType and category are required." });
+});
 
-export const roleUpdateSchema = z.object({ role: z.enum(ROLES) });
+export const roleUpdateSchema = z.object({ role: z.enum(["admin", "hospital", "patient", "hospital_staff", "ambulance_driver", "driver", "dispatcher", "pharmacy"]) });
+
+export function isValidRole(value: unknown): value is import("./auth").UserRole {
+  return roleUpdateSchema.shape.role.safeParse(value).success;
+}
 
 export const cancelHoldSchema = z.object({
   reason: z.enum(["cancelled", "expired"]).optional(),
@@ -91,6 +90,3 @@ export async function validateBody<T>(req: Request, schema: z.ZodType<T>) {
   }
   return { success: true as const, data: result.data };
 }
-
-export { isValidRole };
-

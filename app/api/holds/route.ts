@@ -122,14 +122,16 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     const auth = await requireRole();
-    if (!auth.authorized || !auth.user) return errorResponse(auth.reason, auth.reason === "UNAUTHENTICATED" ? 401 : 403);
+    if (!auth.authorized || !auth.user) {
+      return errorResponse(auth.reason, auth.reason === "UNAUTHENTICATED" ? 401 : 403);
+    }
     const { searchParams } = new URL(req.url);
     const hospitalId = searchParams.get("hospitalId");
     const requestedByUserId = searchParams.get("requestedByUserId");
     const status = searchParams.get("status");
 
     const profile = auth.user as typeof auth.user & { role?: string; hospitalId?: string; hospitalName?: string };
-    const role = profile.role;
+    const role = profile.role || "patient";
     const query: Filter<import("@/lib/models").IHold> = {};
 
     if (role === "hospital" || role === "hospital_staff") {
@@ -160,7 +162,7 @@ export async function GET(req: NextRequest) {
       count: holds.length,
       holds,
     });
-  } catch (error: unknown) {
-    return errorResponse(error instanceof Error ? error.message : "Failed to fetch holds", 500);
+  } catch (error: any) {
+    return errorResponse(error?.message || "Failed to fetch holds", 500);
   }
 }

@@ -2,20 +2,14 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import { SignupSkeleton, DashboardSkeleton } from '../components/common/Skeletons';
 
-const MINIMUM_TRANSITION_MS = 250;
-const SHOW_AFTER_MS = 80;
-
-function isAuthRoute(path: string) {
-  return path.startsWith('/signup') || path.startsWith('/signin') || path.startsWith('/onboarding');
-}
+const MINIMUM_TRANSITION_MS = 900;
+const SHOW_AFTER_MS = 90;
 
 export default function NavigationTransition({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const routeKey = pathname;
   const [visible, setVisible] = useState(false);
-  const [targetPath, setTargetPath] = useState(pathname);
   const startedAt = useRef<number | null>(null);
   const previousRoute = useRef(routeKey);
   const showTimer = useRef<number | null>(null);
@@ -32,7 +26,6 @@ export default function NavigationTransition({ children }: { children: ReactNode
       const destinationKey = destination.pathname;
       if (destinationKey === routeKey) return;
 
-      setTargetPath(destinationKey);
       startedAt.current = Date.now();
       if (showTimer.current !== null) window.clearTimeout(showTimer.current);
       showTimer.current = window.setTimeout(() => setVisible(true), SHOW_AFTER_MS);
@@ -48,7 +41,6 @@ export default function NavigationTransition({ children }: { children: ReactNode
   useEffect(() => {
     if (previousRoute.current === routeKey) return;
     previousRoute.current = routeKey;
-    setTargetPath(routeKey);
     const navigationStartedAt = startedAt.current ?? Date.now();
     startedAt.current = navigationStartedAt;
     if (showTimer.current !== null) window.clearTimeout(showTimer.current);
@@ -62,12 +54,26 @@ export default function NavigationTransition({ children }: { children: ReactNode
     return () => window.clearTimeout(hideTimer);
   }, [routeKey]);
 
-  const showSignupSkeleton = isAuthRoute(targetPath);
-
   return (
     <>
       {children}
-      {visible && (showSignupSkeleton ? <SignupSkeleton /> : <DashboardSkeleton />)}
+      {visible && (
+        <div className="fixed inset-0 z-[10000] overflow-auto bg-slate-50" role="status" aria-live="polite" aria-label="Loading page">
+          <div className="h-16 border-b border-slate-200 bg-white">
+            <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-6">
+              <div className="flex items-center gap-3"><div className="h-10 w-10 animate-pulse rounded-xl bg-slate-200" /><div className="h-4 w-28 animate-pulse rounded bg-slate-200" /></div>
+              <div className="hidden gap-3 sm:flex"><div className="h-9 w-20 animate-pulse rounded-lg bg-slate-100" /><div className="h-9 w-24 animate-pulse rounded-lg bg-slate-100" /></div>
+            </div>
+          </div>
+          <main className="mx-auto max-w-6xl space-y-6 px-4 py-10 sm:px-6">
+            <div className="space-y-3"><div className="h-3 w-28 animate-pulse rounded bg-slate-200" /><div className="h-8 w-64 max-w-full animate-pulse rounded-lg bg-slate-200" /><div className="h-4 w-96 max-w-full animate-pulse rounded bg-slate-100" /></div>
+            <div className="grid gap-6 md:grid-cols-2">
+              <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6"><div className="h-5 w-40 animate-pulse rounded bg-slate-200" /><div className="h-24 animate-pulse rounded-xl bg-slate-100" /><div className="h-11 animate-pulse rounded-xl bg-slate-100" /><div className="h-10 w-36 animate-pulse rounded-lg bg-slate-200" /></section>
+              <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6"><div className="h-5 w-36 animate-pulse rounded bg-slate-200" /><div className="h-16 animate-pulse rounded-xl bg-slate-100" /><div className="h-16 animate-pulse rounded-xl bg-slate-100" /><div className="h-16 animate-pulse rounded-xl bg-slate-100" /></section>
+            </div>
+          </main>
+        </div>
+      )}
     </>
   );
 }

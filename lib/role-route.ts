@@ -6,7 +6,7 @@ export function routeForRole(role?: string) {
     case 'pharmacy':
       return '/pharmacy-dashboard';
     case 'patient':
-      return '/patient-dashboard';
+      return '/';
     case 'driver':
     case 'ambulance_driver':
     case 'paramedic':

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import connectMongo from '@/lib/mongodb';
+import clientPromise from '@/lib/mongodb';
 
 export type HospitalAuditEntry = {
   hospitalId: string;
@@ -15,7 +15,7 @@ export type HospitalAuditEntry = {
 
 export async function writeHospitalAudit(entry: HospitalAuditEntry) {
   try {
-    const client = await connectMongo();
+    const client = await clientPromise;
     await client.db().collection<HospitalAuditEntry & { _id?: string }>('hospitalAuditLog').insertOne({ ...entry, _id: randomUUID() });
   } catch (error) {
     console.error('Could not write hospital audit record:', error);

@@ -10,7 +10,6 @@ export type EquipmentCategory =
   | "dialysis_machine"
   | "ecg_monitor";
 export type SpecialistCategory =
-  | "emergency_physician"
   | "cardiologist"
   | "neurologist"
   | "trauma_surgeon"
@@ -26,7 +25,6 @@ export interface IResource {
   type: ResourceType;
   category: ResourceCategory;
   name: string;
-  specialization?: string;
   description?: string;
   totalQuantity: number;
   availableQuantity: number;
