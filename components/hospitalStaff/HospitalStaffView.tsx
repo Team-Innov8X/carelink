@@ -21,8 +21,12 @@ export const HospitalStaffView: React.FC = () => {
   ];
 
   const adjustBedCount = async (bedType: keyof HospitalBeds, delta: number) => {
-    const saved = await updateBedCounts(currentHospital.id, bedType, delta);
-    setCapacityMessage(saved ? '' : 'Bed availability changed or could not be saved. Refresh the page and try again.');
+    try {
+      await updateBedCounts(currentHospital.id, bedType, delta);
+      setCapacityMessage('');
+    } catch {
+      setCapacityMessage('Bed availability could not be updated. Refresh the page and try again.');
+    }
   };
 
   return (
