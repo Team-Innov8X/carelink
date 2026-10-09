@@ -31,7 +31,7 @@ export default function SignInPage() {
       // Read the role from the persisted session after authentication. The
       // sign-in response can omit additional user fields for existing accounts.
       const sessionResult = await authClient.getSession();
-      const sessionRole = (sessionResult.data?.user as (typeof sessionResult.data.user & { role?: string }) | undefined)?.role;
+      const sessionRole = (sessionResult.data?.user as { role?: string } | undefined)?.role;
       const signedInRole = sessionRole || (result.data?.user as (typeof result.data.user & { role?: string }) | undefined)?.role || 'patient';
       router.replace(routeForRole(signedInRole));
       router.refresh();
