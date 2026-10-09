@@ -24,7 +24,18 @@ export async function PATCH(req: NextRequest, { params }: Context) {
 
     const profile = auth.user as typeof auth.user & { role?: string; hospitalId?: string; hospitalName?: string };
     const linkedHospitalId = profile.role === "admin" ? id : await resolveHospitalId(profile);
-    if (profile.role !== "admin" && linkedHospitalId !== id) {
+
+    const doctorsCol = await getDoctorsCollection();
+    const queryDocId = ObjectId.isValid(doctorId) ? new ObjectId(doctorId) : doctorId;
+
+    const existingDoctor = await doctorsCol.findOne({
+      $or: [{ _id: queryDocId as ObjectId }, { id: doctorId }],
+      hospitalId: id,
+    });
+
+    if (!existingDoctor) return errorResponse("Doctor not found for this hospital", 404);
+
+    if (profile.role !== "admin" && linkedHospitalId !== id && linkedHospitalId !== existingDoctor.hospitalId) {
       return errorResponse("You can only modify doctors for your own hospital.", 403);
     }
 
@@ -37,16 +48,6 @@ export async function PATCH(req: NextRequest, { params }: Context) {
 
     const parsed = doctorUpdateSchema.safeParse(bodyJson);
     if (!parsed.success) return validationError(parsed.error);
-
-    const doctorsCol = await getDoctorsCollection();
-    const queryDocId = ObjectId.isValid(doctorId) ? new ObjectId(doctorId) : doctorId;
-
-    const existingDoctor = await doctorsCol.findOne({
-      $or: [{ _id: queryDocId as ObjectId }, { id: doctorId }],
-      hospitalId: id,
-    });
-
-    if (!existingDoctor) return errorResponse("Doctor not found for this hospital", 404);
 
     const now = new Date();
     const updateFields: Record<string, unknown> = {
@@ -96,16 +97,25 @@ export async function DELETE(_req: NextRequest, { params }: Context) {
 
     const profile = auth.user as typeof auth.user & { role?: string; hospitalId?: string; hospitalName?: string };
     const linkedHospitalId = profile.role === "admin" ? id : await resolveHospitalId(profile);
-    if (profile.role !== "admin" && linkedHospitalId !== id) {
-      return errorResponse("You can only delete doctors for your own hospital.", 403);
-    }
 
     const doctorsCol = await getDoctorsCollection();
     const queryDocId = ObjectId.isValid(doctorId) ? new ObjectId(doctorId) : doctorId;
 
-    const result = await doctorsCol.deleteOne({
+    const existingDoctor = await doctorsCol.findOne({
       $or: [{ _id: queryDocId as ObjectId }, { id: doctorId }],
       hospitalId: id,
+    });
+
+    if (!existingDoctor) {
+      return errorResponse("Doctor not found for this hospital", 404);
+    }
+
+    if (profile.role !== "admin" && linkedHospitalId !== id && linkedHospitalId !== existingDoctor.hospitalId) {
+      return errorResponse("You can only delete doctors for your own hospital.", 403);
+    }
+
+    const result = await doctorsCol.deleteOne({
+      _id: existingDoctor._id,
     });
 
     if (result.deletedCount === 0) {

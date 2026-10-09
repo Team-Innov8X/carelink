@@ -3,14 +3,14 @@ import { sosCollections } from '@/lib/sos';
 
 export const runtime = 'nodejs';
 
-export async function POST(request: Request, context: RouteContext<'/api/sos/[id]/reject'>) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(['ambulance_driver', 'driver']);
   if (!auth.authorized || !auth.user) {
     return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
   }
   let body: { reason?: unknown } = {};
   try { body = await request.json(); } catch { /* a reason is optional */ }
-  const { id } = await context.params;
+  const { id } = await params;
   const { requests, drivers } = await sosCollections();
   const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 240) : '';
   const result = await requests.updateOne(

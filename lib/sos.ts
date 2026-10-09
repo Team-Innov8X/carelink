@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Document } from "mongodb";
-import connectMongo from "./mongodb";
+import connectMongo from "./mongodb.ts";
 
 export type Coordinates = { latitude: number; longitude: number };
 

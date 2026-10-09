@@ -64,17 +64,18 @@ export async function POST(req: NextRequest, { params }: Context) {
     if (!id) return errorResponse("Missing hospital ID", 400);
 
     const profile = auth.user as typeof auth.user & { role?: string; hospitalId?: string; hospitalName?: string };
-    const linkedHospitalId = profile.role === "admin" ? id : await resolveHospitalId(profile);
-    if (profile.role !== "admin" && linkedHospitalId !== id) {
-      return errorResponse("You can only manage doctors for your own hospital.", 403);
-    }
-
     const hospitalsCol = await getHospitalsCollection();
     const queryId = ObjectId.isValid(id) ? new ObjectId(id) : id;
     const hospital = await hospitalsCol.findOne({
       $or: [{ _id: queryId as ObjectId }, { id }, { code: id }],
     });
     if (!hospital) return errorResponse("Hospital not found", 404);
+
+    const linkedHospitalId = profile.role === "admin" ? id : await resolveHospitalId(profile);
+    const hospitalDocId = hospital._id?.toString() ?? hospital.id;
+    if (profile.role !== "admin" && linkedHospitalId !== id && linkedHospitalId !== hospitalDocId && linkedHospitalId !== hospital.code) {
+      return errorResponse("You can only manage doctors for your own hospital.", 403);
+    }
 
     let bodyJson: unknown;
     try {

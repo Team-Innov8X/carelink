@@ -39,7 +39,7 @@ export interface IHold {
   releaseReason?: "cancelled" | "expired" | "rejected";
   requestedByUserId?: string; // User ID of dispatcher, driver, or patient placing the hold
   patientDetails?: IPatientDetails;
-  quantity?: number;
+  quantity: number;
   status: HoldStatus;
   expiresAt?: Date;
   purgeAt?: Date;

@@ -1,10 +1,10 @@
 import { Collection } from "mongodb";
-import connectMongo from "@/lib/mongodb";
-import { IHospital } from "./hospital";
-import { IResource } from "./resource";
-import { IHold } from "./hold";
-import { IUser } from "./user";
-import { IDoctor } from "./doctor";
+import connectMongo from "../mongodb.ts";
+import type { IHospital } from "./hospital.ts";
+import type { IResource } from "./resource.ts";
+import type { IHold } from "./hold.ts";
+import type { IUser } from "./user.ts";
+import type { IDoctor } from "./doctor.ts";
 
 export async function getDb() {
   const client = await connectMongo();
@@ -105,7 +105,11 @@ export function initializeIndexes(): Promise<void> {
     // Keep terminal holds for audit and let MongoDB remove them after 90 days.
     // Pending expiry is handled by the expiry worker so it can release the
     // resource lock before any hold document is removed.
-    await holds.createIndex({ purgeAt: 1 }, { name: "hold_terminal_ttl", expireAfterSeconds: 0, sparse: true });
+    try {
+      await holds.createIndex({ purgeAt: 1 }, { name: "hold_terminal_ttl", expireAfterSeconds: 0 });
+    } catch (e: unknown) {
+      console.warn("Notice on holds terminal TTL index:", e);
+    }
 
     console.log("CareLink MongoDB indexes successfully initialized.");
   })().catch((error: unknown) => {

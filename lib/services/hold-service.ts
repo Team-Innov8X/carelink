@@ -1,19 +1,22 @@
 import { ObjectId } from "mongodb";
-import connectMongo from "@/lib/mongodb";
-import { addTravelTimes, rankHospitals, RankingHospital } from "@/lib/ranking";
+import connectMongo from "../mongodb.ts";
+import { addTravelTimes, rankHospitals } from "../ranking.ts";
+import type { RankingHospital } from "../ranking.ts";
 import {
   getHospitalsCollection,
   getResourcesCollection,
   getHoldsCollection,
   getDb,
   initializeIndexes,
+} from "../models/index.ts";
+import type {
   IHold,
   IResource,
   IHospital,
   ResourceType,
   ResourceCategory,
   IPatientDetails,
-} from "@/lib/models";
+} from "../models/index.ts";
 
 export interface ICreateHoldParams {
   hospitalId: string;
@@ -22,8 +25,8 @@ export interface ICreateHoldParams {
   parentHoldId?: string;
   resourceType: ResourceType;
   category: ResourceCategory;
-  requestedByUserId: string;
-  patientDetails: IPatientDetails;
+  requestedByUserId?: string;
+  patientDetails?: IPatientDetails;
   quantity?: number;
   originLocation?: [number, number]; // [longitude, latitude] for proximity ranking
   holdTimeoutMinutes?: number; // Defaults to 15 minutes
@@ -36,7 +39,7 @@ export interface INextRankedHospitalResult {
   distanceMeters?: number;
   travelTimeMinutes?: number;
   score?: number;
-  scoreBreakdown?: import("@/lib/ranking").RankingResult["scoreBreakdown"];
+  scoreBreakdown?: import("../ranking.ts").RankingResult["scoreBreakdown"];
 }
 
 /**
@@ -92,7 +95,7 @@ export async function createHold(params: ICreateHoldParams) {
         updatedAt: new Date(),
       };
       const inserted = await holdsCol.insertOne(holdDoc, { session });
-      insertedId = inserted.insertedId;
+      insertedId = inserted.insertedId as unknown as ObjectId;
     });
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === 11000) {
@@ -309,20 +312,17 @@ export async function expirePendingHolds(hospitalId?: string) {
 
   for (const hold of due) {
     if (!hold._id) continue;
-    const queryId = typeof hold._id === "string" && ObjectId.isValid(hold._id) ? new ObjectId(hold._id) : hold._id;
-    const updated = await holdsCol.findOneAndUpdate(
-      { _id: queryId as ObjectId, status: "pending" },
-      { $set: { status: "expired", updatedAt: now } },
-      { returnDocument: "after" }
+    await holdsCol.updateOne(
+      { _id: hold._id },
+      { $set: { status: "expired", updatedAt: now }, $unset: { expiresAt: "" } },
     );
-    if (updated) {
-      const resQueryId = ObjectId.isValid(updated.resourceId) ? new ObjectId(updated.resourceId) : updated.resourceId;
-      await resourcesCol.updateOne(
-        { $or: [{ _id: resQueryId as ObjectId }, { hospitalId: updated.hospitalId, type: "bed" }], heldQuantity: { $gt: 0 } },
-        { $inc: { heldQuantity: -1 }, $set: { updatedAt: now } }
-      );
-      affectedHospitals.add(updated.hospitalId);
-      results.push(updated);
+    await resourcesCol.updateOne(
+      { hospitalId: hold.hospitalId, type: "bed" },
+      { $inc: { heldQuantity: -1 } },
+    );
+    results.push({ success: true, releasedHoldId: hold._id.toString() });
+    if (hold.hospitalId) {
+      affectedHospitals.add(hold.hospitalId);
     }
   }
 
@@ -544,6 +544,7 @@ export async function requestBedHold(params: {
       hospitalId,
       resourceId,
       seq,
+      quantity: 1,
       status: "pending",
       expiresAt,
       notes,
@@ -584,6 +585,7 @@ export async function requestBedHold(params: {
     hospitalId,
     resourceId,
     seq,
+    quantity: 1,
     queuePosition,
     status: "queued",
     notes,
@@ -689,7 +691,13 @@ export async function promoteNext(hospitalId: string): Promise<IHold | null> {
 /**
  * Cancel a bed hold by patient owner and promote the next queued patient.
  */
-export async function cancelPatientBedHold(holdId: string, patientId: string) {
+export async function cancelPatientBedHold(
+  holdIdOrParams: string | { holdId: string; patientId: string },
+  patientIdArg?: string,
+) {
+  const holdId = typeof holdIdOrParams === "object" ? holdIdOrParams.holdId : holdIdOrParams;
+  const patientId = typeof holdIdOrParams === "object" ? holdIdOrParams.patientId : patientIdArg!;
+
   const holdsCol = await getHoldsCollection();
   const resourcesCol = await getResourcesCollection();
   const queryId = ObjectId.isValid(holdId) ? new ObjectId(holdId) : holdId;
@@ -725,16 +733,24 @@ export async function cancelPatientBedHold(holdId: string, patientId: string) {
     );
   }
 
-  await promoteNext(hold.hospitalId);
+  const promoted = await promoteNext(hold.hospitalId);
 
-  return { success: true, message: "Request cancelled." };
+  return { success: true, message: "Request cancelled.", promotedHold: promoted };
 }
 
 /**
  * Confirm a pending bed hold by hospital staff, enforce Rule C (cancel patient's other active holds
  * across all hospitals and promote their queues).
  */
-export async function confirmPatientBedHold(holdId: string, hospitalId: string, confirmedByUserId?: string) {
+export async function confirmPatientBedHold(
+  holdIdOrParams: string | { holdId: string; hospitalId: string; confirmedByUserId?: string },
+  hospitalIdArg?: string,
+  confirmedByUserIdArg?: string,
+) {
+  const holdId = typeof holdIdOrParams === "object" ? holdIdOrParams.holdId : holdIdOrParams;
+  const hospitalId = typeof holdIdOrParams === "object" ? holdIdOrParams.hospitalId : hospitalIdArg!;
+  const confirmedByUserId = typeof holdIdOrParams === "object" ? holdIdOrParams.confirmedByUserId : confirmedByUserIdArg;
+
   const holdsCol = await getHoldsCollection();
   const resourcesCol = await getResourcesCollection();
   const queryId = ObjectId.isValid(holdId) ? new ObjectId(holdId) : holdId;
@@ -801,7 +817,13 @@ export async function confirmPatientBedHold(holdId: string, hospitalId: string, 
 /**
  * Reject a pending bed hold by hospital staff and promote next in queue.
  */
-export async function rejectPatientBedHold(holdId: string, hospitalId: string) {
+export async function rejectPatientBedHold(
+  holdIdOrParams: string | { holdId: string; hospitalId: string },
+  hospitalIdArg?: string,
+) {
+  const holdId = typeof holdIdOrParams === "object" ? holdIdOrParams.holdId : holdIdOrParams;
+  const hospitalId = typeof holdIdOrParams === "object" ? holdIdOrParams.hospitalId : hospitalIdArg!;
+
   const holdsCol = await getHoldsCollection();
   const resourcesCol = await getResourcesCollection();
   const queryId = ObjectId.isValid(holdId) ? new ObjectId(holdId) : holdId;
@@ -827,9 +849,9 @@ export async function rejectPatientBedHold(holdId: string, hospitalId: string) {
     { $inc: { heldQuantity: -1 } },
   );
 
-  await promoteNext(hospitalId);
+  const promoted = await promoteNext(hospitalId);
 
-  return { success: true };
+  return { success: true, message: "Request rejected.", promotedHold: promoted };
 }
 
 /**
