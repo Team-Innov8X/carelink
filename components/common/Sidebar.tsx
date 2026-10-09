@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
-  const { activeTab, setActiveTab, medicines, emergencies, role, unreadNotificationsCount } = useCareLink();
+  const { activeTab, setActiveTab, medicines, emergencies, role } = useCareLink();
   const activeEmergenciesCount = emergencies.filter((request) => !['Completed', 'Handed over', 'Rejected', 'Timed out', 'Rerouted'].includes(request.status)).length;
   const [networkOnline, setNetworkOnline] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
@@ -72,7 +72,6 @@ export const Sidebar: React.FC = () => {
       id: 'notifications',
       label: 'Notifications',
       icon: <Bell className="w-5 h-5" />,
-      badge: unreadNotificationsCount > 0 ? unreadNotificationsCount : undefined,
       badgeColor: 'bg-rose-500 text-white',
     },
     {
