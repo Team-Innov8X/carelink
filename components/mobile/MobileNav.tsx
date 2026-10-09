@@ -5,20 +5,32 @@ import {
   Building2,
   Pill,
   HeartHandshake,
+  Siren,
+  Car,
+  Sparkles,
 } from 'lucide-react';
 
 export const MobileNav: React.FC = () => {
-  const { activeTab, setActiveTab, medicines } = useCareLink();
+  const { activeTab, setActiveTab, medicines, role } = useCareLink();
   const outOfStockCount = medicines.filter((medicine) =>
     Object.values(medicine.stock).some((quantity) => quantity <= (medicine.minimumStock ?? (medicine.isEmergencyEssential ? 8 : 10)))
   ).length;
 
-  const tabs: { id: string; label: string; icon: React.ReactNode; badge?: number }[] = [
-    { id: 'dashboard', label: 'Home', icon: <LayoutDashboard className="w-5 h-5" /> },
-    { id: 'hospitals', label: 'Hospitals', icon: <Building2 className="w-5 h-5" /> },
-    { id: 'handoff', label: 'Handoff', icon: <HeartHandshake className="w-5 h-5" /> },
-    { id: 'pharmacy', label: 'Pharmacy', icon: <Pill className="w-5 h-5" />, badge: outOfStockCount },
-  ];
+  const tabs: { id: string; label: string; icon: React.ReactNode; badge?: number }[] =
+    role === 'patient'
+      ? [
+          { id: 'dashboard', label: 'Home', icon: <LayoutDashboard className="w-5 h-5" /> },
+          { id: 'triage', label: 'Triage', icon: <Sparkles className="w-5 h-5 text-amber-500" /> },
+          { id: 'requests', label: 'Requests', icon: <Siren className="w-5 h-5" /> },
+          { id: 'driver-request', label: 'Driver', icon: <Car className="w-5 h-5" /> },
+          { id: 'hospitals', label: 'Hospitals', icon: <Building2 className="w-5 h-5" /> },
+        ]
+      : [
+          { id: 'dashboard', label: 'Home', icon: <LayoutDashboard className="w-5 h-5" /> },
+          { id: 'hospitals', label: 'Hospitals', icon: <Building2 className="w-5 h-5" /> },
+          { id: 'handoff', label: 'Handoff', icon: <HeartHandshake className="w-5 h-5" /> },
+          { id: 'pharmacy', label: 'Pharmacy', icon: <Pill className="w-5 h-5" />, badge: outOfStockCount },
+        ];
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 md:hidden py-1.5 px-3 shadow-lg">
