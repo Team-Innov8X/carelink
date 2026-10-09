@@ -28,7 +28,11 @@ export default function SignInPage() {
         : await authClient.signIn.username({ username: normalizedIdentifier, password });
 
       if (result.error) throw new Error(result.error.message || 'Sign in failed. Check your credentials.');
-      const signedInRole = (result.data?.user as (typeof result.data.user & { role?: string }) | undefined)?.role || 'patient';
+      // Read the role from the persisted session after authentication. The
+      // sign-in response can omit additional user fields for existing accounts.
+      const sessionResult = await authClient.getSession();
+      const sessionRole = (sessionResult.data?.user as (typeof sessionResult.data.user & { role?: string }) | undefined)?.role;
+      const signedInRole = sessionRole || (result.data?.user as (typeof result.data.user & { role?: string }) | undefined)?.role || 'patient';
       router.replace(routeForRole(signedInRole));
       router.refresh();
     } catch (signInError) {
