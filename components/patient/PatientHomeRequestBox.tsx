@@ -18,7 +18,7 @@ import {
   RotateCcw,
   AlertTriangle,
   Sparkles,
-} from 'lucide-react';
+} from '../icons';
 
 export type PatientRequestSummary = {
   id: string;

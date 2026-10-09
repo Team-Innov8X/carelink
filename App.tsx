@@ -17,8 +17,7 @@ import { EmergencyRequestsView } from './components/dispatcher/EmergencyRequests
 import { NotificationCenter } from './components/notifications/NotificationCenter';
 import { MobileNav } from './components/mobile/MobileNav';
 import { PatientSOSStatus } from './components/sos/PatientSOSStatus';
-import { LoaderCircle, Siren } from './components/icons';
-import { LoaderCircle, Siren, CheckCircle2, X } from 'lucide-react';
+import { LoaderCircle, Siren, CheckCircle2, X } from './components/icons';
 import { PatientEmergencyRequestsView } from './components/patient/PatientEmergencyRequestsView';
 import { RoutineDriverBookingView } from './components/patient/RoutineDriverBookingView';
 import { TriageChatView } from './components/patient/TriageChatView';

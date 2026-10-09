@@ -5,11 +5,10 @@ import {
   Building2,
   Pill,
   HeartHandshake,
-} from '@/components/icons';
   Siren,
   Car,
   Sparkles,
-} from 'lucide-react';
+} from '../icons';
 
 export const MobileNav: React.FC = () => {
   const { activeTab, setActiveTab, medicines, role } = useCareLink();

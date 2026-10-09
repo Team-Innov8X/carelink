@@ -17,7 +17,7 @@ import {
   Building,
   ArrowRight,
   ShieldAlert,
-} from 'lucide-react';
+} from '../icons';
 
 export const RoutineDriverBookingView: React.FC = () => {
   const { setActiveTab } = useCareLink();

@@ -10,10 +10,9 @@ import {
   Activity,
   HeartHandshake,
   Bell,
-} from '@/components/icons';
   Car,
   Sparkles,
-} from 'lucide-react';
+} from '../icons';
 
 export const Sidebar: React.FC = () => {
   const { activeTab, setActiveTab, medicines, emergencies, role } = useCareLink();
