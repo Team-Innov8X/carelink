@@ -6,10 +6,10 @@ export const runtime = 'nodejs';
 const stages = ['accepted', 'arrived_patient', 'patient_on_board', 'en_route_hospital', 'arrived_hospital', 'handover_complete'] as const;
 type TripStage = typeof stages[number];
 
-export async function PATCH(request: Request, context: RouteContext<'/api/sos/[id]/trip'>) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(['ambulance_driver', 'driver']);
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
-  const { id } = await context.params;
+  const { id } = await params;
   let body: { stage?: unknown; vitals?: unknown; issue?: unknown; etaDelayMinutes?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: 'Invalid request.' }, { status: 400 }); }
   const { requests, drivers } = await sosCollections();

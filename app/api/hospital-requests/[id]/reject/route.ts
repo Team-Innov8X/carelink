@@ -4,13 +4,13 @@ import { writeHospitalAudit } from '@/lib/hospital-audit';
 
 export const runtime = 'nodejs';
 
-export async function POST(httpRequest: Request, context: RouteContext<'/api/hospital-requests/[id]/reject'>) {
+export async function POST(httpRequest: Request, { params }: { params: Promise<{ id: string }> }) {
   const authorization = await requireRole(['hospital_staff', 'hospital']);
   if (!authorization.authorized || !authorization.user) {
     return Response.json({ error: authorization.reason }, { status: authorization.reason === 'UNAUTHENTICATED' ? 401 : 403 });
   }
 
-  const { id } = await context.params;
+  const { id } = await params;
   let body: { reason?: unknown };
   try { body = await httpRequest.json(); } catch { return Response.json({ error: 'A rejection reason is required.' }, { status: 400 }); }
   const validReasons = ['no_icu_bed', 'specialist_unavailable', 'diverted', 'other'] as const;

@@ -5,10 +5,10 @@ import { getResourcesCollection } from '@/lib/models';
 
 export const runtime = 'nodejs';
 
-export async function POST(_request: Request, context: RouteContext<'/api/sos/[id]/reroute'>) {
+export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(['ambulance_driver', 'driver']);
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
-  const { id } = await context.params;
+  const { id } = await params;
   const { requests } = await sosCollections();
   const sos = await requests.findOne({ _id: id, driverId: auth.user.id, status: 'accepted' });
   if (!sos) return Response.json({ error: 'Active assignment not found.' }, { status: 404 });

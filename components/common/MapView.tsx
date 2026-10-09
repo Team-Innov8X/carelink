@@ -4,6 +4,18 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import type * as Leaflet from 'leaflet';
 
+export type MapFacility = {
+  id: string;
+  name: string;
+  type?: 'hospital' | 'pharmacy';
+  location: { lat: number; lng: number; address?: string | null };
+  registered: boolean;
+  label?: string;
+  beds?: { total: number; available: number };
+  doctors?: { count: number };
+  status?: string;
+};
+
 interface MapViewProps {
   center?: [number, number];
   zoom?: number;
@@ -17,6 +29,7 @@ interface MapViewProps {
   hospitalLocation?: [number, number];
   showNetworkMarkers?: boolean;
   driverLocations?: { id: string; name?: string; location: [number, number]; distanceKm?: number }[];
+  facilities?: MapFacility[];
 }
 
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({
@@ -36,6 +49,7 @@ export const MapView: React.FC<MapViewProps> = ({
   hospitalLocation,
   showNetworkMarkers = true,
   driverLocations = [],
+  facilities,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Leaflet.Map | null>(null);
@@ -45,6 +59,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState('');
   const [routedPath, setRoutedPath] = useState<{ key: string; path: [number, number][] } | null>(null);
+  const [fetchedFacilities, setFetchedFacilities] = useState<MapFacility[]>([]);
   const { ambulances, hospitals, emergencies, selectedEmergencyId, setSelectedEmergencyId } = useCareLink();
 
   const emergency = emergencies.find((item) => item.id === selectedEmergencyId) ?? emergencies[0];
@@ -90,6 +105,24 @@ export const MapView: React.FC<MapViewProps> = ({
     return () => controller.abort();
   }, [routeKey]);
   const currentRoutedPath = routeKey && routedPath?.key === routeKey ? routedPath.path : null;
+
+  useEffect(() => {
+    if (facilities && facilities.length > 0) return;
+    if (!mapCenter) return;
+    const [lat, lng] = mapCenter;
+    const controller = new AbortController();
+    void fetch(`/api/nearby-facilities?lat=${lat}&lng=${lng}`, { signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { facilities?: MapFacility[] } | null) => {
+        if (data?.facilities && Array.isArray(data.facilities)) {
+          setFetchedFacilities(data.facilities);
+        }
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [facilities, mapCenter]);
+
+  const activeFacilities = facilities && facilities.length > 0 ? facilities : fetchedFacilities;
 
   useEffect(() => {
     let active = true;
@@ -169,14 +202,53 @@ export const MapView: React.FC<MapViewProps> = ({
       if (onClick) marker.on('click', onClick);
     };
 
-    if (showNetworkMarkers) hospitals.forEach((item) => {
-      const selected = item.id === hospital?.id;
-      const color = item.status === 'Available' ? '#0284c7' : item.status === 'Limited' ? '#d97706' : '#dc2626';
-      addMarker(
-        [item.location.lat, item.location.lng], 'H', selected ? '#0369a1' : color, item.name,
-        `<div style="font:13px Arial,sans-serif;max-width:280px"><strong>${escapeHtml(item.name)}</strong><p>${escapeHtml(item.location.address)}</p><p>General ${item.beds.general.available}/${item.beds.general.total} · ICU ${item.beds.icu.available}/${item.beds.icu.total} · Trauma ${item.beds.trauma.available}/${item.beds.trauma.total}</p><b>Status: ${escapeHtml(item.status)} · ETA: ${item.etaMin} min</b></div>`,
-      );
-    });
+    if (activeFacilities.length > 0) {
+      activeFacilities.forEach((item) => {
+        const isRegistered = item.registered;
+        const markerColor = isRegistered ? '#2E7D4F' : '#64748B'; // Registered green vs Unregistered grey
+        const markerLetter = item.type === 'pharmacy' ? 'Rx' : 'H';
+        const labelBadge = isRegistered
+          ? '<span style="background:#2E7D4F;color:white;font-size:10px;font-weight:bold;padding:2px 6px;border-radius:4px">Live data</span>'
+          : '<div style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:600;margin-top:5px">Not registered — availability unknown, call to confirm</div>';
+
+        const bedsLine = isRegistered && item.beds
+          ? `<p style="margin:2px 0 0;font-size:12px;color:#334155">Beds: <b>${item.beds.available}</b> available / ${item.beds.total} total</p>`
+          : '';
+        const doctorsLine = isRegistered && item.doctors
+          ? `<p style="margin:2px 0 0;font-size:12px;color:#334155">Doctors: <b>${item.doctors.count}</b> on roster</p>`
+          : '';
+        const statusLine = isRegistered && item.status
+          ? `<p style="margin:3px 0 0;font-size:11px;color:#2E7D4F;font-weight:bold">Status: ${escapeHtml(item.status)}</p>`
+          : '';
+
+        const addressHtml = item.location.address
+          ? `<p style="margin:2px 0 4px;font-size:12px;color:#64748b">${escapeHtml(item.location.address)}</p>`
+          : '';
+
+        const html = `<div style="font:13px Arial,sans-serif;max-width:280px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px">
+            <strong>${escapeHtml(item.name)}</strong>
+            ${isRegistered ? labelBadge : ''}
+          </div>
+          ${addressHtml}
+          ${bedsLine}
+          ${doctorsLine}
+          ${statusLine}
+          ${!isRegistered ? labelBadge : ''}
+        </div>`;
+
+        addMarker([item.location.lat, item.location.lng], markerLetter, markerColor, item.name, html);
+      });
+    } else if (showNetworkMarkers) {
+      hospitals.forEach((item) => {
+        const selected = item.id === hospital?.id;
+        const color = item.status === 'Available' ? '#2E7D4F' : item.status === 'Limited' ? '#d97706' : '#dc2626';
+        addMarker(
+          [item.location.lat, item.location.lng], 'H', selected ? '#0369a1' : color, item.name,
+          `<div style="font:13px Arial,sans-serif;max-width:280px"><strong>${escapeHtml(item.name)}</strong><p>${escapeHtml(item.location.address)}</p><p>General ${item.beds.general.available}/${item.beds.general.total} · ICU ${item.beds.icu.available}/${item.beds.icu.total} · Trauma ${item.beds.trauma.available}/${item.beds.trauma.total}</p><b>Status: ${escapeHtml(item.status)} · ETA: ${item.etaMin} min</b></div>`,
+        );
+      });
+    }
 
     if (showNetworkMarkers) ambulances.forEach((item) => addMarker(
       [item.location.lat, item.location.lng], 'A', item.status === 'En Route' ? '#e11d48' : '#f59e0b', `Ambulance ${item.id}`,
@@ -240,7 +312,7 @@ export const MapView: React.FC<MapViewProps> = ({
       : null);
     if (focusedPoint) map.fitBounds(focusedPoint, { padding: [40, 40], maxZoom: 14, animate: false });
     else map.setView(mapCenter, zoom, { animate: false });
-  }, [mapReady, mapCenter, zoom, ambulances, hospitals, emergencies, hospital, showNetworkMarkers, showRouteLine, ambulance, patientLocation, patientName, driverLocation, hospitalLocation, driverLocations, currentRoutedPath, setSelectedEmergencyId]);
+  }, [mapReady, mapCenter, zoom, ambulances, hospitals, emergencies, hospital, showNetworkMarkers, showRouteLine, ambulance, patientLocation, patientName, driverLocation, hospitalLocation, driverLocations, currentRoutedPath, setSelectedEmergencyId, activeFacilities]);
 
   if (!mapCenter) {
     return <div className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-500" style={{ height }}>No location records to show.</div>;
@@ -252,7 +324,9 @@ export const MapView: React.FC<MapViewProps> = ({
       {mapError && <div role="status" className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-rose-700 shadow">{mapError}</div>}
       <div className="absolute bottom-3 left-3 z-[1000] flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white/95 px-3.5 py-2 text-xs font-medium text-slate-700 shadow-md backdrop-blur-sm">
         {patientLocation ? <span><b className="text-rose-600">P</b> You / patient</span> : <span>🚑 Ambulance</span>}
-        {driverLocations.length > 0 || driverLocation ? <span><b className="text-sky-600">D</b> Nearby driver</span> : <span><b className="text-sky-600">H</b> Hospital</span>}
+        {driverLocations.length > 0 || driverLocation ? <span><b className="text-sky-600">D</b> Nearby driver</span> : null}
+        <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full bg-[#2E7D4F]" /> Registered (Live data)</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full bg-[#64748B]" /> Not registered</span>
         {!patientLocation && <span><b className="text-rose-600">!</b> Patient Request</span>}
       </div>
     </div>
