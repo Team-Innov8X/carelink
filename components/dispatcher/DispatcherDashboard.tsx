@@ -1,8 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { MapView } from '../common/MapView';
-import { DriverTripUpdates } from './DriverTripUpdates';
-import { DriverAssignmentPanel } from './DriverAssignmentPanel';
+import { PatientHomeRequestBox } from '../patient/PatientHomeRequestBox';
 import {
   Building2,
   Ambulance as AmbulanceIcon,
@@ -12,11 +11,17 @@ import {
   ChevronRight,
   LocateFixed,
 } from '@/components/icons';
+  Calendar,
+  Clock,
+  ShieldAlert,
+  CheckCircle2,
+  AlertTriangle,
+} from 'lucide-react';
 
 type NearbyDriver = { id: string; name?: string; location: { latitude: number; longitude: number }; distanceKm: number };
 type PatientProfile = { name: string; email?: string | null; phone?: string | null };
 
-export const DispatcherDashboard: React.FC<{ onOpenNewEmergency?: () => void }> = ({ onOpenNewEmergency }) => {
+export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; requestPending?: boolean }> = () => {
   const {
     emergencies,
     hospitals,
@@ -32,12 +37,8 @@ export const DispatcherDashboard: React.FC<{ onOpenNewEmergency?: () => void }> 
     (a) => a.status === 'On Duty' || a.status === 'En Route'
   );
   const unavailableMedicines = medicines.filter((m) =>
-    Object.values(m.stock).some((qty) => qty <= (m.minimumStock ?? (m.isEmergencyEssential ? 8 : 10)))
+    Object.values(m.stock).some((qty) => qty === 0)
   );
-  const severityRank = (priority: string) => priority === 'Critical' ? 0 : priority === 'High' ? 1 : priority === 'Medium' ? 2 : 3;
-  const recentEmergencies = [...emergencies].sort((a, b) => severityRank(a.priority) - severityRank(b.priority) || b.requestedAt.localeCompare(a.requestedAt));
-  const staleHospitals = hospitals.filter((hospital) => hospital.lastUpdatedMinutesAgo >= 10).length;
-  const pendingConfirmations = emergencies.filter((request) => request.status === 'Pending' || request.status === 'Finding hospital').length;
   const [patientLocation, setPatientLocation] = useState<[number, number] | undefined>();
   const [patientProfile, setPatientProfile] = useState<PatientProfile | undefined>();
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriver[]>([]);
@@ -121,21 +122,11 @@ export const DispatcherDashboard: React.FC<{ onOpenNewEmergency?: () => void }> 
       case 'Finding hospital':
         return 'bg-purple-100 text-purple-700';
       case 'Pending':
-      case 'Pending hospital confirmation':
         return 'bg-amber-100 text-amber-700';
-      case 'Accepted':
       case 'Assigned':
         return 'bg-blue-100 text-blue-700';
-      case 'Arrived':
-        return 'bg-teal-100 text-teal-700';
-      case 'Handed over':
       case 'En Route':
         return 'bg-emerald-100 text-emerald-700 font-bold animate-pulse';
-      case 'Rejected':
-      case 'Timed out':
-        return 'bg-rose-100 text-rose-700';
-      case 'Rerouted':
-        return 'bg-sky-100 text-sky-700';
       case 'Completed':
         return 'bg-slate-100 text-slate-600';
       default:
@@ -157,16 +148,16 @@ export const DispatcherDashboard: React.FC<{ onOpenNewEmergency?: () => void }> 
     <div className="space-y-6">
       {/* Top Welcome Header */}
       <div>
-        <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
           {role === 'patient' ? 'Your Care Dashboard' : 'CareLink Response Network'}
-        </h1><button type="button" onClick={() => role === 'patient' ? setActiveTab('recommendations') : onOpenNewEmergency?.()} className="rounded-xl bg-rose-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-rose-800">New emergency request</button></div>
+        </h1>
         <p className="text-sm text-slate-500 mt-1">
           {role === 'patient' ? 'Explore nearby hospitals, medicine availability, and your care requests.' : 'Here’s the current status of hospitals, ambulances and requests.'}
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs"><span className={staleHospitals ? 'font-semibold text-amber-800' : 'text-emerald-800'}>{staleHospitals} hospitals with stale data</span><span className="text-slate-300">|</span><span className="text-slate-700">{pendingConfirmations} requests awaiting hospital confirmation</span><span className="text-slate-300">|</span><span className="text-slate-500">Hospital availability refreshes from shared inventory</span></div>
-      <DriverTripUpdates />
+      {/* Current Active Request Box under Your Care Dashboard */}
+      {role === 'patient' && <PatientHomeRequestBox />}
 
       {/* Network status cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -237,8 +228,6 @@ export const DispatcherDashboard: React.FC<{ onOpenNewEmergency?: () => void }> 
         </div>
       </div>
 
-      {role === 'dispatcher' && <DriverAssignmentPanel />}
-
       {/* Main Grid: Left Map + Right Emergency Requests Table */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Live Ambulance Locations Map (Mockup Panel 2) */}
@@ -283,7 +272,7 @@ export const DispatcherDashboard: React.FC<{ onOpenNewEmergency?: () => void }> 
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {recentEmergencies.map((req) => (
+                {emergencies.map((req) => (
                   <tr
                     key={req.id}
                     className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
@@ -295,7 +284,7 @@ export const DispatcherDashboard: React.FC<{ onOpenNewEmergency?: () => void }> 
                       <div className="text-[11px] text-slate-500">{req.patientName}</div>
                     </td>
                     <td className="py-3 px-3">
-                      <div title={req.location.address} className="flex items-center gap-1 text-slate-700 font-medium truncate max-w-[200px]">
+                      <div className="flex items-center gap-1 text-slate-700 font-medium truncate max-w-[140px]">
                         <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
                         <span className="truncate">{req.location.address.split('(')[0]}</span>
                       </div>
@@ -322,15 +311,13 @@ export const DispatcherDashboard: React.FC<{ onOpenNewEmergency?: () => void }> 
                       </span>
                     </td>
                     <td className="py-3 px-3 text-right">
-                      {req.status === 'Finding hospital' || req.status === 'Pending' || req.status === 'Pending hospital confirmation' ? (
+                      {req.status === 'Finding hospital' || req.status === 'Pending' ? (
                         <button
                           onClick={() => handlePatientSelect(req.id)}
                           className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-600 hover:text-white font-semibold transition-all shadow-2xs text-[11px]"
                         >
                           Find Hospital
                         </button>
-                      ) : req.status === 'Rejected' || req.status === 'Timed out' ? (
-                        <button title={req.vitals.conditionNotes} onClick={() => { setSelectedEmergencyId(req.id); setActiveTab('recommendations'); }} className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold text-[11px]">Reroute / View reason</button>
                       ) : (
                         <button
                           onClick={() => handleHandoffSelect(req.id)}

@@ -4,10 +4,10 @@ import clientPromise from '@/lib/mongodb';
 
 export const runtime = 'nodejs';
 
-export async function POST(_request: Request, context: RouteContext<'/api/patient/hospital-requests/[id]/reroute'>) {
+export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole('patient');
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
-  const { id } = await context.params;
+  const { id } = await params;
   const { hospitalRequests, notifications } = await workflowCollections();
   const oldRequest = await hospitalRequests.findOne({ _id: id, patientId: auth.user.id, status: 'rejected' });
   if (!oldRequest) return Response.json({ error: 'A rejected request for your account was not found.' }, { status: 404 });

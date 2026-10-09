@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { auth, UserRole } from "./auth";
+import { getHospitalsCollection } from "./models";
 
 /**
  * Retrieve current user & session on the server side.
@@ -11,6 +12,18 @@ export async function getServerSession() {
   });
 }
 
+/** Resolve legacy hospital staff profiles that stored only the facility name. */
+export async function resolveHospitalId(user: { hospitalId?: string; hospitalName?: string }) {
+  if (user.hospitalId) return user.hospitalId;
+  const hospitalName = user.hospitalName?.trim();
+  if (!hospitalName) return null;
+  const hospital = await (await getHospitalsCollection()).findOne(
+    { name: hospitalName },
+    { projection: { _id: 1 } },
+  );
+  return hospital?._id?.toString() ?? null;
+}
+
 /**
  * Ensure user is logged in and possesses one of the allowed roles.
  */
@@ -18,9 +31,9 @@ export async function requireRole(
   sessionOrRoles?: Awaited<ReturnType<typeof getServerSession>> | UserRole | UserRole[],
   explicitRoles?: UserRole | UserRole[],
 ): Promise<RoleAuthorization> {
-  const hasSessionArgument = arguments.length > 1;
-  const session = hasSessionArgument ? sessionOrRoles as Awaited<ReturnType<typeof getServerSession>> : await getServerSession();
-  const allowedRoles = hasSessionArgument ? explicitRoles : sessionOrRoles as UserRole | UserRole[] | undefined;
+  const isSession = Boolean(sessionOrRoles && typeof sessionOrRoles === "object" && !Array.isArray(sessionOrRoles) && ("user" in sessionOrRoles || "session" in sessionOrRoles));
+  const session = isSession ? (sessionOrRoles as Awaited<ReturnType<typeof getServerSession>>) : await getServerSession();
+  const allowedRoles = isSession ? explicitRoles : (sessionOrRoles as UserRole | UserRole[] | undefined);
   if (!session || !session.user) {
     return { authorized: false, reason: "UNAUTHENTICATED" as const, user: null };
   }

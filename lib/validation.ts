@@ -26,6 +26,8 @@ export const rankRequestSchema = z.object({
 
 export const createHoldSchema = z.object({
   hospitalId: z.string().min(1),
+  resourceId: z.string().trim().optional(),
+  ambulanceId: z.string().trim().optional(),
   resourceType: z.enum(["bed", "equipment", "specialist"]),
   category: z.string().trim().min(1),
   requestedByUserId: z.string().min(1),
@@ -41,11 +43,50 @@ export const createHoldSchema = z.object({
 
 export const roleUpdateSchema = z.object({ role: z.enum(["admin", "hospital", "patient", "hospital_staff", "ambulance_driver", "driver", "dispatcher", "pharmacy"]) });
 
+export function isValidRole(value: unknown): value is import("./auth").UserRole {
+  return roleUpdateSchema.shape.role.safeParse(value).success;
+}
+
 export const cancelHoldSchema = z.object({
   reason: z.enum(["cancelled", "expired"]).optional(),
   originLocation: coordinateSchema.optional(),
 }).optional();
 
-export function isValidRole(value: unknown): value is import("./auth").UserRole {
-  return roleUpdateSchema.shape.role.safeParse(value).success;
+export const doctorCreateSchema = z.object({
+  name: z.string().trim().min(1, "Doctor name is required").max(200),
+  qualification: z.string().trim().min(1, "Qualification is required").max(200),
+  specialization: z.string().trim().min(1, "Specialization is required").max(200),
+  availability: z.enum(["available", "on_call", "off_duty"]),
+  phone: z.string().trim().max(50).optional(),
+  experienceYears: z.number().int().nonnegative().optional(),
+});
+
+export const doctorUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  qualification: z.string().trim().min(1).max(200).optional(),
+  specialization: z.string().trim().min(1).max(200).optional(),
+  availability: z.enum(["available", "on_call", "off_duty"]).optional(),
+  phone: z.string().trim().max(50).optional(),
+  experienceYears: z.number().int().nonnegative().optional(),
+});
+
+export const bedHoldRequestSchema = z.object({
+  hospitalId: z.string().trim().min(1, "hospitalId is required"),
+  resourceId: z.string().trim().optional(),
+  notes: z.string().max(2000).optional(),
+});
+
+export async function validateBody<T>(req: Request, schema: z.ZodType<T>) {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return { success: false as const, error: "Request body must be valid JSON", status: 400 };
+  }
+  const result = schema.safeParse(body);
+  if (!result.success) {
+    const errorMsg = result.error.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`).join("; ");
+    return { success: false as const, error: errorMsg, status: 400 };
+  }
+  return { success: true as const, data: result.data };
 }
