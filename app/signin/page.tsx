@@ -3,7 +3,7 @@
 import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Heart, Lock, UserRound } from 'lucide-react';
+import { Heart, Lock, UserRound } from '@/components/icons';
 import { authClient } from '../../lib/auth-client';
 import { routeForRole } from '../../lib/role-route';
 

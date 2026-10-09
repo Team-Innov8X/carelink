@@ -11,7 +11,7 @@ import {
   MapPin,
   ChevronRight,
   LocateFixed,
-} from 'lucide-react';
+} from '@/components/icons';
 
 type NearbyDriver = { id: string; name?: string; location: { latitude: number; longitude: number }; distanceKm: number };
 type PatientProfile = { name: string; email?: string | null; phone?: string | null };

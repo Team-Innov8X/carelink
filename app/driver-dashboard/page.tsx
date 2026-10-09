@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Ambulance, Heart } from 'lucide-react';
+import { Ambulance, Heart } from '@/components/icons';
 import { CareLinkProvider } from '../../context/CareLinkContext';
 import { ProfileMenu } from '../../components/common/ProfileMenu';
 import { MapView } from '../../components/common/MapView';

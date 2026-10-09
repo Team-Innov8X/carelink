@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Heart } from 'lucide-react';
+import { Heart } from '@/components/icons';
 import { CareLinkProvider } from '../../context/CareLinkContext';
 import { PharmacyInventory } from '../../components/pharmacy/PharmacyInventory';
 import { ProfileMenu } from '../../components/common/ProfileMenu';

@@ -16,7 +16,7 @@ import { EmergencyRequestsView } from './components/dispatcher/EmergencyRequests
 import { NotificationCenter } from './components/notifications/NotificationCenter';
 import { MobileNav } from './components/mobile/MobileNav';
 import { PatientSOSStatus } from './components/sos/PatientSOSStatus';
-import { LoaderCircle, Siren } from 'lucide-react';
+import { LoaderCircle, Siren } from './components/icons';
 
 const MainAppContent: React.FC = () => {
   const { activeTab, role } = useCareLink();

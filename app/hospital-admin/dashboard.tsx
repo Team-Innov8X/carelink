@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Heart, ShieldCheck } from 'lucide-react';
+import { Heart, ShieldCheck } from '@/components/icons';
 import { ProfileMenu } from '../../components/common/ProfileMenu';
 import { HospitalRequestInbox } from '../../components/hospitalStaff/HospitalRequestInbox';
 import { SearchField } from '../../components/common/SearchField';

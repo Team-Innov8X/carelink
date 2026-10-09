@@ -4,7 +4,7 @@ import {
   Heart,
   Search,
   Bell,
-} from 'lucide-react';
+} from '@/components/icons';
 import { ProfileMenu } from './ProfileMenu';
 import { SearchField } from './SearchField';
 

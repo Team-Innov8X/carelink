@@ -9,7 +9,7 @@ import {
   Clock,
   CheckCircle2,
   ChevronRight,
-} from 'lucide-react';
+} from '@/components/icons';
 
 export const SmartRecommendations: React.FC = () => {
   const {

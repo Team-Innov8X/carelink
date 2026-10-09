@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Ambulance, Clock3, MapPin, RefreshCw, Send } from 'lucide-react';
+import { Ambulance, Clock3, MapPin, RefreshCw, Send } from '@/components/icons';
 
 type DispatchDriver = { id: string; name: string; ambulanceId: string; ambulanceType: string; crew: string; status: string; distanceKm: number | null; estimatedEtaMinutes: number | null };
 type DispatchRequest = { id: string; patientName: string; patientPhone?: string; incidentType: string; requiredEquipment: string[]; location: { latitude: number; longitude: number }; createdAt: string; assignedDriverId?: string; assignmentExpiresAt?: string };

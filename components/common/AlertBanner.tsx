@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, RefreshCw, PhoneCall, X, Clock } from 'lucide-react';
+import { AlertTriangle, RefreshCw, PhoneCall, X, Clock } from '@/components/icons';
 import { Hospital } from '../../types';
 
 interface StaleDataWarningProps {

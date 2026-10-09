@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, KeyRound, LogOut, Pencil, UserRound, X } from 'lucide-react';
+import { Check, KeyRound, LogOut, Pencil, UserRound, X } from '@/components/icons';
 import { authClient } from '../../lib/auth-client';
 
 type ProfileFields = { name?: string; username?: string; phone?: string; hospitalName?: string };

@@ -14,7 +14,7 @@ import {
   CheckSquare,
   Square,
   Sparkles,
-} from 'lucide-react';
+} from '@/components/icons';
 import { HandoffChecklist } from '../../types';
 
 export const PatientHandoffView: React.FC = () => {
