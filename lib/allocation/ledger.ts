@@ -39,7 +39,7 @@ export class ReservationLedger {
     if (input.resourceType !== input.requiredResourceType) throw new Error("I4: reservation resource type differs from patient requirement.");
     const dedupeKey = `${input.patientId}\0${input.batchId}`;
     const knownId = this.idempotency.get(dedupeKey);
-    if (knownId) return { reservation: this.reservationsById.get(knownId)!, created: false };
+    if (knownId && this.active(this.reservationsById.get(knownId)!)) return { reservation: this.reservationsById.get(knownId)!, created: false };
     if (this.getActiveReservations().some((item) => item.patientId === input.patientId)) return null;
     const key = this.key(input.hospitalId, input.resourceType);
     if (this.closures.has(key) || this.freeUnits(input.hospitalId, input.resourceType) < 1) return null;
@@ -68,6 +68,9 @@ export class ReservationLedger {
     return reservation;
   }
 
+  getConfirmedFree(hospitalId: string, type: SimResourceType) { return this.capacity.get(this.key(hospitalId, type)) ?? 0; }
+  isClosed(hospitalId: string, type: SimResourceType) { return this.closures.has(this.key(hospitalId, type)); }
+
   setClosed(hospitalId: string, type: SimResourceType, closed: boolean, at = 0) {
     const key = this.key(hospitalId, type);
     if (closed) {
@@ -83,13 +86,13 @@ export class ReservationLedger {
     this.assertInvariants();
   }
 
-  setConfirmedFree(hospitalId: string, type: SimResourceType, units: number) {
+  setConfirmedFree(hospitalId: string, type: SimResourceType, units: number, at = 0) {
     if (!Number.isInteger(units) || units < 0) throw new RangeError("Confirmed free capacity must be a non-negative integer.");
     const key = this.key(hospitalId, type);
     while (this.getActiveReservations().filter((item) => item.hospitalId === hospitalId && item.resourceType === type).length > units) {
       const reservation = this.getActiveReservations().find((item) => item.hospitalId === hospitalId && item.resourceType === type)!;
       const terminal = reservation.status === "requested" ? "cancelled" : reservation.status === "arrived" ? "arrival_failed" : "lost";
-      this.transition(reservation.id, terminal, 0, "event", "confirmed resource loss");
+      this.transition(reservation.id, terminal, at, "event", "confirmed resource loss");
     }
     this.capacity.set(key, units);
     this.assertInvariants();

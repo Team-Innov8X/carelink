@@ -163,8 +163,9 @@ interface SampleRequest {
   unitsNeeded: number;
 }
 
-/** Creates a complete 50-day minute-resolution ground-truth world and observable record. */
-export function simulateWorld(seed = GENERATOR.baseSeed): SimulatedPeriod {
+/** Creates a minute-resolution world; tests may stop at day 40 to keep the holdout unopened. */
+export function simulateWorld(seed = GENERATOR.baseSeed, throughDay = GENERATOR.days): SimulatedPeriod {
+  if (!Number.isInteger(throughDay) || throughDay < 1 || throughDay > GENERATOR.days) throw new RangeError(`throughDay must be between 1 and ${GENERATOR.days}.`);
   const random = createRng(seed);
   const days: SimDay[] = [];
   const samples: DecisionSample[] = [];
@@ -174,7 +175,7 @@ export function simulateWorld(seed = GENERATOR.baseSeed): SimulatedPeriod {
   const sampleRequestsByDay = new Map<number, SampleRequest[]>();
   const hospitalResourcePairs = HOSPITALS.flatMap((hospital) => RESOURCE_TYPES.map((resourceType) => ({ hospitalId: hospital.id, resourceType })));
 
-  for (let day = 1; day <= GENERATOR.days; day += 1) {
+  for (let day = 1; day <= throughDay; day += 1) {
     const requests: SampleRequest[] = [];
     for (let index = 0; index < GENERATOR.samplesPerDay; index += 1) {
       const minute = 60 + Math.floor(sampleRandom() * 1320);
@@ -199,7 +200,7 @@ export function simulateWorld(seed = GENERATOR.baseSeed): SimulatedPeriod {
     state.set(key, { active, nextId: occupied });
   }
 
-  for (let day = 1; day <= GENERATOR.days; day += 1) {
+  for (let day = 1; day <= throughDay; day += 1) {
     const hiddenEvents: SimEvent[] = [];
     const hospitalDays: HospitalDay[] = [];
     const globalDayStart = (day - 1) * 1440;

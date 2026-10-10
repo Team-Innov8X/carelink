@@ -22,6 +22,8 @@ export interface AllocationHospital {
   capabilities: string[];
   /** Confirmed free units available to platform patients, before this batch. */
   confirmedFree: Record<SimResourceType, number>;
+  /** Resource kinds the hospital operates, even when every unit is currently occupied. */
+  supportedTypes?: SimResourceType[];
   closedTypes: SimResourceType[];
 }
 
@@ -55,3 +57,17 @@ export interface AllocationAssignment {
 
 export interface UnservedPatient { patientId: string; reason: UnservedReason }
 export interface AllocationResult { assignments: AllocationAssignment[]; unserved: UnservedPatient[] }
+
+export type ReplanEvent =
+  | { type: "hospital_rejection"; reservationId: string; at: number }
+  | { type: "resource_loss"; reservationId: string; at: number }
+  | { type: "closure"; hospitalId: string; resourceType: SimResourceType; at: number }
+  | { type: "eta_change"; reservationId: string; newEtaMin: number; at: number }
+  | { type: "arrival_failure"; reservationId: string; at: number };
+
+export interface ReplanState {
+  patients: Map<string, AllocationPatient>;
+  reroutes: Map<string, number>;
+  arrivalFailures: Map<string, number>;
+  rejectedHospitals: Map<string, Set<string>>;
+}
