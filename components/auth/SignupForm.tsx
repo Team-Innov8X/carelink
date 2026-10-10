@@ -3,15 +3,13 @@
 import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Heart, Mail, Lock, UserRound, Building2, MapPin, FileText, Stethoscope, Store, Ambulance, Phone, User } from '@/components/icons';
+import { Heart, Mail, Lock, Building2, MapPin, FileText, Stethoscope, Store, Ambulance, User } from '@/components/icons';
 import { authClient } from '../../lib/auth-client';
 import { routeForRole } from '../../lib/role-route';
 
 export default function SignupForm({ role }: { role: string }) {
   const router = useRouter();
-  const [username, setUsername] = useState('');
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -29,7 +27,7 @@ export default function SignupForm({ role }: { role: string }) {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const roleDetailsValid = () => {
-    if (!name.trim() || !username.trim() || !phone.trim()) return 'Enter your name, username, and phone number first.';
+    if (!name.trim() || !email.trim() || !password) return 'Enter your name, email, and password first.';
     if (role === 'hospital_staff' && [hospitalName, hospitalAddress, hospitalRegistrationNumber, hospitalSpecialties].some((value) => !value.trim())) return 'Complete all hospital details before continuing.';
     if (role === 'pharmacy' && [pharmacyName, pharmacyAddress, pharmacyLicenseNumber].some((value) => !value.trim())) return 'Complete all pharmacy details before continuing.';
     if (role === 'driver' && [licenseNumber, vehicleNumber, driverQualification].some((value) => !value.trim())) return 'Complete all driver details before continuing.';
@@ -50,17 +48,16 @@ export default function SignupForm({ role }: { role: string }) {
     try {
       const result = await authClient.signUp.email({
         name: name.trim(),
-        username: username.trim(),
-        phone: phone.trim(),
         email: email.trim().toLowerCase(),
         password,
-        role,
         ...(role === 'hospital_staff' ? { hospitalName: hospitalName.trim(), hospitalAddress: hospitalAddress.trim(), hospitalRegistrationNumber: hospitalRegistrationNumber.trim(), hospitalSpecialties: hospitalSpecialties.trim() } : {}),
         ...(role === 'pharmacy' ? { pharmacyName: pharmacyName.trim(), pharmacyAddress: pharmacyAddress.trim(), pharmacyLicenseNumber: pharmacyLicenseNumber.trim(), pharmacyType } : {}),
         ...(role === 'driver' ? { licenseNumber: licenseNumber.trim(), vehicleNumber: vehicleNumber.trim(), driverQualification } : {}),
       });
       if (result.error) throw new Error(result.error.message || 'Unable to create your account.');
       if (!result.data?.user) throw new Error('Your account was created, but we could not start your session. Please sign in.');
+      const roleResult = await fetch('/api/me/role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) });
+      if (!roleResult.ok) throw new Error('Account created, but we could not set the selected role. Please sign in and contact support.');
       router.replace(routeForRole(role));
       router.refresh();
     } catch (signupError) {
@@ -72,25 +69,11 @@ export default function SignupForm({ role }: { role: string }) {
 
   const handleGoogleSignup = async () => {
     setError('');
-    const isOrganization = role === 'hospital_staff' || role === 'pharmacy';
-    if (!isOrganization) {
-      const missingDetails = roleDetailsValid();
-      if (missingDetails) { setError(missingDetails); return; }
-    }
+    const missingDetails = roleDetailsValid();
+    if (missingDetails) { setError(missingDetails); return; }
     try {
       setSubmitting(true);
-      const oauthStartedAt = performance.now();
-      const result = await authClient.signIn.social({
-        provider: 'google',
-        callbackURL: isOrganization ? `/onboarding/${role === 'hospital_staff' ? 'hospital' : 'pharmacy'}` : routeForRole(role),
-        additionalData: isOrganization ? { role } : {
-          role, name: name.trim(), username: username.trim(), phone: phone.trim(),
-          ...(role === 'hospital_staff' ? { hospitalName: hospitalName.trim(), hospitalAddress: hospitalAddress.trim(), hospitalRegistrationNumber: hospitalRegistrationNumber.trim(), hospitalSpecialties: hospitalSpecialties.trim() } : {}),
-          ...(role === 'pharmacy' ? { pharmacyName: pharmacyName.trim(), pharmacyAddress: pharmacyAddress.trim(), pharmacyLicenseNumber: pharmacyLicenseNumber.trim(), pharmacyType } : {}),
-          ...(role === 'driver' ? { licenseNumber: licenseNumber.trim(), vehicleNumber: vehicleNumber.trim(), driverQualification } : {}),
-        },
-      });
-      if (process.env.NEXT_PUBLIC_CARELINK_PERF_LOGS === '1') console.info(JSON.stringify({ event: 'carelink.perf', name: 'google_signup_oauth_start', durationMs: Math.round((performance.now() - oauthStartedAt) * 100) / 100 }));
+      const result = await authClient.signIn.social({ provider: 'google', callbackURL: `/auth/complete?role=${encodeURIComponent(role)}` });
       if (result.error) throw new Error(result.error.message || 'Google sign-in is unavailable.');
       if (result.data?.url) window.location.assign(result.data.url);
       else throw new Error('Google sign-in did not return a redirect URL.');
@@ -104,15 +87,24 @@ export default function SignupForm({ role }: { role: string }) {
   const labelClass = 'mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-700';
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-      <section className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="max-h-[94vh] overflow-y-auto p-6 sm:p-8">
-          <div className="mb-6 flex items-center gap-2 text-lg font-bold text-slate-900"><Heart className="h-5 w-5 fill-rose-600 text-rose-600" />Care<span className="-ml-2 text-rose-600">Link</span></div>
+    <main className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
+      <section className="grid max-h-[94vh] w-full max-w-4xl grid-cols-1 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl md:h-[94vh] md:min-h-0 md:grid-cols-2">
+        <aside className="relative flex flex-col justify-start overflow-hidden bg-gradient-to-br from-slate-900 via-sky-950 to-slate-900 p-8 text-white lg:p-10">
+          <div className="pointer-events-none absolute -left-16 -top-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl" />
+          <div className="relative">
+            <div className="mb-2 flex items-center gap-2.5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-rose-500 to-rose-600 shadow-lg"><Heart className="h-6 w-6 fill-white text-white" /></div>
+              <div><h1 className="text-2xl font-black tracking-tight">Care<span className="text-rose-400">Link</span></h1><span className="text-[11px] font-medium text-sky-200">Faster Care, Healthier Tomorrow</span></div>
+            </div>
+            <h2 className="mb-3 mt-10 text-2xl font-bold leading-snug tracking-tight lg:text-3xl">Care, connected.</h2>
+            <p className="max-w-sm text-sm leading-relaxed text-slate-300">One place for patients, hospitals, drivers, and pharmacies.</p>
+          </div>
+        </aside>
+
+        <div className="overflow-y-auto p-6 md:min-h-0 lg:p-8">
           <header className="mb-6"><h2 className="text-2xl font-bold text-slate-900">Create your account</h2><p className="mt-1 text-sm text-slate-500">Join CareLink to coordinate better care</p></header>
           <form onSubmit={handleSignup} className="space-y-4">
             <div><label className={labelClass} htmlFor="signup-name">Full name</label><div className="relative"><User className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-name" className={inputClass} required autoComplete="name" value={name} onChange={event => setName(event.target.value)} placeholder="Your full name" /></div></div>
-            <div><label className={labelClass} htmlFor="signup-username">Username</label><div className="relative"><UserRound className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-username" className={inputClass} required minLength={3} maxLength={30} pattern="[A-Za-z0-9_.]+" autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} placeholder="e.g. care_user" /></div></div>
-            <div><label className={labelClass} htmlFor="signup-phone">Phone number</label><div className="relative"><Phone className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-phone" className={inputClass} type="tel" required autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="Contact number" /></div></div>
             <div><label className={labelClass} htmlFor="signup-email">Email</label><div className="relative"><Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-email" className={inputClass} type="email" required autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="name@example.com" /></div></div>
             <div><label className={labelClass} htmlFor="signup-password">Password</label><div className="relative"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-password" className={inputClass} type="password" required minLength={8} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="********" /></div></div>
             <div><label className={labelClass} htmlFor="confirm-password">Confirm password</label><div className="relative"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="confirm-password" className={inputClass} type="password" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} placeholder="********" /></div></div>
