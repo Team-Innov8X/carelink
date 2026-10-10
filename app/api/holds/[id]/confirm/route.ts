@@ -5,6 +5,7 @@ import { requireRole, resolveHospitalId } from "@/lib/auth-utils";
 import { errorResponse } from "@/lib/api-response";
 import { getHoldsCollection } from "@/lib/models";
 import { writeHospitalAudit } from '@/lib/hospital-audit';
+import clientPromise from '@/lib/mongodb';
 
 export async function PATCH(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(["hospital", "hospital_staff", "admin"]);
@@ -32,6 +33,10 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
     });
 
     if (!ownedHold) return errorResponse("Pending hold not found for this hospital", 404);
+
+    const appState = await (await clientPromise).db().collection<{ _id: string; state?: { hospitals?: Array<{ id?: string; name?: string; acceptingRequests?: boolean }> } }>('appState').findOne({ _id: 'carelink' });
+    const linkedHospital = appState?.state?.hospitals?.find((hospital) => hospital.id === ownedHold.hospitalId || (profile.hospitalName && hospital.name?.toLocaleLowerCase() === profile.hospitalName.toLocaleLowerCase()));
+    if (linkedHospital?.acceptingRequests === false) return errorResponse('This hospital is currently diverted and cannot accept requests.', 409);
 
     const result = ownedHold.patientId
       ? await confirmPatientBedHold(id, ownedHold.hospitalId, auth.user.id)

@@ -28,7 +28,7 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
   }
   const appStateDb = (await clientPromise).db();
   const hospitalSnapshot = await appStateDb.collection<{ _id: string; state?: { hospitals?: Array<{ id: string; name: string; acceptingRequests?: boolean }> } }>('appState').findOne({ _id: 'carelink' });
-  const hospitalState = hospitalSnapshot?.state?.hospitals?.find((item) => item.id === hospitalRequest.hospitalId);
+  const hospitalState = hospitalSnapshot?.state?.hospitals?.find((item) => item.id === hospitalRequest.hospitalId || item.name?.toLocaleLowerCase() === hospitalRequest.hospitalName?.toLocaleLowerCase());
   if (hospitalState?.acceptingRequests === false) return Response.json({ error: 'This hospital is currently diverted and cannot accept requests.' }, { status: 409 });
 
   const locked = await hospitalRequests.updateOne(

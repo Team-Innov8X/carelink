@@ -49,8 +49,9 @@ export async function GET() {
     const driversFound = await drivers.find({ userId: { $in: driverIds } }).project({ userId: 1, location: 1 }).toArray();
     for (const driver of driversFound) driverById.set(driver.userId, driver);
   }
-  const sharedState = await (await clientPromise).db().collection<{ _id: string; state?: { hospitals?: Array<{ id: string; name?: string; location?: { lat?: number; lng?: number } }> } }>('appState').findOne({ _id: 'carelink' });
-  const hospitalPoint = sharedState?.state?.hospitals?.find((item) => profile.hospitalId ? item.id === profile.hospitalId : item.name === profile.hospitalName)?.location;
+  const sharedState = await (await clientPromise).db().collection<{ _id: string; state?: { hospitals?: Array<{ id: string; name?: string; acceptingRequests?: boolean; location?: { lat?: number; lng?: number } }> } }>('appState').findOne({ _id: 'carelink' });
+  const linkedHospital = sharedState?.state?.hospitals?.find((item) => (profile.hospitalId && item.id === profile.hospitalId) || (profile.hospitalName && item.name?.toLocaleLowerCase() === profile.hospitalName.toLocaleLowerCase()));
+  const hospitalPoint = linkedHospital?.location;
   const destination = hospitalPoint && typeof hospitalPoint.lat === 'number' && typeof hospitalPoint.lng === 'number' ? { latitude: hospitalPoint.lat, longitude: hospitalPoint.lng } : null;
   const formattedRequests = requests.map((item) => {
     const sos = sosById.get(item.sosRequestId);
@@ -105,7 +106,7 @@ export async function GET() {
     });
   }
 
-  return Response.json({ requests: [...bedHoldRequests, ...formattedRequests] });
+  return Response.json({ requests: [...bedHoldRequests, ...formattedRequests], acceptingRequests: linkedHospital ? linkedHospital.acceptingRequests !== false : null });
   } catch (error) {
     console.error('Could not load hospital requests:', error);
     return Response.json({ error: 'Could not load incoming cases. Please refresh and try again.' }, { status: 500 });

@@ -20,6 +20,8 @@ export type HospitalAdminDemoCase = {
 type DemoState = {
   cases: HospitalAdminDemoCase[];
   beds: Record<HospitalAdminDemoCase['bedCategory'], number>;
+  totals?: Record<HospitalAdminDemoCase['bedCategory'], number>;
+  acceptingRequests?: boolean;
   activity?: DemoAuditEntry[];
 };
 
@@ -31,6 +33,8 @@ function initialState(): DemoState {
   const now = Date.now();
   return {
     beds: { general: 11, icu: 4, trauma: 2, ventilators: 6 },
+    totals: { general: 20, icu: 8, trauma: 4, ventilators: 8 },
+    acceptingRequests: true,
     cases: [
       {
         _id: 'demo-case-1024', sosRequestId: 'DEMO-1024', patientId: 'DEMO-1024',
@@ -71,6 +75,8 @@ function readState(): DemoState {
     const parsed = JSON.parse(stored) as DemoState;
     if (!Array.isArray(parsed.cases) || !parsed.beds) throw new Error('Invalid demo state');
     if (!Array.isArray(parsed.activity)) parsed.activity = fallback.activity;
+    if (!parsed.totals) parsed.totals = fallback.totals;
+    if (typeof parsed.acceptingRequests !== 'boolean') parsed.acceptingRequests = true;
     return parsed;
   } catch {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(fallback));
@@ -89,6 +95,31 @@ export function getHospitalAdminDemoCases() {
 
 export function getHospitalAdminDemoBedCounts() {
   return readState().beds;
+}
+
+export function getHospitalAdminDemoCapacity() {
+  const state = readState();
+  return Object.fromEntries(Object.entries(state.beds).map(([category, available]) => [category, { total: state.totals?.[category as keyof DemoState['beds']] ?? 0, available }])) as Record<keyof DemoState['beds'], { total: number; available: number }>;
+}
+
+export function saveHospitalAdminDemoCapacity(category: keyof DemoState['beds'], total: number, available: number) {
+  const state = readState();
+  const totals = state.totals ?? (state.totals = initialState().totals!);
+  totals[category] = total;
+  state.beds[category] = available;
+  appendDemoActivity(state, `${category} demo bed capacity updated`, { total, available });
+  saveState(state);
+}
+
+export function getHospitalAdminDemoAcceptingRequests() {
+  return readState().acceptingRequests !== false;
+}
+
+export function setHospitalAdminDemoAcceptingRequests(acceptingRequests: boolean) {
+  const state = readState();
+  state.acceptingRequests = acceptingRequests;
+  appendDemoActivity(state, acceptingRequests ? 'Hospital resumed demo requests' : 'Hospital diverted demo requests', {});
+  saveState(state);
 }
 
 export function getHospitalAdminDemoBedDeltas() {
@@ -130,6 +161,7 @@ export function getHospitalAdminDemoAdmissions() {
 
 export function acceptHospitalAdminDemoCase(id: string) {
   const state = readState();
+  if (state.acceptingRequests === false) return { success: false, message: 'This hospital is diverted and cannot accept incoming requests.' };
   const item = state.cases.find((candidate) => candidate._id === id && candidate.status === 'pending');
   if (!item) return { success: false, message: 'This demo case is no longer waiting.' };
   if (state.beds[item.bedCategory] < 1) return { success: false, message: `No demo ${item.bedCategory} bed is available.` };
