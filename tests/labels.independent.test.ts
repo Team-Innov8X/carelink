@@ -19,6 +19,7 @@ describe("independent ground-truth labels", () => {
       expect(raw).toBeDefined();
       expect(labelFromRawTimeline(raw!, sample.minute, sample.etaMin, sample.unitsNeeded)).toBe(sample.label);
       expect(sample.features.freeNow).toBe(raw!.observed.availableUnits[sample.minute]);
+      expect(sample.features.currentStayElapsedMinutes).toHaveLength(raw!.observed.occupancy[sample.minute]);
       expect(sample.features.walkInsLast30Min).toBe(raw!.observed.walkInArrivals.slice(Math.max(0, sample.minute - 30), sample.minute).reduce((sum, count) => sum + count, 0));
     }
   }, 30_000);

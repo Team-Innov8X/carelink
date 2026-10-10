@@ -30,7 +30,7 @@ Per-minute walk-in Poisson rates are ICU/emergency respectively: North 0.0024/0.
 
 ## Durations, surges, closures, and losses
 
-- Initial occupancy is sampled uniformly from 0.2–0.72 of capacity. Stays are log-normal: ICU median 3600 min, sigma 0.58; emergency median 330 min, sigma 0.72. Stays persist across day boundaries.
+- Initial occupancy is sampled uniformly from 0.2–0.72 of capacity, and those synthetic patients are treated as admitted at the simulation start. Stays are log-normal: ICU median 3600 min, sigma 0.58; emergency median 330 min, sigma 0.72. Stays persist across day boundaries.
 - Each hospital/resource/day has 0.11 chance of a surge episode; one or occasionally two episodes last 30–90 minutes and multiply arrivals by 2.8.
 - Each hospital/resource/day has 0.018 chance of a 20–75 minute closure.
 - Each hospital/resource/day has 0.008 chance of losing 1 operational unit for the rest of that simulated day. A new day begins with the hospital's declared capacity.
@@ -39,8 +39,9 @@ Per-minute walk-in Poisson rates are ICU/emergency respectively: North 0.0024/0.
 
 ## Information boundary and labels
 
-- Decision-time features in each sample use only observed availability, current occupancy/capacity, prior 30-minute walk-in counts, ETA, hour, synthetic weekday, resource type, and whether the resource is closed now.
-- Future walk-ins, future closures, future resource loss, and current-patient stay lengths are not sample features. Hidden event logs and future free-unit timelines are stored for replay and independent label verification only.
+- Decision-time sample features use observed availability, current occupancy/capacity, each current patient's elapsed time since admission, prior 30-minute walk-in counts, ETA, hour, synthetic weekday, resource type, and whether the resource is closed now.
+- Future walk-ins, future closures, future resource loss, and current-patient total stay lengths are not sample features. The expected-release feature uses elapsed admission times and the completed-stay duration distribution from training days 1–30 only.
+- train.json includes only stay durations admitted and released during days 1–30, for constructing that training-period distribution. Validation and test files do not include hidden stay durations. Hidden event logs and future free-unit timelines are stored for replay and independent label verification only.
 - Label is 1 exactly when ground-truth free units at minute + etaMin are at least unitsNeeded; arrival minutes beyond the current day are labeled 0 in Phase 1 samples. The independent test recomputes this from the raw timeline.
 
 ## Calibration: free now but gone by arrival
@@ -51,62 +52,62 @@ Calibration process note: an earlier exploratory seed was inspected across all s
 
 | hospital/resource/hour | samples with enough units now | gone by arrival |
 |---|---:|---:|
-| east/emergency_bed/hour-7 | 20 | 5.0% |
-| central/emergency_bed/hour-4 | 27 | 14.8% |
-| north/emergency_bed/hour-2 | 32 | 9.4% |
-| west/emergency_bed/hour-1 | 39 | 5.1% |
-| east/emergency_bed/hour-6 | 25 | 8.0% |
-| central/emergency_bed/hour-2 | 33 | 6.1% |
-| west/emergency_bed/hour-21 | 31 | 12.9% |
-| north/emergency_bed/hour-5 | 36 | 8.3% |
-| east/emergency_bed/hour-5 | 25 | 16.0% |
-| west/emergency_bed/hour-6 | 49 | 12.2% |
-| east/emergency_bed/hour-8 | 23 | 30.4% |
 | north/emergency_bed/hour-1 | 37 | 5.4% |
+| north/emergency_bed/hour-2 | 32 | 9.4% |
 | north/emergency_bed/hour-3 | 42 | 7.1% |
-| west/emergency_bed/hour-5 | 35 | 2.9% |
-| central/emergency_bed/hour-11 | 24 | 29.2% |
-| central/emergency_bed/hour-3 | 24 | 12.5% |
-| west/emergency_bed/hour-3 | 42 | 4.8% |
-| west/emergency_bed/hour-13 | 20 | 10.0% |
-| north/emergency_bed/hour-11 | 23 | 30.4% |
-| north/emergency_bed/hour-9 | 24 | 20.8% |
-| north/emergency_bed/hour-8 | 33 | 27.3% |
 | north/emergency_bed/hour-4 | 29 | 10.3% |
-| west/emergency_bed/hour-2 | 35 | 20.0% |
-| north/emergency_bed/hour-22 | 24 | 12.5% |
-| west/emergency_bed/hour-19 | 29 | 20.7% |
-| west/emergency_bed/hour-7 | 27 | 3.7% |
-| north/emergency_bed/hour-10 | 31 | 9.7% |
-| east/emergency_bed/hour-4 | 22 | 13.6% |
+| north/emergency_bed/hour-5 | 36 | 8.3% |
 | north/emergency_bed/hour-7 | 49 | 22.4% |
-| north/emergency_bed/hour-21 | 29 | 13.8% |
-| west/emergency_bed/hour-11 | 30 | 30.0% |
-| north/emergency_bed/hour-14 | 24 | 12.5% |
-| west/emergency_bed/hour-4 | 37 | 16.2% |
-| north/emergency_bed/hour-13 | 26 | 26.9% |
-| west/emergency_bed/hour-18 | 26 | 30.8% |
-| central/emergency_bed/hour-21 | 22 | 13.6% |
+| north/emergency_bed/hour-8 | 33 | 27.3% |
+| north/emergency_bed/hour-9 | 24 | 20.8% |
+| north/emergency_bed/hour-10 | 31 | 9.7% |
+| north/emergency_bed/hour-11 | 23 | 30.4% |
+| north/emergency_bed/hour-22 | 24 | 12.5% |
+| east/emergency_bed/hour-4 | 22 | 13.6% |
+| east/emergency_bed/hour-5 | 25 | 16.0% |
+| east/emergency_bed/hour-6 | 25 | 8.0% |
+| east/emergency_bed/hour-7 | 20 | 5.0% |
+| east/emergency_bed/hour-8 | 23 | 30.4% |
+| central/emergency_bed/hour-2 | 33 | 6.1% |
+| central/emergency_bed/hour-3 | 24 | 12.5% |
+| central/emergency_bed/hour-4 | 27 | 14.8% |
+| central/emergency_bed/hour-11 | 24 | 29.2% |
+| west/emergency_bed/hour-1 | 39 | 5.1% |
+| west/emergency_bed/hour-2 | 35 | 20.0% |
+| west/emergency_bed/hour-3 | 42 | 4.8% |
+| west/emergency_bed/hour-5 | 35 | 2.9% |
+| west/emergency_bed/hour-6 | 49 | 12.2% |
+| west/emergency_bed/hour-7 | 27 | 3.7% |
+| west/emergency_bed/hour-13 | 20 | 10.0% |
+| west/emergency_bed/hour-19 | 29 | 20.7% |
+| west/emergency_bed/hour-21 | 31 | 12.9% |
 | north/emergency_bed/hour-6 | 31 | 16.1% |
-| central/emergency_bed/hour-1 | 23 | 26.1% |
-| central/emergency_bed/hour-9 | 23 | 17.4% |
+| north/emergency_bed/hour-13 | 26 | 26.9% |
+| north/emergency_bed/hour-14 | 24 | 12.5% |
+| north/emergency_bed/hour-21 | 29 | 13.8% |
 | east/emergency_bed/hour-21 | 20 | 20.0% |
+| central/emergency_bed/hour-1 | 23 | 26.1% |
+| central/emergency_bed/hour-5 | 20 | 0.0% |
+| central/emergency_bed/hour-9 | 23 | 17.4% |
 | central/emergency_bed/hour-16 | 20 | 20.0% |
 | central/emergency_bed/hour-20 | 20 | 15.0% |
-| central/emergency_bed/hour-5 | 20 | 0.0% |
+| central/emergency_bed/hour-21 | 22 | 13.6% |
+| west/emergency_bed/hour-4 | 37 | 16.2% |
 | west/emergency_bed/hour-8 | 41 | 4.9% |
-| west/emergency_bed/hour-16 | 28 | 17.9% |
+| west/emergency_bed/hour-11 | 30 | 30.0% |
+| west/emergency_bed/hour-18 | 26 | 30.8% |
+| east/emergency_bed/hour-1 | 35 | 14.3% |
 | central/emergency_bed/hour-22 | 29 | 6.9% |
 | west/emergency_bed/hour-14 | 30 | 13.3% |
-| east/emergency_bed/hour-1 | 35 | 14.3% |
-| west/emergency_bed/hour-10 | 37 | 16.2% |
+| west/emergency_bed/hour-16 | 28 | 17.9% |
 | east/emergency_bed/hour-3 | 28 | 17.9% |
-| west/emergency_bed/hour-20 | 31 | 19.4% |
+| central/emergency_bed/hour-7 | 22 | 13.6% |
 | central/emergency_bed/hour-8 | 24 | 29.2% |
 | west/emergency_bed/hour-9 | 32 | 9.4% |
-| central/emergency_bed/hour-7 | 22 | 13.6% |
+| west/emergency_bed/hour-10 | 37 | 16.2% |
+| west/emergency_bed/hour-20 | 31 | 19.4% |
+| north/emergency_bed/hour-18 | 20 | 15.0% |
+| north/emergency_bed/hour-20 | 21 | 14.3% |
 | east/emergency_bed/hour-16 | 24 | 29.2% |
 | central/emergency_bed/hour-13 | 20 | 25.0% |
-| north/emergency_bed/hour-20 | 21 | 14.3% |
-| north/emergency_bed/hour-18 | 20 | 15.0% |
 | west/emergency_bed/hour-22 | 28 | 10.7% |

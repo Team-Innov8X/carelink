@@ -1,0 +1,206 @@
+{
+  "modelType": "custom_l2_logistic_regression",
+  "tuningSplit": "validation (days 31–40)",
+  "testEvaluation": "not run; requires the hlth02-pre-test freeze",
+  "selectedLambda": 0.001,
+  "lambdaTrials": [
+    {
+      "lambda": 0.001,
+      "validationBrier": 0.06492115610389554,
+      "validationLogLoss": 0.21969693839700086
+    },
+    {
+      "lambda": 0.01,
+      "validationBrier": 0.06640553269751487,
+      "validationLogLoss": 0.2247715754443559
+    },
+    {
+      "lambda": 0.1,
+      "validationBrier": 0.08006184439524583,
+      "validationLogLoss": 0.2764303359349293
+    },
+    {
+      "lambda": 1,
+      "validationBrier": 0.1341454852352989,
+      "validationLogLoss": 0.4346970441779288
+    },
+    {
+      "lambda": 10,
+      "validationBrier": 0.19319790311527557,
+      "validationLogLoss": 0.5723919832284632
+    }
+  ],
+  "units": {
+    "probability": "P(free units at arrival >= k)",
+    "eta": "minutes",
+    "freeNow": "units",
+    "expectedReleases": "expected unit count"
+  },
+  "validation": {
+    "sampleCount": 2400,
+    "model": {
+      "count": 2400,
+      "positiveCount": 698,
+      "negativeCount": 1702,
+      "positiveRate": 0.29083333333333333,
+      "brierScore": 0.06492115610389554,
+      "logLoss": 0.21969693839700086,
+      "accuracyAtHalf": 0.91625,
+      "calibration10Bins": [
+        {
+          "bin": 0,
+          "count": 1164,
+          "meanPrediction": 0.021536389414745862,
+          "observedRate": 0.007731958762886598
+        },
+        {
+          "bin": 1,
+          "count": 288,
+          "meanPrediction": 0.139418813359202,
+          "observedRate": 0.09375
+        },
+        {
+          "bin": 2,
+          "count": 103,
+          "meanPrediction": 0.25506112748304177,
+          "observedRate": 0.14563106796116504
+        },
+        {
+          "bin": 3,
+          "count": 126,
+          "meanPrediction": 0.3466361281173816,
+          "observedRate": 0.2857142857142857
+        },
+        {
+          "bin": 4,
+          "count": 52,
+          "meanPrediction": 0.44484858172233294,
+          "observedRate": 0.5576923076923077
+        },
+        {
+          "bin": 5,
+          "count": 66,
+          "meanPrediction": 0.5544609957956684,
+          "observedRate": 0.7575757575757576
+        },
+        {
+          "bin": 6,
+          "count": 96,
+          "meanPrediction": 0.6507663777547992,
+          "observedRate": 0.6458333333333334
+        },
+        {
+          "bin": 7,
+          "count": 47,
+          "meanPrediction": 0.735950232905293,
+          "observedRate": 0.8085106382978723
+        },
+        {
+          "bin": 8,
+          "count": 128,
+          "meanPrediction": 0.8598349614278696,
+          "observedRate": 0.9140625
+        },
+        {
+          "bin": 9,
+          "count": 330,
+          "meanPrediction": 0.9756900438222776,
+          "observedRate": 0.9545454545454546
+        }
+      ]
+    },
+    "baseline": {
+      "count": 2400,
+      "positiveCount": 698,
+      "negativeCount": 1702,
+      "positiveRate": 0.29083333333333333,
+      "brierScore": 0.07625,
+      "logLoss": 2.6335817001119497,
+      "accuracyAtHalf": 0.92375,
+      "calibration10Bins": [
+        {
+          "bin": 0,
+          "count": 1711,
+          "meanPrediction": 0,
+          "observedRate": 0.056107539450613676
+        },
+        {
+          "bin": 1,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 2,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 3,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 4,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 5,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 6,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 7,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 8,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 9,
+          "count": 689,
+          "meanPrediction": 1,
+          "observedRate": 0.8737300435413643
+        }
+      ]
+    },
+    "brierDifferenceModelMinusBaseline": -0.01132884389610446
+  },
+  "training": {
+    "sampleCount": 7200,
+    "positiveCount": 2174,
+    "negativeCount": 5026
+  },
+  "stayDistribution": {
+    "icu_bed": {
+      "count": 226,
+      "units": "minutes",
+      "source": "completed stays admitted and released within training days 1–30"
+    },
+    "emergency_bed": {
+      "count": 5036,
+      "units": "minutes",
+      "source": "completed stays admitted and released within training days 1–30"
+    }
+  },
+  "parity": {
+    "savedVectors": 20,
+    "maxRuntimeParityError": 0
+  }
+}

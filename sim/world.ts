@@ -67,6 +67,7 @@ export interface DecisionSample {
     weekend: number;
     resourceTypeIsIcu: number;
     closedNow: number;
+    currentStayElapsedMinutes: number[];
   };
   /** Kept outside features so training code must opt in to the target explicitly. */
   label: 0 | 1;
@@ -76,6 +77,16 @@ export interface SimulatedPeriod {
   seed: number;
   days: SimDay[];
   samples: DecisionSample[];
+  /** Hidden ground-truth durations; splitPeriod exposes only training-only durations. */
+  stayRecords: StayRecord[];
+}
+
+export interface StayRecord {
+  hospitalId: string;
+  resourceType: ResourceType;
+  admissionDay: number;
+  releaseDay: number;
+  durationMinutes: number;
 }
 
 export const HOSPITALS: HospitalSpec[] = [
@@ -141,19 +152,50 @@ function stayLength(resourceType: ResourceType, random: () => number): number {
   return Math.max(1, Math.round(parameters.medianMinutes * Math.exp(parameters.sigma * normal(random))));
 }
 
-interface ActiveStay { releaseMinute: number }
+interface ActiveStay { releaseMinute: number; admissionMinute: number }
+interface SampleRequest {
+  id: string;
+  day: number;
+  minute: number;
+  hospitalId: string;
+  resourceType: ResourceType;
+  etaMin: number;
+  unitsNeeded: number;
+}
 
 /** Creates a complete 50-day minute-resolution ground-truth world and observable record. */
 export function simulateWorld(seed = GENERATOR.baseSeed): SimulatedPeriod {
   const random = createRng(seed);
   const days: SimDay[] = [];
+  const samples: DecisionSample[] = [];
+  const stayRecords: StayRecord[] = [];
   const state = new Map<string, { active: ActiveStay[]; nextId: number }>();
+  const sampleRandom = createRng(seed ^ 0xa5a5a5a5);
+  const sampleRequestsByDay = new Map<number, SampleRequest[]>();
+  const hospitalResourcePairs = HOSPITALS.flatMap((hospital) => RESOURCE_TYPES.map((resourceType) => ({ hospitalId: hospital.id, resourceType })));
+
+  for (let day = 1; day <= GENERATOR.days; day += 1) {
+    const requests: SampleRequest[] = [];
+    for (let index = 0; index < GENERATOR.samplesPerDay; index += 1) {
+      const minute = 60 + Math.floor(sampleRandom() * 1320);
+      const selected = hospitalResourcePairs[Math.floor(sampleRandom() * hospitalResourcePairs.length)];
+      const etaMin = GENERATOR.decisionEtaMinutes[0] + Math.floor(sampleRandom() * (GENERATOR.decisionEtaMinutes[1] - GENERATOR.decisionEtaMinutes[0] + 1));
+      const unitsNeeded = 1 + Math.floor(sampleRandom() * GENERATOR.maxUnitsNeeded);
+      requests.push({ id: `d${day}-${selected.hospitalId}-${selected.resourceType}-${String(index).padStart(3, "0")}`, day, minute, ...selected, etaMin, unitsNeeded });
+    }
+    sampleRequestsByDay.set(day, requests);
+  }
 
   for (const hospital of HOSPITALS) for (const resourceType of RESOURCE_TYPES) {
     const key = `${hospital.id}:${resourceType}`;
     const fraction = GENERATOR.initialOccupancyFraction[0] + random() * (GENERATOR.initialOccupancyFraction[1] - GENERATOR.initialOccupancyFraction[0]);
     const occupied = Math.floor(hospital.capacity[resourceType] * fraction);
-    const active = Array.from({ length: occupied }, () => ({ releaseMinute: stayLength(resourceType, random) }));
+    const active = Array.from({ length: occupied }, () => {
+      const durationMinutes = stayLength(resourceType, random);
+      // The simulator starts at admission for its initial synthetic patients; later duration remains hidden.
+      const admissionMinute = 0;
+      return { releaseMinute: durationMinutes, admissionMinute };
+    });
     state.set(key, { active, nextId: occupied });
   }
 
@@ -161,6 +203,14 @@ export function simulateWorld(seed = GENERATOR.baseSeed): SimulatedPeriod {
     const hiddenEvents: SimEvent[] = [];
     const hospitalDays: HospitalDay[] = [];
     const globalDayStart = (day - 1) * 1440;
+    const daySamples: DecisionSample[] = [];
+    const requestsByKeyMinute = new Map<string, SampleRequest[]>();
+    for (const request of sampleRequestsByDay.get(day) ?? []) {
+      const requestKey = `${request.hospitalId}:${request.resourceType}:${request.minute}`;
+      const list = requestsByKeyMinute.get(requestKey) ?? [];
+      list.push(request);
+      requestsByKeyMinute.set(requestKey, list);
+    }
     for (const hospital of HOSPITALS) for (const resourceType of RESOURCE_TYPES) {
       const randomEvents = random();
       if (randomEvents < GENERATOR.surgeProbabilityPerHospitalTypeDay) {
@@ -206,14 +256,22 @@ export function simulateWorld(seed = GENERATOR.baseSeed): SimulatedPeriod {
         const lost = minute >= lostAt ? GENERATOR.resourceLossUnits : 0;
         const currentCapacity = Math.max(0, capacity - lost);
         const canAdmit = !closed;
-      const timePattern = 1.0 + 0.6 * (0.5 + 0.5 * Math.sin(2 * Math.PI * (minute - 480) / 1440));
+        const timePattern = 1.0 + 0.6 * (0.5 + 0.5 * Math.sin(2 * Math.PI * (minute - 480) / 1440));
         const lambda = hospital.walkInRatePerMinute[resourceType] * timePattern * (activeSurge ? GENERATOR.surgeDemandMultiplier : 1);
         const arrivals = canAdmit ? poisson(lambda, random) : 0;
         let accepted = 0;
         for (let index = 0; index < arrivals; index += 1) {
           if (hospitalState.active.length >= currentCapacity) break;
           hospitalState.nextId += 1;
-          hospitalState.active.push({ releaseMinute: absoluteMinute + stayLength(resourceType, random) });
+          const durationMinutes = stayLength(resourceType, random);
+          hospitalState.active.push({ releaseMinute: absoluteMinute + durationMinutes, admissionMinute: absoluteMinute });
+          stayRecords.push({
+            hospitalId: hospital.id,
+            resourceType,
+            admissionDay: day,
+            releaseDay: Math.floor((absoluteMinute + durationMinutes) / 1440) + 1,
+            durationMinutes,
+          });
           accepted += 1;
         }
         if (accepted > 0) admissionMinutes.push(minute);
@@ -226,6 +284,33 @@ export function simulateWorld(seed = GENERATOR.baseSeed): SimulatedPeriod {
         knownCapacity.push(currentCapacity);
         availableUnits.push(free);
         walkInArrivals.push(arrivals);
+        const requests = requestsByKeyMinute.get(`${hospital.id}:${resourceType}:${minute}`) ?? [];
+        for (const request of requests) {
+          const walkInsLast30Min = walkInArrivals.slice(Math.max(0, minute - 30), minute).reduce((sum, value) => sum + value, 0);
+          daySamples.push({
+            id: request.id,
+            day,
+            minute,
+            hospitalId: hospital.id,
+            resourceType,
+            etaMin: request.etaMin,
+            unitsNeeded: request.unitsNeeded,
+            features: {
+              freeNow: free,
+              freeNowMinusK: free - request.unitsNeeded,
+              k: request.unitsNeeded,
+              occupancyRatio: occupied / Math.max(1, currentCapacity),
+              etaMin: request.etaMin,
+              walkInsLast30Min,
+              hour: Math.floor(minute / 60),
+              weekend: (day - 1) % 7 >= 5 ? 1 : 0,
+              resourceTypeIsIcu: resourceType === "icu_bed" ? 1 : 0,
+              closedNow: closed ? 1 : 0,
+              currentStayElapsedMinutes: hospitalState.active.map((stay) => absoluteMinute - stay.admissionMinute),
+            },
+            label: 0,
+          });
+        }
       }
       hospitalDays.push({
         hospitalId: hospital.id,
@@ -235,53 +320,15 @@ export function simulateWorld(seed = GENERATOR.baseSeed): SimulatedPeriod {
         observed: { occupancy, knownCapacity, availableUnits, walkInArrivals, admissionMinutes },
       });
     }
+    const hospitalDayByKey = new Map(hospitalDays.map((hospitalDay) => [`${hospitalDay.hospitalId}:${hospitalDay.resourceType}`, hospitalDay]));
+    for (const sample of daySamples) {
+      const hospitalDay = hospitalDayByKey.get(`${sample.hospitalId}:${sample.resourceType}`)!;
+      sample.label = hospitalDay.groundTruth.freeUnits[sample.minute + sample.etaMin] >= sample.unitsNeeded ? 1 : 0;
+      samples.push(sample);
+    }
     days.push({ day, hospitals: hospitalDays, hiddenEvents });
   }
-
-  const samples = createDecisionSamples(days, seed);
-  return { seed, days, samples };
-}
-
-export function createDecisionSamples(days: SimDay[], seed: number): DecisionSample[] {
-  const random = createRng(seed ^ 0xa5a5a5a5);
-  const samples: DecisionSample[] = [];
-  for (const day of days) {
-    for (let index = 0; index < GENERATOR.samplesPerDay; index += 1) {
-      const minute = 60 + Math.floor(random() * 1320);
-      const hospitalDay = day.hospitals[Math.floor(random() * day.hospitals.length)];
-      const etaMin = GENERATOR.decisionEtaMinutes[0] + Math.floor(random() * (GENERATOR.decisionEtaMinutes[1] - GENERATOR.decisionEtaMinutes[0] + 1));
-      const unitsNeeded = 1 + Math.floor(random() * GENERATOR.maxUnitsNeeded);
-      const arrivalMinute = minute + etaMin;
-      const freeNow = hospitalDay.observed.availableUnits[minute];
-      const freeAtArrival = arrivalMinute < 1440 ? hospitalDay.groundTruth.freeUnits[arrivalMinute] : 0;
-      const currentCapacity = Math.max(1, hospitalDay.observed.knownCapacity[minute]);
-      const walkInsLast30Min = hospitalDay.observed.walkInArrivals.slice(Math.max(0, minute - 30), minute).reduce((sum, value) => sum + value, 0);
-      const closedNow = hospitalDay.groundTruth.isOpen[minute] ? 0 : 1;
-      samples.push({
-        id: `d${day.day}-${hospitalDay.hospitalId}-${hospitalDay.resourceType}-${String(index).padStart(3, "0")}`,
-        day: day.day,
-        minute,
-        hospitalId: hospitalDay.hospitalId,
-        resourceType: hospitalDay.resourceType,
-        etaMin,
-        unitsNeeded,
-        features: {
-          freeNow,
-          freeNowMinusK: freeNow - unitsNeeded,
-          k: unitsNeeded,
-          occupancyRatio: hospitalDay.observed.occupancy[minute] / currentCapacity,
-          etaMin,
-          walkInsLast30Min,
-          hour: Math.floor(minute / 60),
-          weekend: (day.day - 1) % 7 >= 5 ? 1 : 0,
-          resourceTypeIsIcu: hospitalDay.resourceType === "icu_bed" ? 1 : 0,
-          closedNow,
-        },
-        label: freeAtArrival >= unitsNeeded ? 1 : 0,
-      });
-    }
-  }
-  return samples;
+  return { seed, days, samples, stayRecords };
 }
 
 /** Recomputes decision labels from the raw future-free timeline. */

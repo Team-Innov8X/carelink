@@ -11,7 +11,8 @@
     "gen-data": "tsx sim/generate.ts",
     "train": "tsx sim/train.ts",
     "eval": "tsx sim/evaluate.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:forecast": "tsx sim/test-model.ts"
   },
   "dependencies": {
     "@types/canvas-confetti": "^1.9.0",

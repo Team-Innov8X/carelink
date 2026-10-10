@@ -75,7 +75,7 @@ Per-minute walk-in Poisson rates are ICU/emergency respectively: North ${HOSPITA
 
 ## Durations, surges, closures, and losses
 
-- Initial occupancy is sampled uniformly from ${GENERATOR.initialOccupancyFraction[0]}–${GENERATOR.initialOccupancyFraction[1]} of capacity. Stays are log-normal: ICU median ${GENERATOR.icuStayLogNormal.medianMinutes} min, sigma ${GENERATOR.icuStayLogNormal.sigma}; emergency median ${GENERATOR.emergencyStayLogNormal.medianMinutes} min, sigma ${GENERATOR.emergencyStayLogNormal.sigma}. Stays persist across day boundaries.
+- Initial occupancy is sampled uniformly from ${GENERATOR.initialOccupancyFraction[0]}–${GENERATOR.initialOccupancyFraction[1]} of capacity, and those synthetic patients are treated as admitted at the simulation start. Stays are log-normal: ICU median ${GENERATOR.icuStayLogNormal.medianMinutes} min, sigma ${GENERATOR.icuStayLogNormal.sigma}; emergency median ${GENERATOR.emergencyStayLogNormal.medianMinutes} min, sigma ${GENERATOR.emergencyStayLogNormal.sigma}. Stays persist across day boundaries.
 - Each hospital/resource/day has ${GENERATOR.surgeProbabilityPerHospitalTypeDay} chance of a surge episode; one or occasionally two episodes last ${GENERATOR.surgeDurationMinutes[0]}–${GENERATOR.surgeDurationMinutes[1]} minutes and multiply arrivals by ${GENERATOR.surgeDemandMultiplier}.
 - Each hospital/resource/day has ${GENERATOR.closureProbabilityPerHospitalTypeDay} chance of a ${GENERATOR.closureDurationMinutes[0]}–${GENERATOR.closureDurationMinutes[1]} minute closure.
 - Each hospital/resource/day has ${GENERATOR.resourceLossProbabilityPerHospitalTypeDay} chance of losing ${GENERATOR.resourceLossUnits} operational unit for the rest of that simulated day. A new day begins with the hospital's declared capacity.
@@ -84,8 +84,9 @@ Per-minute walk-in Poisson rates are ICU/emergency respectively: North ${HOSPITA
 
 ## Information boundary and labels
 
-- Decision-time features in each sample use only observed availability, current occupancy/capacity, prior 30-minute walk-in counts, ETA, hour, synthetic weekday, resource type, and whether the resource is closed now.
-- Future walk-ins, future closures, future resource loss, and current-patient stay lengths are not sample features. Hidden event logs and future free-unit timelines are stored for replay and independent label verification only.
+- Decision-time sample features use observed availability, current occupancy/capacity, each current patient's elapsed time since admission, prior 30-minute walk-in counts, ETA, hour, synthetic weekday, resource type, and whether the resource is closed now.
+- Future walk-ins, future closures, future resource loss, and current-patient total stay lengths are not sample features. The expected-release feature uses elapsed admission times and the completed-stay duration distribution from training days 1–30 only.
+- train.json includes only stay durations admitted and released during days 1–30, for constructing that training-period distribution. Validation and test files do not include hidden stay durations. Hidden event logs and future free-unit timelines are stored for replay and independent label verification only.
 - Label is 1 exactly when ground-truth free units at minute + etaMin are at least unitsNeeded; arrival minutes beyond the current day are labeled 0 in Phase 1 samples. The independent test recomputes this from the raw timeline.
 
 ## Calibration: free now but gone by arrival
