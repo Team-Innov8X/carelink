@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   Role,
   Hospital,
@@ -6,6 +6,7 @@ import {
   Pharmacy,
   Medicine,
   Ambulance,
+  AmbulanceDriver,
   MedicineOrder,
   HospitalBeds,
   HandoffChecklist,
@@ -15,6 +16,7 @@ import { INITIAL_PHARMACIES } from '../data/mockPharmacies';
 import { INITIAL_MEDICINES } from '../data/mockMedicines';
 import { INITIAL_EMERGENCIES } from '../data/mockEmergencies';
 import { INITIAL_AMBULANCES } from '../data/mockAmbulances';
+import { INITIAL_DRIVERS } from '../data/mockDrivers';
 
 export interface DoubleBookingConflict {
   isOpen: boolean;
@@ -43,6 +45,7 @@ interface CareLinkContextType {
   pharmacies: Pharmacy[];
   medicines: Medicine[];
   ambulances: Ambulance[];
+  drivers: AmbulanceDriver[];
   medicineOrders: MedicineOrder[];
   selectedEmergencyId: string | null;
   setSelectedEmergencyId: (id: string | null) => void;
@@ -58,139 +61,183 @@ interface CareLinkContextType {
   requestHospitalBed: (requestId: string, hospitalId: string) => boolean;
   acceptEmergency: (requestId: string) => void;
   rejectEmergency: (requestId: string, reason?: string) => void;
+  rejectDriverEmergency: (requestId: string) => void;
   updateBedCounts: (hospitalId: string, bedType: keyof HospitalBeds, delta: number) => void;
+  setBedAvailability: (hospitalId: string, bedType: keyof HospitalBeds, available: number, total: number) => void;
+  updateHospitalSpecialty: (hospitalId: string, specialty: string, doctors: number) => void;
   refreshHospitalData: (hospitalId: string) => void;
   updateHandoffChecklist: (requestId: string, key: keyof HandoffChecklist, value: boolean) => void;
   completeHandoff: (requestId: string) => void;
   orderMedicine: (medicineId: string, pharmacyId: string, quantity: number, isUrgent?: boolean) => void;
   updateMedicineStock: (medicineId: string, pharmacyId: string, newStock: number) => void;
-  createNewEmergency: (emergency: Partial<EmergencyRequest>) => string;
+  addMedicine: (name: string) => void;
+  createNewEmergency: (emergency: Pick<EmergencyRequest, 'patientName' | 'condition'> & Partial<EmergencyRequest>) => string;
   
-  // Simulation controls
-  isSimulationActive: boolean;
-  toggleSimulation: () => void;
-  triggerConflictDemo: () => void;
-  triggerStaleDataDemo: () => void;
+  // Operational controls
   resetAllData: () => void;
 }
 
 const CareLinkContext = createContext<CareLinkContextType | undefined>(undefined);
 
-export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [role, setRole] = useState<Role>('dispatcher');
+const mergeInitialRecords = <T extends { id: string }>(saved: T[] | undefined, initial: T[]): T[] => {
+  const records = new Map((Array.isArray(saved) ? saved : []).map((record) => [record.id, record]));
+  initial.forEach((record) => {
+    if (!records.has(record.id)) records.set(record.id, record);
+  });
+  return Array.from(records.values());
+};
+
+export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole?: Role }> = ({ children, initialRole }) => {
+  const hydrated = useRef(false);
+  const [role, setRole] = useState<Role>(initialRole ?? 'dispatcher');
   const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [hospitals, setHospitals] = useState<Hospital[]>(() => {
-    const saved = localStorage.getItem('carelink_hospitals');
-    return saved ? JSON.parse(saved) : INITIAL_HOSPITALS;
-  });
-  const [emergencies, setEmergencies] = useState<EmergencyRequest[]>(() => {
-    const saved = localStorage.getItem('carelink_emergencies');
-    return saved ? JSON.parse(saved) : INITIAL_EMERGENCIES;
-  });
-  const [pharmacies, setPharmacies] = useState<Pharmacy[]>(() => {
-    const saved = localStorage.getItem('carelink_pharmacies');
-    return saved ? JSON.parse(saved) : INITIAL_PHARMACIES;
-  });
-  const [medicines, setMedicines] = useState<Medicine[]>(() => {
-    const saved = localStorage.getItem('carelink_medicines');
-    return saved ? JSON.parse(saved) : INITIAL_MEDICINES;
-  });
-  const [ambulances, setAmbulances] = useState<Ambulance[]>(() => {
-    const saved = localStorage.getItem('carelink_ambulances');
-    return saved ? JSON.parse(saved) : INITIAL_AMBULANCES;
-  });
+  const [hospitals, setHospitals] = useState<Hospital[]>(INITIAL_HOSPITALS);
+  const [emergencies, setEmergencies] = useState<EmergencyRequest[]>(INITIAL_EMERGENCIES);
+  const [pharmacies, setPharmacies] = useState<Pharmacy[]>(INITIAL_PHARMACIES);
+  const [medicines, setMedicines] = useState<Medicine[]>(INITIAL_MEDICINES);
+  const [ambulances, setAmbulances] = useState<Ambulance[]>(INITIAL_AMBULANCES);
+  const [drivers, setDrivers] = useState<AmbulanceDriver[]>(INITIAL_DRIVERS);
   const [medicineOrders, setMedicineOrders] = useState<MedicineOrder[]>([]);
   const [selectedEmergencyId, setSelectedEmergencyId] = useState<string | null>('P-1023');
   const [selectedHospitalId, setSelectedHospitalId] = useState<string>('hosp-1');
   const [selectedPharmacyId, setSelectedPharmacyId] = useState<string>('pharm-1');
   const [doubleBookingConflict, setDoubleBookingConflict] = useState<DoubleBookingConflict | null>(null);
-  const [isSimulationActive, setIsSimulationActive] = useState<boolean>(true);
 
-  // Sync to localStorage
+  // Restore a fast local copy, then reconcile with the shared MongoDB snapshot.
   useEffect(() => {
-    localStorage.setItem('carelink_hospitals', JSON.stringify(hospitals));
-  }, [hospitals]);
+    let cancelled = false;
+    try {
+      const savedHospitals = localStorage.getItem('carelink_hospitals');
+      const savedEmergencies = localStorage.getItem('carelink_emergencies');
+      const savedPharmacies = localStorage.getItem('carelink_pharmacies');
+      const savedMedicines = localStorage.getItem('carelink_medicines');
+      const savedAmbulances = localStorage.getItem('carelink_ambulances');
+      const savedDrivers = localStorage.getItem('carelink_drivers');
+      const savedOrders = localStorage.getItem('carelink_orders');
+      queueMicrotask(() => {
+        if (cancelled) return;
+        if (savedHospitals) setHospitals(mergeInitialRecords(JSON.parse(savedHospitals), INITIAL_HOSPITALS));
+        if (savedEmergencies) setEmergencies(mergeInitialRecords(JSON.parse(savedEmergencies), INITIAL_EMERGENCIES));
+        if (savedPharmacies) setPharmacies(mergeInitialRecords(JSON.parse(savedPharmacies), INITIAL_PHARMACIES));
+        if (savedMedicines) setMedicines(mergeInitialRecords(JSON.parse(savedMedicines), INITIAL_MEDICINES));
+        if (savedAmbulances) setAmbulances(mergeInitialRecords(JSON.parse(savedAmbulances), INITIAL_AMBULANCES));
+        if (savedDrivers) setDrivers(mergeInitialRecords(JSON.parse(savedDrivers), INITIAL_DRIVERS));
+        if (savedOrders) setMedicineOrders(JSON.parse(savedOrders));
+      });
+    } catch {
+      // Ignore localStorage read errors
+    }
+
+    fetch('/api/data', { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Database is unavailable');
+        return response.json();
+      })
+      .then(({ state }) => {
+        if (cancelled) return;
+        if (state) {
+          setHospitals(mergeInitialRecords(state.hospitals, INITIAL_HOSPITALS));
+          setEmergencies(mergeInitialRecords(state.emergencies, INITIAL_EMERGENCIES));
+          setPharmacies(mergeInitialRecords(state.pharmacies, INITIAL_PHARMACIES));
+          setMedicines(mergeInitialRecords(state.medicines, INITIAL_MEDICINES));
+          setAmbulances(mergeInitialRecords(state.ambulances, INITIAL_AMBULANCES));
+          setDrivers(mergeInitialRecords(state.drivers, INITIAL_DRIVERS));
+          setMedicineOrders(state.medicineOrders ?? []);
+        }
+      })
+      .catch(() => {
+        // The app remains usable with the browser's saved copy when MongoDB is not configured.
+      })
+      .finally(() => {
+        if (!cancelled) hydrated.current = true;
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem('carelink_emergencies', JSON.stringify(emergencies));
-  }, [emergencies]);
-
-  useEffect(() => {
-    localStorage.setItem('carelink_medicines', JSON.stringify(medicines));
-  }, [medicines]);
-
-  // Live simulation ticker: updates ambulance positions and ETA countdown
-  useEffect(() => {
-    if (!isSimulationActive) return;
-
-    const interval = setInterval(() => {
-      // 1. Advance ETA for en-route emergencies
-      setEmergencies((prev) =>
-        prev.map((req) => {
-          if (req.status === 'En Route' && req.currentEtaMin && req.currentEtaMin > 1) {
-            return {
-              ...req,
-              currentEtaMin: req.currentEtaMin - 1,
-            };
-          }
-          return req;
+    const reloadSharedState = () => {
+      fetch('/api/data', { cache: 'no-store' })
+        .then(async (response) => {
+          if (!response.ok) throw new Error('Shared state unavailable');
+          return response.json();
         })
-      );
-
-      // 2. Jitter ambulance GPS slightly to show live movement on the map
-      setAmbulances((prev) =>
-        prev.map((amb) => {
-          if (amb.status === 'En Route' || amb.status === 'On Duty') {
-            const latDelta = (Math.random() - 0.5) * 0.0008;
-            const lngDelta = (Math.random() - 0.5) * 0.0008;
-            return {
-              ...amb,
-              location: {
-                lat: amb.location.lat + latDelta,
-                lng: amb.location.lng + lngDelta,
-              },
-            };
-          }
-          return amb;
+        .then(({ state }) => {
+          if (!state) return;
+          setHospitals(mergeInitialRecords(state.hospitals, INITIAL_HOSPITALS));
+          setEmergencies(mergeInitialRecords(state.emergencies, INITIAL_EMERGENCIES));
+          setPharmacies(mergeInitialRecords(state.pharmacies, INITIAL_PHARMACIES));
+          setMedicines(mergeInitialRecords(state.medicines, INITIAL_MEDICINES));
+          setAmbulances(mergeInitialRecords(state.ambulances, INITIAL_AMBULANCES));
+          setDrivers(mergeInitialRecords(state.drivers, INITIAL_DRIVERS));
+          setMedicineOrders(state.medicineOrders ?? []);
         })
-      );
-    }, 6000);
+        .catch(() => {});
+    };
+    window.addEventListener('carelink-authenticated', reloadSharedState);
+    window.addEventListener('carelink-data-refresh', reloadSharedState);
+    const refreshInventory = () => {
+      fetch('/api/data', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null).then(({ state } = {}) => {
+        if (!state?.hospitals) return;
+        const incoming = mergeInitialRecords(state.hospitals, INITIAL_HOSPITALS);
+        setHospitals((current) => JSON.stringify(current) === JSON.stringify(incoming) ? current : incoming);
+        if (Array.isArray(state.medicines)) setMedicines((current) => JSON.stringify(current) === JSON.stringify(state.medicines) ? current : mergeInitialRecords(state.medicines, INITIAL_MEDICINES));
+        if (Array.isArray(state.medicineOrders)) setMedicineOrders((current) => JSON.stringify(current) === JSON.stringify(state.medicineOrders) ? current : state.medicineOrders);
+      }).catch(() => {});
+    };
+    const inventoryTimer = window.setInterval(refreshInventory, 10000);
+    return () => {
+      window.clearInterval(inventoryTimer);
+      window.removeEventListener('carelink-authenticated', reloadSharedState);
+      window.removeEventListener('carelink-data-refresh', reloadSharedState);
+    };
+  }, []);
 
-    return () => clearInterval(interval);
-  }, [isSimulationActive]);
+  // Keep a local offline copy and persist operational data to the shared backend.
+  useEffect(() => {
+    if (!hydrated.current || typeof window === 'undefined') return;
+    const state = { hospitals, emergencies, pharmacies, medicines, ambulances, drivers, medicineOrders };
+    try {
+      Object.entries(state).forEach(([key, value]) => {
+        localStorage.setItem(`carelink_${key}`, JSON.stringify(value));
+      });
+    } catch { /* Storage may be disabled or full; backend persistence still proceeds. */ }
+    const timer = window.setTimeout(() => {
+      fetch('/api/data', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state),
+      }).catch(() => {
+        // Local storage remains the offline fallback.
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [hospitals, emergencies, pharmacies, medicines, ambulances, drivers, medicineOrders]);
 
   // Bed Request with Concurrency Lock & Double Booking Prevention
   const requestHospitalBed = (requestId: string, hospitalId: string): boolean => {
     const targetHospital = hospitals.find((h) => h.id === hospitalId);
     if (!targetHospital) return false;
 
-    // Trigger conflict if hospital has 0 trauma/ICU beds left, or simulated
+    // Prevent a reservation when no critical care capacity remains.
     if (targetHospital.beds.trauma.available <= 0 && targetHospital.beds.icu.available <= 0) {
       setDoubleBookingConflict({
         isOpen: true,
         requestId,
         bedType: 'Trauma / ICU Bed',
-        competingRequestId: 'P-1027',
-        competingTime: '14:32',
+        competingRequestId: emergencies.find((request) => request.id !== requestId)?.id ?? 'No competing request',
+        competingTime: emergencies.find((request) => request.id !== requestId)?.requestedAt ?? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         hospitalName: targetHospital.name,
-        suggestedAlternatives: [
-          {
-            hospitalId: 'hosp-2',
-            hospitalName: 'Sunrise Medical Center',
-            bedType: 'ICU Bed',
-            distanceKm: 8.5,
-            etaMin: 12,
-            availableCount: 2,
-          },
-          {
-            hospitalId: 'hosp-3',
-            hospitalName: 'Riverside Hospital',
-            bedType: 'Trauma Bed',
-            distanceKm: 11.3,
-            etaMin: 14,
-            availableCount: 2,
-          },
-        ],
+        suggestedAlternatives: hospitals
+          .filter((hospital) => hospital.id !== hospitalId && (hospital.beds.icu.available > 0 || hospital.beds.trauma.available > 0))
+          .slice(0, 3)
+          .map((hospital) => ({
+            hospitalId: hospital.id,
+            hospitalName: hospital.name,
+            bedType: hospital.beds.icu.available > 0 ? 'ICU Bed' : 'Trauma Bed',
+            distanceKm: hospital.distanceKm,
+            etaMin: hospital.etaMin,
+            availableCount: hospital.beds.icu.available > 0 ? hospital.beds.icu.available : hospital.beds.trauma.available,
+          })),
       });
       return false;
     }
@@ -220,7 +267,7 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             ...req,
             status: 'Assigned',
             assignedHospitalId: hospitalId,
-            assignedAmbulanceId: 'A-12',
+            assignedAmbulanceId: ambulances.find((ambulance) => ambulance.status === 'Available')?.id,
             currentEtaMin: targetHospital.etaMin,
           };
         }
@@ -250,6 +297,8 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return {
             ...req,
             status: 'En Route',
+            acceptedAt: req.acceptedAt || new Date().toISOString(),
+            enRouteAt: req.enRouteAt || new Date().toISOString(),
             checklist: {
               ...req.checklist,
               detailsShared: true,
@@ -275,6 +324,10 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return req;
       })
     );
+  };
+
+  const rejectDriverEmergency = (requestId: string) => {
+    setEmergencies((prev) => prev.map((req) => req.id === requestId ? { ...req, status: 'Rejected' } : req));
   };
 
   const updateBedCounts = (
@@ -307,6 +360,36 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
   };
 
+  const updateHospitalSpecialty = (hospitalId: string, specialty: string, doctors: number) => {
+    const normalized = specialty.trim();
+    if (!normalized) return;
+    setHospitals((prev) => prev.map((hospital) => {
+      if (hospital.id !== hospitalId) return hospital;
+      const exists = hospital.specialties.some((item) => item.toLowerCase() === normalized.toLowerCase());
+      const canonicalName = hospital.specialties.find((item) => item.toLowerCase() === normalized.toLowerCase()) ?? normalized;
+      return {
+        ...hospital,
+        specialties: exists ? hospital.specialties : [...hospital.specialties, normalized],
+        specialtyDoctors: { ...hospital.specialtyDoctors, [canonicalName]: Math.max(0, Math.floor(doctors)) },
+        lastUpdatedMinutesAgo: 0,
+      };
+    }));
+  };
+
+  const setBedAvailability = (hospitalId: string, bedType: keyof HospitalBeds, available: number, total: number) => {
+    if (!Number.isInteger(total) || !Number.isInteger(available) || total < 0 || available < 0) return;
+    const currentHospital = hospitals.find((hospital) => hospital.id === hospitalId);
+    const currentBed = currentHospital?.beds[bedType];
+    if (!currentBed) return;
+    const occupied = currentBed.total - currentBed.available;
+    if (total < occupied || available > total) return;
+    setHospitals((prev) => prev.map((hospital) => hospital.id !== hospitalId ? hospital : ({
+      ...hospital,
+      beds: { ...hospital.beds, [bedType]: { total, available } },
+      lastUpdatedMinutesAgo: 0,
+    })));
+  };
+
   const refreshHospitalData = (hospitalId: string) => {
     setHospitals((prev) =>
       prev.map((h) => {
@@ -331,6 +414,7 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (req.id === requestId) {
           return {
             ...req,
+            ...(key === 'arrivedAtHospital' && value ? { status: 'Arrived' as const, arrivedAt: new Date().toISOString() } : {}),
             checklist: {
               ...req.checklist,
               [key]: value,
@@ -349,6 +433,7 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return {
             ...req,
             status: 'Completed',
+            handedOverAt: new Date().toISOString(),
             checklist: {
               arrivedAtHospital: true,
               detailsShared: true,
@@ -372,38 +457,15 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const pharm = pharmacies.find((p) => p.id === pharmacyId);
     if (!med || !pharm) return;
 
-    // Deduct stock
-    setMedicines((prev) =>
-      prev.map((m) => {
-        if (m.id === medicineId) {
-          const currentStock = m.stock[pharmacyId] || 0;
-          return {
-            ...m,
-            stock: {
-              ...m.stock,
-              [pharmacyId]: Math.max(0, currentStock - quantity),
-            },
-          };
-        }
-        return m;
+    void fetch('/api/pharmacy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'order', medicineId, pharmacyId, quantity, isUrgent }) })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'This medicine is no longer available.');
+        setMedicines(result.medicines);
+        setMedicineOrders(result.medicineOrders);
+        window.dispatchEvent(new Event('carelink-data-refresh'));
       })
-    );
-
-    // Create order entry
-    const newOrder: MedicineOrder = {
-      id: `ORD-${Date.now().toString().slice(-4)}`,
-      medicineId,
-      medicineName: med.name,
-      pharmacyId,
-      pharmacyName: pharm.name,
-      requestedBy: role === 'dispatcher' ? 'Ambulance Unit DL-01' : 'General Patient',
-      quantity,
-      status: 'Confirmed',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isUrgent,
-    };
-
-    setMedicineOrders((prev) => [newOrder, ...prev]);
+      .catch((error: unknown) => window.alert(error instanceof Error ? error.message : 'This medicine is no longer available.'));
   };
 
   const updateMedicineStock = (
@@ -427,30 +489,34 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
   };
 
-  const createNewEmergency = (data: Partial<EmergencyRequest>): string => {
+  const addMedicine = (name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName || medicines.some((medicine) => medicine.name.toLowerCase() === trimmedName.toLowerCase())) return;
+    setMedicines((prev) => [{
+      id: `med-${Date.now()}`,
+      name: trimmedName,
+      form: 'Not specified',
+      category: 'Other',
+      indication: 'Added by pharmacy',
+      isEmergencyEssential: false,
+      stock: Object.fromEntries(pharmacies.map((pharmacy) => [pharmacy.id, 0])),
+      price: 'Ask pharmacy',
+    }, ...prev]);
+  };
+
+  const createNewEmergency = (data: Pick<EmergencyRequest, 'patientName' | 'condition'> & Partial<EmergencyRequest>): string => {
     const newId = `P-${Math.floor(1028 + Math.random() * 900)}`;
     const newEmergency: EmergencyRequest = {
+      ...data,
       id: newId,
-      patientName: data.patientName || 'Emergency Patient',
-      age: data.age || 38,
-      gender: data.gender || 'Unknown',
-      condition: data.condition || 'Acute Medical Emergency',
-      priority: data.priority || 'High',
-      location: data.location || {
-        lat: 28.625,
-        lng: 77.215,
-        address: 'MG Road Junction, Central',
-      },
-      requiredFacilities: data.requiredFacilities || ['ICU', 'Ventilator'],
-      etaLimitMin: data.etaLimitMin || 20,
+      age: data.age ?? 0,
+      gender: data.gender ?? 'Not specified',
+      priority: data.priority ?? 'Medium',
+      location: data.location ?? { lat: 28.6139, lng: 77.209, address: 'Location pending confirmation' },
+      requiredFacilities: data.requiredFacilities ?? [],
+      etaLimitMin: data.etaLimitMin ?? 30,
+      vitals: data.vitals ?? { bp: 'Not recorded', heartRate: 0, spO2: 0, conditionNotes: data.condition },
       status: 'Finding hospital',
-      currentEtaMin: 12,
-      vitals: data.vitals || {
-        bp: '110/70 mmHg',
-        heartRate: 105,
-        spO2: 92,
-        conditionNotes: 'Reported via 112 emergency line.',
-      },
       checklist: {
         arrivedAtHospital: false,
         detailsShared: false,
@@ -465,54 +531,17 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return newId;
   };
 
-  const toggleSimulation = () => {
-    setIsSimulationActive((prev) => !prev);
-  };
-
-  const triggerConflictDemo = () => {
-    setDoubleBookingConflict({
-      isOpen: true,
-      requestId: 'P-1024',
-      bedType: 'ICU Bed',
-      competingRequestId: 'P-1027',
-      competingTime: '14:32',
-      hospitalName: 'City Care Hospital',
-      suggestedAlternatives: [
-        {
-          hospitalId: 'hosp-2',
-          hospitalName: 'Sunrise Medical Center',
-          bedType: 'ICU Bed',
-          distanceKm: 8.5,
-          etaMin: 12,
-          availableCount: 2,
-        },
-        {
-          hospitalId: 'hosp-3',
-          hospitalName: 'Riverside Hospital',
-          bedType: 'Trauma Bed',
-          distanceKm: 11.3,
-          etaMin: 14,
-          availableCount: 2,
-        },
-      ],
-    });
-  };
-
-  const triggerStaleDataDemo = () => {
-    setHospitals((prev) =>
-      prev.map((h) => (h.id === 'hosp-1' ? { ...h, lastUpdatedMinutesAgo: 16 } : h))
-    );
-  };
-
   const resetAllData = () => {
-    localStorage.clear();
     setHospitals(INITIAL_HOSPITALS);
     setEmergencies(INITIAL_EMERGENCIES);
     setPharmacies(INITIAL_PHARMACIES);
     setMedicines(INITIAL_MEDICINES);
     setAmbulances(INITIAL_AMBULANCES);
+    setDrivers(INITIAL_DRIVERS);
     setMedicineOrders([]);
-    setSelectedEmergencyId('P-1023');
+    setSelectedEmergencyId(INITIAL_EMERGENCIES[0]?.id ?? null);
+    setSelectedHospitalId(INITIAL_HOSPITALS[0]?.id ?? '');
+    setSelectedPharmacyId(INITIAL_PHARMACIES[0]?.id ?? '');
     setDoubleBookingConflict(null);
   };
 
@@ -528,6 +557,7 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         pharmacies,
         medicines,
         ambulances,
+        drivers,
         medicineOrders,
         selectedEmergencyId,
         setSelectedEmergencyId,
@@ -541,17 +571,17 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         requestHospitalBed,
         acceptEmergency,
         rejectEmergency,
+        rejectDriverEmergency,
         updateBedCounts,
+        setBedAvailability,
+        updateHospitalSpecialty,
         refreshHospitalData,
         updateHandoffChecklist,
         completeHandoff,
         orderMedicine,
         updateMedicineStock,
+        addMedicine,
         createNewEmergency,
-        isSimulationActive,
-        toggleSimulation,
-        triggerConflictDemo,
-        triggerStaleDataDemo,
         resetAllData,
       }}
     >

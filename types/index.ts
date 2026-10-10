@@ -3,6 +3,7 @@ export type Role = 'dispatcher' | 'hospital' | 'pharmacy' | 'paramedic' | 'patie
 export interface BedAvailability {
   available: number;
   total: number;
+  reserved?: number;
 }
 
 export interface HospitalBeds {
@@ -21,8 +22,12 @@ export interface Hospital {
   etaMin: number;
   beds: HospitalBeds;
   specialties: string[];
+  specialtyDoctors?: Record<string, number>;
   status: HospitalStatus;
   lastUpdatedMinutesAgo: number; // Stale warning if > 10
+  lastCapacityUpdatedAt?: string | Date;
+  capacitySource?: string;
+  acceptingRequests?: boolean;
   location: {
     lat: number;
     lng: number;
@@ -37,9 +42,15 @@ export type PriorityLevel = 'Critical' | 'High' | 'Medium' | 'Low';
 export type RequestStatus =
   | 'Finding hospital'
   | 'Pending'
+  | 'Pending hospital confirmation'
+  | 'Accepted'
   | 'Assigned'
   | 'En Route'
+  | 'Arrived'
+  | 'Handed over'
   | 'Handoff'
+  | 'Timed out'
+  | 'Rerouted'
   | 'Completed'
   | 'Rejected';
 
@@ -60,8 +71,9 @@ export interface PatientVitals {
 }
 
 export interface EmergencyRequest {
-  id: string; // e.g. 'P-1023'
+  id: string;
   patientName: string;
+  patientPhone?: string;
   age: number;
   gender: string;
   condition: string;
@@ -80,6 +92,10 @@ export interface EmergencyRequest {
   vitals: PatientVitals;
   checklist: HandoffChecklist;
   requestedAt: string;
+  acceptedAt?: string;
+  enRouteAt?: string;
+  arrivedAt?: string;
+  handedOverAt?: string;
   doubleBookingConflict?: boolean;
 }
 
@@ -106,10 +122,12 @@ export interface Medicine {
   isEmergencyEssential: boolean;
   stock: Record<string, number>; // pharmacyId -> quantity
   price: string;
+  minimumStock?: number;
+  updatedAt?: string;
 }
 
 export interface Ambulance {
-  id: string; // e.g. 'A-12'
+  id: string;
   vehicleNumber: string;
   driverName: string;
   phone: string;
@@ -119,6 +137,15 @@ export interface Ambulance {
     lng: number;
   };
   assignedRequestId?: string;
+}
+
+export interface AmbulanceDriver {
+  id: string;
+  name: string;
+  phone: string;
+  licenseNumber: string;
+  ambulanceId: string;
+  status: 'On Duty' | 'En Route' | 'Available';
 }
 
 export interface MedicineOrder {
