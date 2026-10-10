@@ -7,7 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:triage": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test test/triage-policy.test.mjs"
+    "test:triage": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test test/triage-policy.test.mjs",
+    "gen-data": "tsx sim/generate.ts",
+    "train": "tsx sim/train.ts",
+    "eval": "tsx sim/evaluate.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@types/canvas-confetti": "^1.9.0",
@@ -32,6 +36,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vitest": "^4.1.11"
   }
 }
