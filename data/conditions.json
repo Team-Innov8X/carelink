@@ -1,0 +1,5 @@
+[
+  { "id": "cardiac_event", "label": "Cardiac event", "resourceType": "icu_bed", "capability": "cardiac", "urgency": 1 },
+  { "id": "major_trauma", "label": "Major trauma", "resourceType": "emergency_bed", "capability": "trauma", "urgency": 1 },
+  { "id": "respiratory_distress", "label": "Respiratory distress", "resourceType": "icu_bed", "capability": null, "urgency": 2 }
+]

@@ -1,0 +1,6 @@
+[
+  { "hospitalId": "north", "name": "North General", "capabilities": ["cardiac", "trauma"], "casesHandled": { "cardiac_event": 84, "major_trauma": 73, "respiratory_distress": 51 } },
+  { "hospitalId": "east", "name": "East Medical", "capabilities": ["cardiac"], "casesHandled": { "cardiac_event": 78, "major_trauma": 18, "respiratory_distress": 62 } },
+  { "hospitalId": "central", "name": "Central Hospital", "capabilities": ["trauma"], "casesHandled": { "cardiac_event": 22, "major_trauma": 69, "respiratory_distress": 30 } },
+  { "hospitalId": "west", "name": "West Community", "capabilities": [], "casesHandled": { "cardiac_event": 12, "major_trauma": 21, "respiratory_distress": 16 } }
+]
