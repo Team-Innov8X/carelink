@@ -7,6 +7,7 @@ import { INITIAL_EMERGENCIES } from '@/data/mockEmergencies';
 import { INITIAL_AMBULANCES } from '@/data/mockAmbulances';
 import { INITIAL_DRIVERS } from '@/data/mockDrivers';
 import type { Pharmacy } from '@/types';
+import { ObjectId } from 'mongodb';
 
 export const runtime = 'nodejs';
 
@@ -30,13 +31,68 @@ function pharmacyForUser(user: { pharmacyId?: string }, pharmacies: Pharmacy[]) 
   return user.pharmacyId && pharmacies.some((pharmacy) => pharmacy.id === user.pharmacyId) ? user.pharmacyId : null;
 }
 
+function userFilter(id: string) {
+  const ids: Record<string, unknown>[] = [{ _id: id }, { id }];
+  if (ObjectId.isValid(id)) ids.unshift({ _id: new ObjectId(id) });
+  return { $or: ids };
+}
+
+async function ensurePharmacyLink(userId: string, state: State, collection: Awaited<ReturnType<typeof appState>>['collection']) {
+  const db = (await clientPromise).db();
+  const users = db.collection('user');
+  const account = await users.findOne(userFilter(userId));
+  if (!account) return null;
+  const profile = account as typeof account & { pharmacyId?: string; pharmacyName?: string; pharmacyAddress?: string; phone?: string; pharmacyCity?: string; pharmacyState?: string; pharmacyPincode?: string; email?: string };
+  const pharmacies = [...(state.pharmacies ?? INITIAL_PHARMACIES)];
+  let record = await db.collection('pharmacies').findOne({ ownerUserId: userId });
+  if (!record && profile.pharmacyName?.trim()) {
+    const name = profile.pharmacyName.trim();
+    const street = profile.pharmacyAddress?.trim() || 'Address not provided';
+    const now = new Date();
+    await db.collection('pharmacies').updateOne({ ownerUserId: userId }, { $setOnInsert: {
+      name,
+      address: { street, city: profile.pharmacyCity || '', state: profile.pharmacyState || '', zipCode: profile.pharmacyPincode || '', country: 'India' },
+      contact: { phone: profile.phone || '', email: profile.email || '' }, status: 'active', isDemo: false, ownerUserId: userId, createdAt: now, updatedAt: now,
+    } }, { upsert: true });
+    record = await db.collection('pharmacies').findOne({ ownerUserId: userId });
+  }
+  if (!record?._id) return null;
+  const pharmacyId = String(record._id);
+  const address = record.address as { street?: string; city?: string; state?: string; zipCode?: string } | undefined;
+  const contact = record.contact as { phone?: string } | undefined;
+  const inventoryPharmacy = {
+    id: pharmacyId,
+    name: String(record.name || profile.pharmacyName || 'Pharmacy'),
+    distanceKm: 0,
+    address: [address?.street, address?.city, address?.state, address?.zipCode].filter(Boolean).join(', '),
+    phone: contact?.phone || profile.phone || '',
+    isOpen: true,
+    ...(record.location && typeof record.location === 'object' && 'coordinates' in record.location
+      ? { location: { lat: Number((record.location as { coordinates: number[] }).coordinates[1]), lng: Number((record.location as { coordinates: number[] }).coordinates[0]) } }
+      : {}),
+    rating: 5,
+  } as Pharmacy;
+  const now = new Date();
+  const nextMedicines = (state.medicines ?? INITIAL_MEDICINES).map((medicine) => ({ ...medicine, stock: { ...medicine.stock, [pharmacyId]: Number(medicine.stock?.[pharmacyId] ?? 0) } }));
+  state.pharmacies = [inventoryPharmacy, ...pharmacies.filter((item) => item.id !== pharmacyId)];
+  state.medicines = nextMedicines;
+  await collection.updateOne({ _id: 'carelink' }, { $set: {
+    'state.pharmacies': state.pharmacies,
+    'state.medicines': nextMedicines,
+    pharmacyUpdatedAt: now,
+  } });
+  await users.updateOne(userFilter(userId), { $set: { pharmacyId, onboardingCompleted: true, updatedAt: now } });
+  return pharmacyId;
+}
+
 export async function GET() {
   const auth = await requireRole();
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
   try {
-    const { state, updatedAt } = await appState();
+    const { state, updatedAt, collection } = await appState();
     const user = auth.user as typeof auth.user & { role?: string; pharmacyId?: string };
-    const pharmacyId = pharmacyForUser(user, state.pharmacies ?? INITIAL_PHARMACIES);
+    let pharmacyId = pharmacyForUser(user, state.pharmacies ?? INITIAL_PHARMACIES);
+    if (user.role === 'pharmacy' && !pharmacyId) pharmacyId = await ensurePharmacyLink(auth.user.id, state, collection);
     if (user.role === 'pharmacy' && !pharmacyId) return Response.json({ error: 'Your pharmacy account is not linked to a pharmacy.' }, { status: 403 });
     const medicineOrders = (state.medicineOrders ?? []).filter((order) =>
       user.role === 'pharmacy' ? order.pharmacyId === pharmacyId : user.role === 'patient' ? order.patientId === auth.user.id : true,
@@ -48,7 +104,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const auth = await requireRole(['pharmacy', 'patient', 'dispatcher']);
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
-  let body: { action?: string; medicineId?: string; pharmacyId?: string; quantity?: number; name?: string; form?: string; category?: string; indication?: string; minimum?: number; status?: string; orderId?: string; reason?: string; isUrgent?: boolean; patientId?: string; caseId?: string; driverId?: string; ambulanceId?: string };
+  let body: { action?: string; medicineId?: string; pharmacyId?: string; quantity?: number; name?: string; form?: string; category?: string; indication?: string; price?: string; minimum?: number; isEmergencyEssential?: boolean; status?: string; orderId?: string; reason?: string; isUrgent?: boolean; patientId?: string; caseId?: string; driverId?: string; ambulanceId?: string };
   try { body = await request.json(); } catch { return Response.json({ error: 'Invalid request body.' }, { status: 400 }); }
   const pharmacyRole = (auth.user as typeof auth.user & { role?: string }).role === 'pharmacy';
   if (body.action === 'order' && !pharmacyRole && !['patient', 'dispatcher'].includes((auth.user as typeof auth.user & { role?: string }).role ?? '')) return Response.json({ error: 'You cannot request pharmacy orders.' }, { status: 403 });
@@ -63,7 +119,7 @@ export async function POST(request: Request) {
     const current = await collection.findOne({ _id: 'carelink' });
     const pharmacies = current?.state.pharmacies ?? INITIAL_PHARMACIES;
     pharmacyId = pharmacyRole
-      ? pharmacyForUser(auth.user as typeof auth.user & { pharmacyId?: string }, pharmacies)
+      ? pharmacyForUser(auth.user as typeof auth.user & { pharmacyId?: string }, pharmacies) ?? await ensurePharmacyLink(auth.user.id, current?.state ?? ({ medicines: INITIAL_MEDICINES, medicineOrders: [], pharmacies } as unknown as State), collection)
       : requestedPharmacy && pharmacies.some((pharmacy) => pharmacy.id === requestedPharmacy) ? requestedPharmacy : null;
   } catch (error) {
     console.error('Could not resolve pharmacy inventory:', error);
@@ -84,7 +140,8 @@ export async function POST(request: Request) {
         const oldQuantity = Number(med.stock?.[pharmacyId] ?? 0);
         med.stock = { ...med.stock, [pharmacyId]: body.quantity! };
         med.updatedAt = now.toISOString();
-        const saved = await collection.updateOne({ _id: 'carelink', 'state.medicines': current.state.medicines }, { $set: { 'state.medicines': medicines, pharmacyUpdatedAt: now } });
+        const versionFilter = current.pharmacyUpdatedAt === undefined ? { pharmacyUpdatedAt: { $exists: false } } : { pharmacyUpdatedAt: current.pharmacyUpdatedAt };
+        const saved = await collection.updateOne({ _id: 'carelink', ...versionFilter }, { $set: { 'state.medicines': medicines, pharmacyUpdatedAt: now } });
         if (!saved.modifiedCount) continue;
         try { await db.collection('pharmacyInventoryLog').insertOne({ pharmacyId, pharmacyName: state.pharmacies.find((p) => p.id === pharmacyId)?.name, medicineId: med.id, medicineName: med.name, actorId: auth.user.id, actorName: auth.user.name, oldQuantity, newQuantity: body.quantity, createdAt: now }); }
         catch (error) { console.error('Could not write pharmacy inventory audit row:', error); }
@@ -92,10 +149,15 @@ export async function POST(request: Request) {
       }
       if (body.action === 'add') {
         const name = body.name?.trim();
-        if (!name || medicines.some((item) => item.name.toLowerCase() === name.toLowerCase())) return Response.json({ error: 'Enter a unique medicine name.' }, { status: 400 });
-        const med: StateMedicine = { id: `med-${crypto.randomUUID()}`, name, form: body.form?.trim() || 'Not specified', category: body.category?.trim() || 'OTC', indication: body.indication?.trim() || 'Added by pharmacy', isEmergencyEssential: false, stock: { [pharmacyId]: 0 }, price: 'Ask pharmacy', minimumStock: Math.max(0, body.minimum ?? 5), updatedAt: now.toISOString() };
-        const saved = await collection.updateOne({ _id: 'carelink', 'state.medicines': current.state.medicines }, { $set: { 'state.medicines': [med, ...medicines], pharmacyUpdatedAt: now } });
+        if (!name || !body.form?.trim() || !body.category?.trim() || !body.indication?.trim() || !body.price?.trim()) return Response.json({ error: 'Enter the name, form, category, use, and price for this medicine.' }, { status: 400 });
+        if (medicines.some((item) => item.name.toLowerCase() === name.toLowerCase())) return Response.json({ error: 'A medicine with this name already exists.' }, { status: 409 });
+        if (!Number.isSafeInteger(body.quantity) || (body.quantity ?? -1) < 0 || !Number.isSafeInteger(body.minimum) || (body.minimum ?? -1) < 0) return Response.json({ error: 'Starting stock and low stock threshold must be whole numbers of zero or more.' }, { status: 400 });
+        const med: StateMedicine = { id: `med-${crypto.randomUUID()}`, name, form: body.form.trim(), category: body.category.trim(), indication: body.indication.trim(), isEmergencyEssential: Boolean(body.isEmergencyEssential), stock: { [pharmacyId]: body.quantity! }, price: body.price.trim(), minimumStock: body.minimum!, updatedAt: now.toISOString() };
+        const versionFilter = current.pharmacyUpdatedAt === undefined ? { pharmacyUpdatedAt: { $exists: false } } : { pharmacyUpdatedAt: current.pharmacyUpdatedAt };
+        const saved = await collection.updateOne({ _id: 'carelink', ...versionFilter }, { $set: { 'state.medicines': [med, ...medicines], pharmacyUpdatedAt: now } });
         if (!saved.modifiedCount) continue;
+        try { await db.collection('pharmacyInventoryLog').insertOne({ pharmacyId, pharmacyName: state.pharmacies.find((p) => p.id === pharmacyId)?.name, medicineId: med.id, medicineName: med.name, actorId: auth.user.id, actorName: auth.user.name, oldQuantity: 0, newQuantity: body.quantity, createdAt: now }); }
+        catch (error) { console.error('Could not write pharmacy inventory audit row:', error); }
         return Response.json({ success: true, medicines: [med, ...medicines], updatedAt: now.toISOString() });
       }
       if (body.action === 'order') {

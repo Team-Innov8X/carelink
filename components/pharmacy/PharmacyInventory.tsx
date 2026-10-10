@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ClipboardList, PackagePlus, Pill, RefreshCw, Search } from '@/components/icons';
+import { AlertTriangle, CheckCircle2, PackagePlus, Pill, RefreshCw, Search } from '@/components/icons';
 import { Medicine, MedicineOrder, Pharmacy } from '@/types';
 
 type PharmacyMedicine = Medicine & { minimumStock?: number; updatedAt?: string };
@@ -14,7 +14,6 @@ const statusFor = (quantity: number, minimum: number) => quantity <= 0 ? 'Out of
 export function PharmacyInventory() {
   const [state, setState] = useState<ApiState | null>(null);
   const [logs, setLogs] = useState<ChangeLog[]>([]);
-  const [tab, setTab] = useState<'inventory' | 'orders'>('inventory');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [lowestFirst, setLowestFirst] = useState(false);
@@ -24,7 +23,13 @@ export function PharmacyInventory() {
   const [updatedAt, setUpdatedAt] = useState('');
   const [clockNow, setClockNow] = useState(0);
   const [newName, setNewName] = useState('');
+  const [newForm, setNewForm] = useState('');
+  const [newCategory, setNewCategory] = useState('');
+  const [newIndication, setNewIndication] = useState('');
+  const [newPrice, setNewPrice] = useState('');
+  const [newStock, setNewStock] = useState('0');
   const [newMinimum, setNewMinimum] = useState('5');
+  const [newEmergency, setNewEmergency] = useState(false);
 
   const refresh = useCallback(async () => {
     const [response, logResponse] = await Promise.all([fetch('/api/pharmacy', { cache: 'no-store' }), fetch('/api/pharmacy/activity', { cache: 'no-store' })]);
@@ -46,7 +51,7 @@ export function PharmacyInventory() {
       if (!response.ok) throw new Error(result.error || 'Could not save change.');
       if (state) setState({ ...state, medicines: result.medicines ?? state.medicines, medicineOrders: result.medicineOrders ?? state.medicineOrders });
       if (body.action === 'stock') setQuantities((current) => { const next = { ...current }; delete next[String(body.medicineId)]; return next; });
-      setUpdatedAt(new Date().toISOString()); setMessage(result.order ? `Order ${result.order.id} received and stock reserved.` : 'Inventory updated and saved.');
+      setUpdatedAt(new Date().toISOString());
       await refresh().catch(() => undefined);
       return true;
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not save change.'); return false; }
@@ -62,16 +67,15 @@ export function PharmacyInventory() {
   const ageMinutes = updatedAt && clockNow ? Math.max(0, Math.floor((clockNow - new Date(updatedAt).getTime()) / 60000)) : 0;
   const staleTone = ageMinutes >= 60 ? 'border-rose-200 bg-rose-50 text-rose-800' : ageMinutes >= 15 ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800';
 
-  const addMedicine = async (event: FormEvent) => { event.preventDefault(); if (!newName.trim()) return; const saved = await runAction('add', { action: 'add', name: newName.trim(), minimum: Number(newMinimum) }); if (saved) { setNewName(''); setQuery(''); setCategory('all'); } };
+  const addMedicine = async (event: FormEvent) => {
+    event.preventDefault();
+    const saved = await runAction('add', { action: 'add', name: newName.trim(), form: newForm.trim(), category: newCategory.trim(), indication: newIndication.trim(), price: newPrice.trim(), quantity: Number(newStock), minimum: Number(newMinimum), isEmergencyEssential: newEmergency });
+    if (saved) { setNewName(''); setNewForm(''); setNewCategory(''); setNewIndication(''); setNewPrice(''); setNewStock('0'); setNewMinimum('5'); setNewEmergency(false); setQuery(''); setCategory('all'); }
+  };
   const saveQuantity = (medicine: PharmacyMedicine, value: string) => {
     const qty = Number(value);
     if (!Number.isSafeInteger(qty) || qty < 0) { setMessage('Stock must be a whole number of zero or more.'); return; }
     void runAction(medicine.id, { action: 'stock', medicineId: medicine.id, quantity: qty });
-  };
-  const orderStatus = (order: PharmacyOrder) => {
-    if (order.status === 'New') return <div className="flex gap-2"><button onClick={() => void runAction(order.id, { action: 'order-status', orderId: order.id, status: 'Confirmed' })} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">Confirm</button><button onClick={() => { const reason = window.prompt('Reason for rejecting this order:'); if (reason?.trim()) void runAction(order.id, { action: 'order-status', orderId: order.id, status: 'Rejected', reason: reason.trim() }); }} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700">Reject</button></div>;
-    const next: Record<string, string> = { Confirmed: 'Packed', Packed: 'Picked up', 'Picked up': 'Delivered' };
-    return next[order.status] ? <button onClick={() => void runAction(order.id, { action: 'order-status', orderId: order.id, status: next[order.status] })} className="rounded-lg bg-sky-700 px-3 py-2 text-xs font-bold text-white">Mark {next[order.status]}</button> : null;
   };
 
   if (!state) return <section className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Loading pharmacy workspace…{message && <p role="alert" className="mt-3 text-rose-700">{message}</p>}</section>;
@@ -89,11 +93,22 @@ export function PharmacyInventory() {
     <header className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-2xl font-black text-slate-950">Pharmacy Inventory</h1><p className="mt-1 text-sm text-slate-600">{pharmacy?.name ?? 'CareLink pharmacy'} · Inventory and incoming medicine requests</p></div><button onClick={() => void refresh()} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold"><RefreshCw className="h-4 w-4" />Refresh</button></header>
     <div className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-3 text-sm ${staleTone}`}><span className="flex items-center gap-2 font-semibold"><CheckCircle2 className="h-4 w-4" />Last updated {ageMinutes < 1 ? 'just now' : `${ageMinutes} min ago`}</span><span>Stock quantities are shared with patient and dispatcher availability views.</span></div>
     {message && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">{message}</p>}
-    <nav className="flex gap-2" aria-label="Pharmacy sections"><button onClick={() => setTab('inventory')} className={`rounded-lg px-4 py-2 text-sm font-bold ${tab === 'inventory' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200'}`}><Pill className="mr-2 inline h-4 w-4" />Inventory</button><button onClick={() => setTab('orders')} className={`rounded-lg px-4 py-2 text-sm font-bold ${tab === 'orders' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200'}`}><ClipboardList className="mr-2 inline h-4 w-4" />Orders ({state.medicineOrders.filter((order) => order.pharmacyId === state.pharmacyId && !['Delivered', 'Rejected', 'Cancelled'].includes(order.status)).length})</button></nav>
-    {tab === 'inventory' ? <><section className="rounded-2xl border border-slate-200 bg-white p-5"><div className="grid gap-3 md:grid-cols-[1fr_200px_auto]"><label className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search inventory" className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm" /></label><select aria-label="Filter medicine category" value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm"><option value="all">All categories</option><option value="emergency">Emergency</option><option value="prescription">Prescription</option><option value="otc">OTC</option></select><button onClick={() => setLowestFirst((value) => !value)} className={`rounded-lg border px-3 py-2 text-sm font-semibold ${lowestFirst ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-slate-200 bg-white'}`}>Sort: {lowestFirst ? 'Lowest stock' : 'Name'}</button></div></section>
+    <><section className="rounded-2xl border border-slate-200 bg-white p-5"><div className="grid gap-3 md:grid-cols-[1fr_200px_auto]"><label className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search inventory" className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm" /></label><select aria-label="Filter medicine category" value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm"><option value="all">All categories</option><option value="emergency">Emergency</option><option value="prescription">Prescription</option><option value="otc">OTC</option></select><button onClick={() => setLowestFirst((value) => !value)} className={`rounded-lg border px-3 py-2 text-sm font-semibold ${lowestFirst ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-slate-200 bg-white'}`}>Sort: {lowestFirst ? 'Lowest stock' : 'Name'}</button></div></section>
     {emergencyItems.length > 0 && <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="flex items-center gap-2 font-bold text-rose-700"><AlertTriangle className="h-5 w-5" />Emergency Medicines</h2>{renderRows(emergencyItems)}</section>}
     <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold text-slate-900">Other medicines</h2>{regularItems.length ? renderRows(regularItems) : <p className="py-5 text-sm text-slate-500">No matching medicines.</p>}</section>
-    <form onSubmit={(event) => void addMedicine(event)} className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-5"><div className="min-w-[240px] flex-1"><label className="mb-1 block text-xs font-bold text-slate-700" htmlFor="new-medicine">Add medicine</label><input id="new-medicine" value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Medicine name" className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm" /></div><div><label className="mb-1 block text-xs font-bold text-slate-700" htmlFor="minimum-stock">Low stock alert at</label><input id="minimum-stock" type="number" min="0" value={newMinimum} onChange={(event) => setNewMinimum(event.target.value)} className="w-28 rounded-lg border border-slate-200 px-3 py-2.5 text-sm" /></div><button disabled={!newName.trim() || busy === 'add'} className="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><PackagePlus className="h-4 w-4" />Add medicine</button></form>
-    <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Recent stock changes</h2>{logs.length ? <ul className="mt-3 divide-y divide-slate-100">{logs.slice(0, 8).map((log) => <li key={log._id} className="flex flex-wrap justify-between gap-2 py-2 text-xs text-slate-600"><span><b className="text-slate-900">{log.medicineName}</b> · {log.oldQuantity} → {log.newQuantity} strips · {log.actorName}</span><time>{new Date(log.createdAt).toLocaleString()}</time></li>)}</ul> : <p className="mt-2 text-sm text-slate-500">Stock changes will appear here.</p>}</section></> : <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Incoming orders</h2>{state.medicineOrders.filter((order) => order.pharmacyId === state.pharmacyId).length ? <div className="mt-3 space-y-3">{state.medicineOrders.filter((order) => order.pharmacyId === state.pharmacyId).map((order) => <article key={order.id} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 p-4"><div><div className="flex flex-wrap items-center gap-2"><b>{order.medicineName}</b><span className={`rounded-full px-2 py-1 text-[11px] font-bold ${order.isUrgent ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'}`}>{order.isUrgent ? 'Emergency' : 'Standard'} · {order.status}</span></div><p className="mt-1 text-xs text-slate-600">{order.id} · {order.quantity} strips · {order.caseId ? `Case ${order.caseId}` : `Requested by ${order.requestedBy}`}{order.ambulanceId ? ` · ${order.ambulanceId}` : ''}</p><p className="mt-1 text-xs text-slate-500">{new Date(order.timestamp).toLocaleString()}{order.rejectionReason ? ` · ${order.rejectionReason}` : ''}</p></div>{orderStatus(order)}</article>)}</div> : <p className="py-10 text-center text-sm text-slate-500">No pharmacy orders yet.</p>}</section>}
+    <form onSubmit={(event) => void addMedicine(event)} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+      <div><h2 className="font-bold text-slate-900">Add a medicine</h2><p className="mt-1 text-sm text-slate-500">Enter the medicine details and starting inventory.</p></div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <label className="text-xs font-bold text-slate-700">Medicine name<input required value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="e.g. Paracetamol 650 mg" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" /></label>
+        <label className="text-xs font-bold text-slate-700">Form / pack size<input required value={newForm} onChange={(event) => setNewForm(event.target.value)} placeholder="e.g. Tablets · 15 count" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" /></label>
+        <label className="text-xs font-bold text-slate-700">Category<input required value={newCategory} onChange={(event) => setNewCategory(event.target.value)} placeholder="e.g. Analgesic" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" /></label>
+        <label className="text-xs font-bold text-slate-700">Use / indication<input required value={newIndication} onChange={(event) => setNewIndication(event.target.value)} placeholder="What this medicine is used for" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" /></label>
+        <label className="text-xs font-bold text-slate-700">Price<input required value={newPrice} onChange={(event) => setNewPrice(event.target.value)} placeholder="e.g. ₹35" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" /></label>
+        <label className="text-xs font-bold text-slate-700">Starting stock (strips)<input required type="number" min="0" step="1" value={newStock} onChange={(event) => setNewStock(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" /></label>
+        <label className="text-xs font-bold text-slate-700">Low stock alert at<input required type="number" min="0" step="1" value={newMinimum} onChange={(event) => setNewMinimum(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-normal" /></label>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm font-semibold text-slate-700"><input type="checkbox" checked={newEmergency} onChange={(event) => setNewEmergency(event.target.checked)} />Mark as emergency medicine</label><button disabled={busy === 'add'} className="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><PackagePlus className="h-4 w-4" />{busy === 'add' ? 'Saving…' : 'Add medicine'}</button></div>
+    </form>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Recent stock changes</h2>{logs.length ? <ul className="mt-3 divide-y divide-slate-100">{logs.slice(0, 8).map((log) => <li key={log._id} className="flex flex-wrap justify-between gap-2 py-2 text-xs text-slate-600"><span><b className="text-slate-900">{log.medicineName}</b> · {log.oldQuantity} → {log.newQuantity} strips · {log.actorName}</span><time>{new Date(log.createdAt).toLocaleString()}</time></li>)}</ul> : <p className="mt-2 text-sm text-slate-500">Stock changes will appear here.</p>}</section></>
   </section>;
 }
