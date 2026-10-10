@@ -18,6 +18,7 @@ export async function GET(request: Request) {
     }
     const radiusKm = Number(query.get("radiusKm") ?? 25);
     if (queryLat !== null && (!Number.isFinite(radiusKm) || radiusKm < 1 || radiusKm > 100)) return errorResponse("radiusKm must be between 1 and 100.", 400);
+    const registeredOnly = query.get("registeredOnly") === "true";
     const category = query.get("emergencyType")?.trim() || query.get("specialty")?.trim();
     let hospitalIds: ObjectId[] | undefined;
     if (category) {
@@ -26,9 +27,24 @@ export async function GET(request: Request) {
       hospitalIds = ids;
     }
     const geoFilter = queryLat === null ? {} : { location: { $near: { $geometry: { type: "Point" as const, coordinates: [queryLng!, queryLat] }, $maxDistance: radiusKm * 1000 } } };
-    const hospitals = await (await getHospitalsCollection()).find({ ...(hospitalIds ? { _id: { $in: hospitalIds } } : {}), status: { $ne: "inactive" }, ...geoFilter }).toArray();
+    const hospitals = await (await getHospitalsCollection()).find({ ...(hospitalIds ? { _id: { $in: hospitalIds } } : {}), ...(registeredOnly ? { isDemo: { $ne: true } } : {}), status: { $ne: "inactive" }, ...geoFilter }).toArray();
     const ids = hospitals.map((hospital) => String(hospital._id));
-    const resources = await (await getResourcesCollection()).find({ hospitalId: { $in: ids } }).toArray();
+    const resourcesCollection = await getResourcesCollection();
+    const now = new Date();
+    for (const hospital of hospitals) {
+      const hospitalId = String(hospital._id);
+      const hasBeds = await resourcesCollection.findOne({ hospitalId, type: "bed" }, { projection: { _id: 1 } });
+      const capacity = hospital.capacitySummary;
+      if (!hasBeds && typeof capacity?.totalBeds === "number" && capacity.totalBeds > 0) {
+        const total = Math.max(0, Math.floor(capacity.totalBeds));
+        const available = Math.max(0, Math.min(total, Math.floor(capacity.availableBeds ?? 0)));
+        await resourcesCollection.updateOne({ _id: `${hospitalId}-capacity-general` as never }, { $setOnInsert: {
+          hospitalId, type: "bed", category: "general", name: "General beds", totalQuantity: total,
+          availableQuantity: available, heldQuantity: 0, status: available ? "available" : "unavailable", createdAt: now, updatedAt: now,
+        } }, { upsert: true });
+      }
+    }
+    const resources = await resourcesCollection.find({ hospitalId: { $in: ids } }).toArray();
     const resourcesByHospital = new Map<string, typeof resources>();
     for (const resource of resources) {
       const group = resourcesByHospital.get(resource.hospitalId) ?? [];

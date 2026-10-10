@@ -111,6 +111,7 @@ export async function POST(request: Request) {
   if (body.action !== 'order' && !pharmacyRole) return Response.json({ error: 'Only pharmacy staff can manage inventory and orders.' }, { status: 403 });
   const requestedPharmacy = body.pharmacyId;
   const now = new Date();
+  const versionToken = `${now.toISOString()}-${crypto.randomUUID()}`;
   const db = (await clientPromise).db();
   let collection: Awaited<ReturnType<typeof appState>>['collection'];
   let pharmacyId: string | null = null;
@@ -141,7 +142,7 @@ export async function POST(request: Request) {
         med.stock = { ...med.stock, [pharmacyId]: body.quantity! };
         med.updatedAt = now.toISOString();
         const versionFilter = current.pharmacyUpdatedAt === undefined ? { pharmacyUpdatedAt: { $exists: false } } : { pharmacyUpdatedAt: current.pharmacyUpdatedAt };
-        const saved = await collection.updateOne({ _id: 'carelink', ...versionFilter }, { $set: { 'state.medicines': medicines, pharmacyUpdatedAt: now } });
+        const saved = await collection.updateOne({ _id: 'carelink', ...versionFilter }, { $set: { 'state.medicines': medicines, pharmacyUpdatedAt: versionToken } });
         if (!saved.modifiedCount) continue;
         try { await db.collection('pharmacyInventoryLog').insertOne({ pharmacyId, pharmacyName: state.pharmacies.find((p) => p.id === pharmacyId)?.name, medicineId: med.id, medicineName: med.name, actorId: auth.user.id, actorName: auth.user.name, oldQuantity, newQuantity: body.quantity, createdAt: now }); }
         catch (error) { console.error('Could not write pharmacy inventory audit row:', error); }
@@ -154,7 +155,7 @@ export async function POST(request: Request) {
         if (!Number.isSafeInteger(body.quantity) || (body.quantity ?? -1) < 0 || !Number.isSafeInteger(body.minimum) || (body.minimum ?? -1) < 0) return Response.json({ error: 'Starting stock and low stock threshold must be whole numbers of zero or more.' }, { status: 400 });
         const med: StateMedicine = { id: `med-${crypto.randomUUID()}`, name, form: body.form.trim(), category: body.category.trim(), indication: body.indication.trim(), isEmergencyEssential: Boolean(body.isEmergencyEssential), stock: { [pharmacyId]: body.quantity! }, price: body.price.trim(), minimumStock: body.minimum!, updatedAt: now.toISOString() };
         const versionFilter = current.pharmacyUpdatedAt === undefined ? { pharmacyUpdatedAt: { $exists: false } } : { pharmacyUpdatedAt: current.pharmacyUpdatedAt };
-        const saved = await collection.updateOne({ _id: 'carelink', ...versionFilter }, { $set: { 'state.medicines': [med, ...medicines], pharmacyUpdatedAt: now } });
+        const saved = await collection.updateOne({ _id: 'carelink', ...versionFilter }, { $set: { 'state.medicines': [med, ...medicines], pharmacyUpdatedAt: versionToken } });
         if (!saved.modifiedCount) continue;
         try { await db.collection('pharmacyInventoryLog').insertOne({ pharmacyId, pharmacyName: state.pharmacies.find((p) => p.id === pharmacyId)?.name, medicineId: med.id, medicineName: med.name, actorId: auth.user.id, actorName: auth.user.name, oldQuantity: 0, newQuantity: body.quantity, createdAt: now }); }
         catch (error) { console.error('Could not write pharmacy inventory audit row:', error); }
@@ -170,7 +171,8 @@ export async function POST(request: Request) {
         const order: StateOrder = { id: `ORD-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, medicineId: med.id, medicineName: med.name, pharmacyId, pharmacyName: pharmacy.name, requestedBy: auth.user.name, quantity: body.quantity!, status: 'New', timestamp: now.toISOString(), isUrgent: Boolean(body.isUrgent), patientId: pharmacyRole ? body.patientId : auth.user.id, caseId: body.caseId, driverId: body.driverId, ambulanceId: body.ambulanceId, reserved: false };
         med.stock = { ...med.stock, [pharmacyId]: available - body.quantity! };
         med.updatedAt = now.toISOString();
-        const saved = await collection.updateOne({ _id: 'carelink', 'state.medicines': current.state.medicines, 'state.medicineOrders': current.state.medicineOrders }, { $set: { 'state.medicines': medicines, 'state.medicineOrders': [order, ...orders], pharmacyUpdatedAt: now } });
+        const versionFilter = current.pharmacyUpdatedAt === undefined ? { pharmacyUpdatedAt: { $exists: false } } : { pharmacyUpdatedAt: current.pharmacyUpdatedAt };
+        const saved = await collection.updateOne({ _id: 'carelink', ...versionFilter }, { $set: { 'state.medicines': medicines, 'state.medicineOrders': [order, ...orders], pharmacyUpdatedAt: versionToken } });
         if (!saved.modifiedCount) continue;
         return Response.json({ success: true, order, medicines, medicineOrders: [order, ...orders] });
       }
@@ -187,7 +189,8 @@ export async function POST(request: Request) {
           const med = medicines.find((item) => item.id === order.medicineId);
           if (med) med.stock = { ...med.stock, [pharmacyId]: Number(med.stock?.[pharmacyId] ?? 0) + order.quantity };
         }
-        const saved = await collection.updateOne({ _id: 'carelink', 'state.medicineOrders': current.state.medicineOrders, 'state.medicines': current.state.medicines }, { $set: { 'state.medicineOrders': orders, 'state.medicines': medicines, pharmacyUpdatedAt: now } });
+        const versionFilter = current.pharmacyUpdatedAt === undefined ? { pharmacyUpdatedAt: { $exists: false } } : { pharmacyUpdatedAt: current.pharmacyUpdatedAt };
+        const saved = await collection.updateOne({ _id: 'carelink', ...versionFilter }, { $set: { 'state.medicineOrders': orders, 'state.medicines': medicines, pharmacyUpdatedAt: versionToken } });
         if (!saved.modifiedCount) continue;
         return Response.json({ success: true, medicines, medicineOrders: orders });
       }

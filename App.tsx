@@ -107,7 +107,7 @@ const MainAppContent: React.FC = () => {
       setIsNewEmergencyOpen(true);
       return;
     }
-    if (!window.confirm('Emergency SOS\n\nAre you sure you want to request emergency assistance?')) return;
+    if (!window.confirm('Send an emergency SOS now?\n\nYour name, contact number, incident, and pickup location will be shared with available emergency responders and the nearest hospital.')) return;
     if (sosSubmittingRef.current) return;
     sosSubmittingRef.current = true;
 
@@ -199,7 +199,7 @@ const MainAppContent: React.FC = () => {
         disabled={sosSubmitting}
         aria-label={role === 'patient' ? 'Request emergency assistance with SOS' : 'Create SOS emergency call'}
         title={role === 'patient' ? 'Request emergency assistance' : 'Create SOS emergency call'}
-        className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-50 flex min-h-14 items-center gap-2 rounded-full bg-rose-700 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-rose-900/25 transition hover:bg-rose-800 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-rose-300 disabled:cursor-wait disabled:opacity-80 md:bottom-6 md:right-6"
+        className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-50 flex min-h-14 items-center gap-2 rounded-full bg-[#ff0000] px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-red-600/35 transition hover:bg-[#e60000] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-red-300 disabled:cursor-wait disabled:opacity-80 md:bottom-6 md:right-6"
       >
         {sosSubmitting ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Siren className="h-5 w-5" />}
         {sosSubmitting ? 'Sending…' : role === 'patient' ? 'SOS' : 'SOS Call'}
@@ -220,7 +220,7 @@ const MainAppContent: React.FC = () => {
                 <p className="mt-1 text-xs text-slate-600 leading-relaxed">{sosMessage}</p>
                 <p className="mt-2 text-[11px] font-medium text-slate-400">Track live driver status under &quot;Your Emergency Requests&quot;.</p>
                 {sosRequestId && <div className="mt-2 flex flex-wrap gap-3"><button type="button" onClick={() => { setActiveTab('requests'); if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); setSosMessage(''); setSosRequestId(null); setSosCanUndo(false); }} className="text-xs font-bold text-sky-800 underline underline-offset-2">View emergency request details</button>{sosCanUndo && <button type="button" disabled={sosUndoSubmitting} onClick={() => void undoSosRequest()} className="text-xs font-bold text-rose-700 underline underline-offset-2 disabled:opacity-60">{sosUndoSubmitting ? 'Cancelling…' : 'Undo SOS'}</button>}</div>}
-                {sosNeedsPickupAddress && <div className="mt-3 flex flex-col gap-2"><label htmlFor="sos-pickup-address" className="text-xs font-semibold text-slate-700">Pickup address</label><input id="sos-pickup-address" value={sosPickupAddress} onChange={(event) => setSosPickupAddress(event.target.value)} maxLength={240} placeholder="Street, area, city, nearby landmark" className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-900" /><button type="button" disabled={sosAddressSubmitting || sosSubmitting} onClick={() => void sendSosFromAddress()} className="min-h-10 rounded-lg bg-rose-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-60">{sosAddressSubmitting ? 'Finding address…' : 'Send SOS from address'}</button></div>}
+                {sosNeedsPickupAddress && <div className="mt-3 flex flex-col gap-2"><label htmlFor="sos-pickup-address" className="text-xs font-semibold text-slate-700">Pickup address</label><input id="sos-pickup-address" value={sosPickupAddress} onChange={(event) => setSosPickupAddress(event.target.value)} maxLength={240} placeholder="Street, area, city, nearby landmark" className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-900" /><button type="button" disabled={sosAddressSubmitting || sosSubmitting} onClick={() => void sendSosFromAddress()} className="min-h-10 rounded-lg bg-[#ff0000] px-3 py-2 text-xs font-bold text-white hover:bg-[#e60000] disabled:opacity-60">{sosAddressSubmitting ? 'Finding address…' : 'Send SOS from address'}</button></div>}
               </div>
             </div>
             <button type="button" onClick={() => { if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); setSosMessage(''); setSosRequestId(null); setSosCanUndo(false); }} aria-label="Dismiss emergency notification" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">

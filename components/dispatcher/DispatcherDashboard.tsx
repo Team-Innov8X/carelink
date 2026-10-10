@@ -109,30 +109,30 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
     switch (priority) {
       case 'Critical':
       case 'High':
-        return 'bg-rose-100 text-rose-700 border-rose-200';
+        return 'text-rose-700';
       case 'Medium':
-        return 'bg-amber-100 text-amber-700 border-amber-200';
+        return 'text-amber-700';
       case 'Low':
-        return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+        return 'text-emerald-700';
       default:
-        return 'bg-slate-100 text-slate-700 border-slate-200';
+        return 'text-slate-700';
     }
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'Finding hospital':
-        return 'bg-purple-100 text-purple-700';
+        return 'text-purple-700';
       case 'Pending':
-        return 'bg-amber-100 text-amber-700';
+        return 'text-amber-700';
       case 'Assigned':
-        return 'bg-blue-100 text-blue-700';
+        return 'text-blue-700';
       case 'En Route':
-        return 'bg-emerald-100 text-emerald-700 font-bold animate-pulse';
+        return 'text-emerald-700 font-bold';
       case 'Completed':
-        return 'bg-slate-100 text-slate-600';
+        return 'text-slate-600';
       default:
-        return 'bg-slate-100 text-slate-700';
+        return 'text-slate-700';
     }
   };
 
@@ -233,7 +233,7 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
       {/* Main Grid: Left Map + Right Emergency Requests Table */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Live Ambulance Locations Map (Mockup Panel 2) */}
-        <div className="lg:col-span-5 bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div className={`${role === 'patient' ? 'lg:col-span-12' : 'lg:col-span-5'} bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between`}>
           <div className="flex items-center justify-between mb-3">
             <div>
               <h2 className="text-base font-bold text-slate-900">Live Ambulance Locations</h2>
@@ -247,7 +247,7 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
         </div>
 
         {/* Right: Recent Emergency Requests Table (Mockup Panel 2) */}
-        <div className="lg:col-span-7 bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col">
+        {role !== 'patient' && <div className="lg:col-span-7 bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-base font-bold text-slate-900">Recent Emergency Requests</h2>
@@ -296,7 +296,7 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
                     </td>
                     <td className="py-3 px-3">
                       <span
-                        className={`inline-block px-2 py-0.5 rounded-md font-bold text-[11px] border ${getPriorityBadge(
+                        className={`font-bold text-[11px] ${getPriorityBadge(
                           req.priority
                         )}`}
                       >
@@ -305,7 +305,7 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
                     </td>
                     <td className="py-3 px-3">
                       <span
-                        className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold ${getStatusBadge(
+                        className={`text-[11px] font-semibold ${getStatusBadge(
                           req.status
                         )}`}
                       >
@@ -335,7 +335,7 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
               </tbody>
             </table>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

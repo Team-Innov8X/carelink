@@ -29,6 +29,8 @@ export type PatientRequest = {
   tripStage?: string;
   requestType?: 'emergency' | 'routine';
   patientPhone?: string;
+  patientName?: string;
+  location?: { latitude: number; longitude: number; address?: string };
   passengerName?: string;
   preferredTime?: string;
   notes?: string;
@@ -320,7 +322,8 @@ export const PatientEmergencyRequestsView: React.FC = () => {
                       <h3 className="text-base font-bold text-slate-900 mt-0.5">
                         {request.incidentType}
                       </h3>
-                      {request.requestType === 'routine' && <p className="mt-1 text-xs text-slate-600">Passenger: {request.passengerName || 'Patient'}{request.patientPhone ? ` · ${request.patientPhone}` : ''}</p>}
+                      <p className="mt-1 text-xs text-slate-600">Patient: {request.passengerName || request.patientName || 'Patient'}{request.patientPhone ? ` · ${request.patientPhone}` : ''}</p>
+                      {request.location && <p className="mt-1 text-xs text-slate-500">Pickup: {request.location.address || `${request.location.latitude.toFixed(4)}, ${request.location.longitude.toFixed(4)}`}</p>}
                       <p className="text-xs text-slate-400 mt-0.5">
                         Created on {new Date(request.createdAt).toLocaleString()}
                       </p>
