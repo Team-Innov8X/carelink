@@ -1,28 +1,37 @@
-import { getHospitalsCollection, getResourcesCollection, getHoldsCollection, initializeIndexes } from '@/lib/models';
+import { getHospitalsCollection, getResourcesCollection, getHoldsCollection, initializeIndexes, getDb } from '@/lib/models';
 
-export async function seedDatabase() {
+/** Create a disposable demo network around the presenter instead of a fixed city. */
+export async function seedDatabase(lat: number, lng: number) {
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180) throw new Error('Valid lat and lng are required.');
   await initializeIndexes();
-  const [hospitals, resources, holds] = await Promise.all([getHospitalsCollection(), getResourcesCollection(), getHoldsCollection()]);
-  const previous = await hospitals.find({ isDemo: true }).project({ _id: 1 }).toArray();
-  const previousIds = previous.map(item => item._id?.toString()).filter((id): id is string => Boolean(id));
-  await hospitals.deleteMany({ isDemo: true });
+  const [hospitals, resources, holds, db] = await Promise.all([getHospitalsCollection(), getResourcesCollection(), getHoldsCollection(), getDb()]);
+  const demoDoctors = db.collection('doctors');
+  await db.collection('pharmacies').deleteMany({ isDemo: true, seedBatch: 'location-demo' });
+  const previous = await hospitals.find({ isDemo: true, seedBatch: 'location-demo' }).project({ _id: 1 }).toArray();
+  const previousIds = previous.map((item) => item._id?.toString()).filter((id): id is string => Boolean(id));
   if (previousIds.length) {
-    await Promise.all([resources.deleteMany({ hospitalId: { $in: previousIds } }), holds.deleteMany({ hospitalId: { $in: previousIds } })]);
+    await Promise.all([
+      hospitals.deleteMany({ _id: { $in: previous.map((item) => item._id) } }),
+      resources.deleteMany({ hospitalId: { $in: previousIds } }),
+      holds.deleteMany({ hospitalId: { $in: previousIds } }),
+      demoDoctors.deleteMany({ hospitalId: { $in: previousIds } }),
+    ]);
   }
   const now = new Date();
-  const sampleHospitals = [
-    { name: 'CareLink demo hospital – Pune', code: 'DEMO-PUNE-01', isDemo: true, address: { street: 'Central Pune', city: 'Pune', state: 'Maharashtra', zipCode: '411001', country: 'India' }, location: { type: 'Point' as const, coordinates: [73.8567, 18.5204] as [number, number] }, contact: { phone: '', email: '', emergencyHotline: '' }, capacitySummary: { totalBeds: 80, availableBeds: 16, totalVentilators: 8, availableVentilators: 2 }, status: 'active' as const, createdAt: now, updatedAt: now },
-    { name: 'CareLink demo hospital – Pimpri-Chinchwad', code: 'DEMO-PCMC-01', isDemo: true, address: { street: 'Pimpri', city: 'Pimpri-Chinchwad', state: 'Maharashtra', zipCode: '411018', country: 'India' }, location: { type: 'Point' as const, coordinates: [73.8050, 18.6298] as [number, number] }, contact: { phone: '', email: '', emergencyHotline: '' }, capacitySummary: { totalBeds: 60, availableBeds: 10, totalVentilators: 6, availableVentilators: 1 }, status: 'busy' as const, createdAt: now, updatedAt: now },
-    { name: 'CareLink demo hospital – Mumbai', code: 'DEMO-MUM-01', isDemo: true, address: { street: 'Bandra', city: 'Mumbai', state: 'Maharashtra', zipCode: '400050', country: 'India' }, location: { type: 'Point' as const, coordinates: [72.8362, 19.0596] as [number, number] }, contact: { phone: '', email: '', emergencyHotline: '' }, capacitySummary: { totalBeds: 110, availableBeds: 22, totalVentilators: 10, availableVentilators: 3 }, status: 'active' as const, createdAt: now, updatedAt: now },
-    { name: 'CareLink demo hospital – Delhi', code: 'DEMO-DEL-01', isDemo: true, address: { street: 'Central Delhi', city: 'New Delhi', state: 'Delhi', zipCode: '110001', country: 'India' }, location: { type: 'Point' as const, coordinates: [77.2090, 28.6139] as [number, number] }, contact: { phone: '', email: '', emergencyHotline: '' }, capacitySummary: { totalBeds: 90, availableBeds: 12, totalVentilators: 8, availableVentilators: 2 }, status: 'active' as const, createdAt: now, updatedAt: now },
-  ];
-  const inserted = await hospitals.insertMany(sampleHospitals);
-  const ids = [inserted.insertedIds[0].toString(), inserted.insertedIds[1].toString()];
-  const sampleResources = [
-    { hospitalId: ids[0], type: 'bed' as const, category: 'icu', name: 'Demo ICU beds', totalQuantity: 15, availableQuantity: 3, heldQuantity: 0, status: 'available' as const, isDemo: true, createdAt: now, updatedAt: now },
-    { hospitalId: ids[0], type: 'equipment' as const, category: 'ventilator', name: 'Demo ventilators', totalQuantity: 10, availableQuantity: 2, heldQuantity: 0, status: 'available' as const, isDemo: true, createdAt: now, updatedAt: now },
-    { hospitalId: ids[1], type: 'bed' as const, category: 'emergency', name: 'Demo emergency beds', totalQuantity: 25, availableQuantity: 5, heldQuantity: 0, status: 'available' as const, isDemo: true, createdAt: now, updatedAt: now },
-  ];
-  await resources.insertMany(sampleResources);
-  return { success: true, message: 'Demo facilities seeded across Pune, Pimpri-Chinchwad, Mumbai, and Delhi.', hospitalsInserted: sampleHospitals.length, resourcesInserted: sampleResources.length, holdsInserted: 0 };
+  const offsets = [[0.012, 0.006], [-0.018, 0.013], [0.009, -0.021]] as const;
+  const inserted = await hospitals.insertMany(offsets.map(([dLat, dLng], index) => ({
+    name: `CareLink Demo Hospital ${index + 1}`, code: `DEMO-LOC-${Date.now()}-${index + 1}`,
+    isDemo: true, seedBatch: 'location-demo', address: { street: 'Demo location', city: 'Local area', state: '', zipCode: '', country: '' },
+    location: { type: 'Point' as const, coordinates: [lng + dLng, lat + dLat] as [number, number] },
+    contact: { phone: '', email: '', emergencyHotline: '' }, specialties: ['Emergency', 'General Medicine'],
+    capacitySummary: { totalBeds: 60 + index * 10, availableBeds: 12 + index, totalVentilators: 5, availableVentilators: 2 },
+    status: 'active' as const, createdAt: now, updatedAt: now,
+  })));
+  const ids = Object.values(inserted.insertedIds).map((id) => id.toString());
+  await resources.insertMany(ids.map((hospitalId, index) => ({ hospitalId, type: 'bed' as const, category: index === 1 ? 'icu' : 'emergency', name: 'Demo beds', totalQuantity: 30, availableQuantity: 8 + index, heldQuantity: 0, status: 'available' as const, isDemo: true, createdAt: now, updatedAt: now })));
+  await demoDoctors.insertMany(ids.map((hospitalId, index) => ({ hospitalId, name: `Demo Doctor ${index + 1}`, qualification: 'MD', specialization: index === 1 ? 'Cardiology' : 'Emergency Medicine', availability: 'available', createdAt: now, updatedAt: now })));
+  const pharmacies = db.collection('pharmacies');
+  const pharmacyDocs = offsets.slice(0, 2).map(([dLat, dLng], index) => ({ name: `CareLink Demo Pharmacy ${index + 1}`, isDemo: true, seedBatch: 'location-demo', location: { type: 'Point', coordinates: [lng - dLng, lat - dLat] }, address: { street: 'Demo location', city: 'Local area' }, createdAt: now, updatedAt: now }));
+  await pharmacies.insertMany(pharmacyDocs);
+  return { success: true, message: 'Demo facilities created around the submitted coordinates.', hospitalsInserted: ids.length, pharmaciesInserted: pharmacyDocs.length, doctorsInserted: ids.length, resourcesInserted: ids.length, holdsInserted: 0 };
 }

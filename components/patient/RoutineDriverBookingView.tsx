@@ -49,9 +49,7 @@ export const RoutineDriverBookingView: React.FC = () => {
   const handleGetCurrentLocation = () => {
     setIsLocating(true);
     if (!navigator.geolocation) {
-      // Default to demo Connaught place coordinates
-      setCoordinates({ latitude: 28.6328, longitude: 77.2195 });
-      setPickupAddress('Connaught Place, New Delhi (GPS Demo)');
+      setFeedback({ type: 'error', message: 'Location is unavailable. Enter a pickup address and try GPS again from a supported device.' });
       setIsLocating(false);
       return;
     }
@@ -63,9 +61,7 @@ export const RoutineDriverBookingView: React.FC = () => {
         setIsLocating(false);
       },
       (err) => {
-        // Fallback demo coordinates
-        setCoordinates({ latitude: 28.6328, longitude: 77.2195 });
-        setPickupAddress('Connaught Place, New Delhi (Fallback)');
+        setFeedback({ type: 'error', message: err.code === err.PERMISSION_DENIED ? 'Location access was denied. Enter a pickup address or allow location access.' : 'Could not get your location. Try again or enter a pickup address.' });
         setIsLocating(false);
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -82,11 +78,15 @@ export const RoutineDriverBookingView: React.FC = () => {
       setFeedback({ type: 'error', message: 'Please provide a pickup address or use GPS location.' });
       return;
     }
+    if (!coordinates) {
+      setFeedback({ type: 'error', message: 'Get your current location before booking so the driver receives accurate pickup coordinates.' });
+      return;
+    }
 
     setIsSubmitting(true);
     setFeedback(null);
 
-    const targetCoords = coordinates || { latitude: 28.6328, longitude: 77.2195 };
+    const targetCoords = coordinates;
     const preferredTimeDisplay = timingType === 'asap'
       ? 'Immediate (Next Available Driver)'
       : scheduledDateTime || 'Scheduled';

@@ -21,7 +21,7 @@ export function DriverAssignmentPanel() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/dispatcher/drivers?latitude=28.6328&longitude=77.2195', { cache: 'no-store' });
+      const response = await fetch('/api/dispatcher/drivers', { cache: 'no-store' });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Could not load available drivers.');
       setRequests(result.requests ?? []);

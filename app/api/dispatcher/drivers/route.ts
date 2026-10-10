@@ -6,8 +6,9 @@ export async function GET(request: Request) {
   const auth = await requireRole('dispatcher');
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
   const url = new URL(request.url);
-  const location = { latitude: Number(url.searchParams.get('latitude')), longitude: Number(url.searchParams.get('longitude')) };
-  if (!validCoordinates(location)) return Response.json({ error: 'Provide valid pickup coordinates.' }, { status: 400 });
+  const hasCoordinates = url.searchParams.has('latitude') && url.searchParams.has('longitude');
+  const location = hasCoordinates ? { latitude: Number(url.searchParams.get('latitude')), longitude: Number(url.searchParams.get('longitude')) } : null;
+  if (hasCoordinates && !validCoordinates(location)) return Response.json({ error: 'Provide valid pickup coordinates.' }, { status: 400 });
   const { drivers, requests } = await sosCollections();
   const now = new Date();
   await expireAndReofferDriverOffers();
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
   ]);
   const sorted = driverRows.map((driver) => {
     const isAvailable = Boolean(driver.available && !driver.activeRequestId && !driver.pendingOfferRequestId);
-    const distance = validCoordinates(driver.location) ? distanceKm(location, driver.location) : null;
+    const distance = location && validCoordinates(driver.location) ? distanceKm(location, driver.location) : null;
     return { id: driver.userId, name: driver.name ?? 'Ambulance driver', ambulanceId: driver.ambulanceId ?? driver.vehicleNumber ?? 'Not set', ambulanceType: driver.ambulanceType ?? 'Basic life support', crew: driver.crew ?? 'Driver + paramedic', status: isAvailable ? 'Available' : driver.activeRequestId || driver.pendingOfferRequestId ? 'Busy' : 'Offline', distanceKm: distance === null ? null : Number(distance.toFixed(1)), estimatedEtaMinutes: distance === null ? null : Math.max(1, Math.ceil(distance * 2.5)) };
   }).sort((a, b) => (a.status === 'Available' ? 0 : 1) - (b.status === 'Available' ? 0 : 1) || (a.estimatedEtaMinutes ?? Infinity) - (b.estimatedEtaMinutes ?? Infinity));
   return Response.json({ drivers: sorted, requests: openRequests.map((item) => ({ id: item._id, patientName: item.patientName, patientPhone: item.patientPhone, incidentType: item.incidentType, requiredEquipment: item.requiredEquipment, location: item.location, createdAt: item.createdAt, assignedDriverId: item.assignedDriverId, assignmentExpiresAt: item.assignmentExpiresAt })), now });

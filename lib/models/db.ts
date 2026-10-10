@@ -51,6 +51,8 @@ export function initializeIndexes(): Promise<void> {
     await hospitals.createIndex({ location: "2dsphere" });
     await hospitals.createIndex({ code: 1 }, { unique: true });
     await hospitals.createIndex({ placeId: 1 }, { sparse: true });
+    await hospitals.createIndex({ ownerUserId: 1 }, { sparse: true });
+    await (await getDb()).collection("pharmacies").createIndex({ location: "2dsphere" });
 
     const resources = await getResourcesCollection();
     await resources.createIndex({ hospitalId: 1, type: 1, category: 1, status: 1 });
@@ -60,10 +62,15 @@ export function initializeIndexes(): Promise<void> {
 
     const notifications = (await getDb()).collection("notifications");
     const notificationTtlHours = Math.max(1, Number(process.env.NOTIFICATION_TTL_HOURS) || 24);
-    await notifications.createIndex({ createdAt: 1 }, { expireAfterSeconds: notificationTtlHours * 3600, name: "notifications_ttl" }).catch(async () => {
-      await (await getDb()).command({ collMod: "notifications", index: { name: "notifications_ttl", expireAfterSeconds: notificationTtlHours * 3600 } });
-    });
+    const notificationIndexes = await notifications.listIndexes().toArray();
+    const existingTtlIndex = notificationIndexes.find((index) => (index.key as Record<string, number>)?.createdAt === 1);
+    if (existingTtlIndex?.name) {
+      await (await getDb()).command({ collMod: "notifications", index: { name: existingTtlIndex.name, expireAfterSeconds: notificationTtlHours * 3600 } });
+    } else {
+      await notifications.createIndex({ createdAt: 1 }, { expireAfterSeconds: notificationTtlHours * 3600, name: "notifications_ttl" });
+    }
     await notifications.createIndex({ recipientId: 1, createdAt: -1 });
+    await notifications.createIndex({ userId: 1, createdAt: -1 });
 
     const holds = await getHoldsCollection();
     await holds.createIndex({ hospitalId: 1, status: 1 });
