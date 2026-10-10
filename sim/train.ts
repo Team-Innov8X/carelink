@@ -30,6 +30,17 @@ function packageVersion(lock: Record<string, unknown>, packageName: string): str
 }
 
 async function main() {
+  // Training writes fresh metrics and predictions. Refuse to overwrite the one-shot
+  // test record if it has already been appended.
+  const metricsPath = join(modelDirectory, "metrics.json");
+  const predictionsPath = join(modelDirectory, "predictions.csv");
+  const [existingMetrics, existingPredictions] = await Promise.all([
+    readFile(metricsPath, "utf8").catch(() => ""),
+    readFile(predictionsPath, "utf8").catch(() => ""),
+  ]);
+  if ((existingMetrics && (JSON.parse(existingMetrics) as { test?: unknown }).test) || existingPredictions.split(/\r?\n/).some((row) => row.endsWith(",test"))) {
+    throw new Error("Test results already exist; training would overwrite the single permitted test evaluation.");
+  }
   const [train, validation] = await Promise.all([readDataset("train.json"), readDataset("val.json")]);
   if (!train.trainingStayDurations) throw new Error("train.json is missing the training-only stay-duration distribution.");
   const stayDurations = train.trainingStayDurations;
@@ -74,7 +85,8 @@ async function main() {
   const metricsFile = {
     modelType: model.modelType,
     tuningSplit: "validation (days 31–40)",
-    testEvaluation: "not run; requires the hlth02-pre-test freeze",
+    testEvaluation: "Not yet evaluated; see the test section after the single permitted post-freeze run.",
+    logLossComparisonNote: "Log loss is not a fair comparison because the baseline outputs hard 0/1 probabilities.",
     selectedLambda: best.fit.lambda,
     lambdaTrials: trials,
     units: { probability: "P(free units at arrival >= k)", eta: "minutes", freeNow: "units", expectedReleases: "expected unit count" },
@@ -93,7 +105,11 @@ async function main() {
   await writeFile(join(modelDirectory, "predictions.csv"), `sample_id,features_hash,p,label,split\n${predictionRows.join("\n")}\n`, "utf8");
 
   console.log(`Trained custom L2 logistic regression on ${train.samples.length} training samples; selected lambda ${best.fit.lambda} using validation only.`);
-  console.log(`Validation Brier: model ${validationMetrics.brierScore.toFixed(4)}, baseline ${baselineMetrics.brierScore.toFixed(4)}; log loss ${validationMetrics.logLoss.toFixed(4)}; accuracy ${validationMetrics.accuracyAtHalf.toFixed(3)}.`);
+  console.log(`Validation Brier: model ${validationMetrics.brierScore.toFixed(4)}, baseline ${baselineMetrics.brierScore.toFixed(4)}.`);
+  console.log("Validation calibration (10 bins; mean predicted vs observed rate):");
+  console.table(validationMetrics.calibration10Bins.map(({ bin, count, meanPrediction, observedRate }) => ({ bin, count, meanPrediction, observedRate })));
+  console.log(`Accuracy: model ${validationMetrics.accuracyAtHalf.toFixed(3)}, baseline ${baselineMetrics.accuracyAtHalf.toFixed(3)}.`);
+  console.log(`Log loss (not a fair comparison because the baseline outputs hard 0/1 probabilities): model ${validationMetrics.logLoss.toFixed(4)}, baseline ${baselineMetrics.logLoss.toFixed(4)}.`);
   console.log(`Runtime parity checked on ${parity.length} saved vectors (max difference ${maxRuntimeParityError}). Test metrics are intentionally not read by train.`);
 }
 

@@ -38,14 +38,14 @@ export function calculateMetrics(probabilities: number[], labels: number[]): For
     negativeCount: labels.length - positiveCount,
     positiveRate: positiveCount / labels.length,
     brierScore: brierSum / labels.length,
-    logLoss: logLossSum / labels.length,
-    accuracyAtHalf: correct / labels.length,
     calibration10Bins: bins.map(({ bin, count, predictions, positives }) => ({
       bin,
       count,
       meanPrediction: count ? predictions / count : null,
       observedRate: count ? positives / count : null,
     })),
+    accuracyAtHalf: correct / labels.length,
+    logLoss: logLossSum / labels.length,
   };
 }
 

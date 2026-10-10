@@ -9,7 +9,7 @@
 
 ## Frozen test evaluation (days 41–50)
 
-After tagging `hlth02-pre-test` at commit `698b652`, the test split was scored once on 2,400 samples. Model Brier was 0.0738 versus 0.0933 for baseline; the paired 1,000-resample 95% interval for model-minus-baseline Brier was [-0.0259, -0.0131]. Model log loss was 0.2443 versus 3.2236; accuracy was 0.899 versus 0.907. The baseline's slightly higher threshold accuracy remains a trade-off.
+After tagging `hlth02-pre-test` at commit `698b652`, the test split was scored once on 2,400 samples. Model Brier was 0.0738 versus 0.0933 for baseline; the paired 1,000-resample 95% interval for model-minus-baseline Brier was [-0.0259, -0.0131]. The 10-bin calibration table is recorded in `model/metrics.json` under `test.model.calibration10Bins` and `test.baseline.calibration10Bins`. Accuracy was 0.899 versus 0.907; the baseline's slightly higher threshold accuracy remains a trade-off. Log loss was 0.2443 versus 3.2236, but that is not a fair comparison because the baseline outputs hard 0/1 probabilities.
 
 This post-test edit records the test output and trade-off only. Model weights, features, generator parameters, selected lambda, and tuning decisions were not changed after the test result.
 

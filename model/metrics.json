@@ -1,7 +1,7 @@
 {
   "modelType": "custom_l2_logistic_regression",
   "tuningSplit": "validation (days 31–40)",
-  "testEvaluation": "not run; requires the hlth02-pre-test freeze",
+  "testEvaluation": "Evaluated once after the hlth02-pre-test freeze; see the test section.",
   "selectedLambda": 0.001,
   "lambdaTrials": [
     {
@@ -44,8 +44,6 @@
       "negativeCount": 1702,
       "positiveRate": 0.29083333333333333,
       "brierScore": 0.06492115610389554,
-      "logLoss": 0.21969693839700086,
-      "accuracyAtHalf": 0.91625,
       "calibration10Bins": [
         {
           "bin": 0,
@@ -107,7 +105,9 @@
           "meanPrediction": 0.9756900438222776,
           "observedRate": 0.9545454545454546
         }
-      ]
+      ],
+      "accuracyAtHalf": 0.91625,
+      "logLoss": 0.21969693839700086
     },
     "baseline": {
       "count": 2400,
@@ -115,8 +115,6 @@
       "negativeCount": 1702,
       "positiveRate": 0.29083333333333333,
       "brierScore": 0.07625,
-      "logLoss": 2.6335817001119497,
-      "accuracyAtHalf": 0.92375,
       "calibration10Bins": [
         {
           "bin": 0,
@@ -178,7 +176,9 @@
           "meanPrediction": 1,
           "observedRate": 0.8737300435413643
         }
-      ]
+      ],
+      "accuracyAtHalf": 0.92375,
+      "logLoss": 2.6335817001119497
     },
     "brierDifferenceModelMinusBaseline": -0.01132884389610446
   },
@@ -216,8 +216,6 @@
       "negativeCount": 1668,
       "positiveRate": 0.305,
       "brierScore": 0.07382771845771406,
-      "logLoss": 0.24426110762699968,
-      "accuracyAtHalf": 0.8991666666666667,
       "calibration10Bins": [
         {
           "bin": 0,
@@ -279,7 +277,9 @@
           "meanPrediction": 0.9697782042743338,
           "observedRate": 0.953125
         }
-      ]
+      ],
+      "accuracyAtHalf": 0.8991666666666667,
+      "logLoss": 0.24426110762699968
     },
     "baseline": {
       "count": 2400,
@@ -287,8 +287,6 @@
       "negativeCount": 1668,
       "positiveRate": 0.305,
       "brierScore": 0.09333333333333334,
-      "logLoss": 3.2236191301916812,
-      "accuracyAtHalf": 0.9066666666666666,
       "calibration10Bins": [
         {
           "bin": 0,
@@ -350,7 +348,9 @@
           "meanPrediction": 1,
           "observedRate": 0.849862258953168
         }
-      ]
+      ],
+      "accuracyAtHalf": 0.9066666666666666,
+      "logLoss": 3.2236191301916812
     },
     "brierDifferenceModelMinusBaseline": -0.019505614875619276,
     "pairedBrierDifferenceBootstrap95": {
@@ -361,5 +361,6 @@
       "seed": 20261012
     },
     "note": "Single evaluation after hlth02-pre-test freeze; test set is not used for tuning."
-  }
+  },
+  "logLossComparisonNote": "Log loss is not a fair comparison because the baseline outputs hard 0/1 probabilities."
 }
