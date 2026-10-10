@@ -50,13 +50,13 @@ test("provider outage falls back to deterministic criteria", async () => {
 
 test("provider output is allowlisted and invalid structured output falls back", async () => {
   const handler = createSmartMatchAssistHandler({
-    authorize: async () => ({ authorized: true, user: { id: "p1" } }), apiKey: "secret", model: "test",
+    authorize: async () => ({ authorized: true, user: { id: "p1" } }), provider: "groq", apiKey: "secret", model: "test",
     fetcher: async () => Response.json({ choices: [{ message: { content: JSON.stringify({ ...current, emergencyType: "cardiac", requiredResources: ["secret_database", "heart specialist"] }) } }] }),
   });
   const response = await handler(request({ message: "Find heart care", current }));
   const body = await response.json();
   assert.equal(response.status, 200);
-  assert.equal(body.source, "grok");
+  assert.equal(body.source, "groq");
   assert.deepEqual(body.criteria.requiredResources, ["cardiologist"]);
   assert.equal(JSON.stringify(body).includes("secret_database"), false);
 });
