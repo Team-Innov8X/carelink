@@ -1,5 +1,5 @@
 import { requireRole } from '@/lib/auth-utils';
-import { classifyMessage, fallbackReply, INTENT_REPLIES, ensureEmergencySentence, applyRedFlagOverride } from '@/lib/triage/gate';
+import { classifyMessage, fallbackReply, INTENT_REPLIES, ensureEmergencySentence, applyRedFlagOverride, isMessageTooLong } from '@/lib/triage/gate';
 import { EMERGENCY_FALLBACK_TEXT, MAX_FOLLOW_UPS, MAX_HISTORY_TURNS, MAX_MESSAGE_CHARS } from '@/lib/triage/constants';
 import { buildTriagePrompt, TRIAGE_FEW_SHOT } from '@/lib/triage/prompt';
 import { classifyWithModel, consumeRateLimit, triageWithModel } from '@/lib/triage/llm';
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   try { body = await request.json() as RequestBody; }
   catch { return Response.json({ error: 'Please send a valid message.' }, { status: 400 }); }
   if (typeof body.message !== 'string') return Response.json({ error: 'Please describe your symptoms in a message.' }, { status: 400 });
-  if (body.message.length > MAX_MESSAGE_CHARS) return Response.json({ error: `Please keep your message under ${MAX_MESSAGE_CHARS} characters.` }, { status: 400 });
+  if (isMessageTooLong(body.message, MAX_MESSAGE_CHARS)) return Response.json({ error: `Please keep your message under ${MAX_MESSAGE_CHARS} characters.` }, { status: 400 });
 
   const message = body.message.trim();
   const gate = classifyMessage(message);
@@ -80,6 +80,7 @@ export async function POST(request: Request) {
   } else if (output.severity === 'emergency') {
     output = { ...output, reply: ensureEmergencySentence(output.reply, EMERGENCY_FALLBACK_TEXT), followUpQuestion: null };
   }
+  if (!/This is guidance, not a medical diagnosis\.?/i.test(output.reply)) output = { ...output, reply: `${output.reply.trim()} This is guidance, not a medical diagnosis.` };
   if (askedCount >= MAX_FOLLOW_UPS) output = { ...output, followUpQuestion: null };
 
   logResult(startedAt, 'symptoms', output.severity, fallback, errorCode);

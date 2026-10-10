@@ -3,13 +3,14 @@ import type { TriageResponse } from './schema.ts';
 export type TriageIntent = 'greeting' | 'off_topic' | 'unclear' | 'symptoms';
 export type GateResult = { intent: TriageIntent; redFlag: boolean; certain: boolean };
 
-const greetings = /^(?:hi|hello|hey|good morning|good afternoon|good evening|how are you|thanks|thank you|okay|ok)[!.\s]*$/i;
+const greetings = /^(?:hi|hello|hey|good morning|good afternoon|good evening|how are you|thanks|thank you|okay|ok)[!.?\s]*$/i;
 const injection = /\b(?:ignore|disregard|override|forget)\b.{0,60}\b(?:instructions?|rules?|prompts?)\b/i;
 const offTopic = /\b(?:capital of|write (?:a |an )?(?:code|program|poem|story|function)|python function|tell me (?:a )?joke|who won (?:the |last )?(?:match|game)|weather in|stock price|solve this equation)\b/i;
 const healthTerms = /\b(?:pain|ache|fever|cough|cold|breath(?:e|ing)?|shortness of breath|headache|migraine|dizz(?:y|iness)|nausea|vomit(?:ing)?|diarrh(?:ea|oea)|rash|itch(?:ing)?|bleed(?:ing)?|injur(?:y|ed)|burn|swelling|swell|weakness|numb(?:ness)?|sore throat|chest|stomach|abdomen|back|head|face|arm|leg|eye|ear|throat|heart|skin|tooth|pregnan(?:t|cy)|symptom|unwell|sick|ill|blood pressure|faint(?:ed|ing)?|seizure)\b/i;
 const redFlags = [
   /\bchest pain\b/i,
-  /\b(?:can't|cannot|unable to|struggling to|difficulty) breathe\b/i,
+  /\b(?:can't|cannot|unable to|struggling to|difficulty|trouble) breathe\b/i,
+  /\b(?:difficulty|trouble) breathing\b/i,
   /\bshortness of breath\b/i,
   /\b(?:face drooping|slurred speech|sudden weakness on one side|stroke signs?)\b/i,
   /\bsevere (?:bleeding|blood loss)\b/i,
@@ -44,6 +45,10 @@ export function classifyMessage(message: string): GateResult {
   return { intent: 'unclear', redFlag: false, certain: false };
 }
 
+export function isMessageTooLong(message: string, limit: number) {
+  return message.length > limit;
+}
+
 export const INTENT_REPLIES: Record<Exclude<TriageIntent, 'symptoms'>, string> = {
   greeting: 'Hello! What symptoms are you having today?',
   off_topic: "I can only help with health symptoms, so I can't answer that here. Tell me what symptoms you're having and I'll help.",
@@ -73,7 +78,12 @@ export function applyRedFlagOverride(output: TriageResponse, emergencyText: stri
 }
 
 export function ensureEmergencySentence(reply: string, emergencyText: string) {
-  const withoutDiagnosisNote = reply.replace(/\s*This is guidance, not a medical diagnosis\.?/i, '').trim();
-  const body = withoutDiagnosisNote.includes(emergencyText) ? withoutDiagnosisNote : `${withoutDiagnosisNote} ${emergencyText}`;
+  const escapedEmergencyText = emergencyText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const withoutDiagnosisNote = reply
+    .replace(new RegExp(escapedEmergencyText, 'gi'), ' ')
+    .replace(/\s*This is guidance, not a medical diagnosis\.?/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const body = `${withoutDiagnosisNote} ${emergencyText}`.trim();
   return `${body} This is guidance, not a medical diagnosis.`;
 }

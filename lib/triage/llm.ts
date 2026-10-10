@@ -4,9 +4,13 @@ import { intentResponseSchema, triageResponseSchema, type TriageMessage, type Tr
 const timeoutMs = Math.max(1000, Number(process.env.TRIAGE_TIMEOUT_MS) || 12_000);
 
 function configuration() {
-  const apiUrl = process.env.TRIAGE_API_URL?.trim();
-  const apiKey = process.env.TRIAGE_API_KEY?.trim();
-  const model = process.env.TRIAGE_MODEL?.trim();
+  const legacyBaseUrl = process.env.AI_BASE_URL?.trim().replace(/\/+$/, '');
+  const apiUrl = process.env.TRIAGE_API_URL?.trim()
+    || (legacyBaseUrl ? `${legacyBaseUrl}/chat/completions` : undefined)
+    || process.env.GROK_API_URL?.trim()
+    || ((process.env.AI_API_KEY || process.env.GROK_API_KEY) ? 'https://api.x.ai/v1/chat/completions' : undefined);
+  const apiKey = process.env.TRIAGE_API_KEY?.trim() || process.env.AI_API_KEY?.trim() || process.env.GROK_API_KEY?.trim();
+  const model = process.env.TRIAGE_MODEL?.trim() || process.env.AI_MODEL?.trim() || process.env.GROK_MODEL?.trim();
   if (!apiUrl || !apiKey || !model) throw new Error('TRIAGE_NOT_CONFIGURED');
   return { apiUrl, apiKey, model };
 }

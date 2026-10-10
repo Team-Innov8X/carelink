@@ -108,7 +108,7 @@ export const TriageChatView: React.FC = () => {
   };
 
   return (
-    <section className="flex h-[calc(100dvh-8rem)] min-h-[32rem] w-full flex-col overflow-hidden bg-[#F6F8F9] text-[#1B1F23] md:h-[calc(100dvh-4rem)]">
+    <section className="flex h-[calc(100dvh-8rem)] min-h-0 w-full flex-col overflow-hidden bg-[#F6F8F9] text-[#1B1F23] md:h-[calc(100dvh-4rem)]">
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
         <div>
           <h1 className="text-lg font-semibold">Symptom triage</h1>
