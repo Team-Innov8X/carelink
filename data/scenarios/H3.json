@@ -1,0 +1,1 @@
+{"id":"H3","name":"Response timeout","description":"A hospital does not answer within the configured response window.","steps":["Request enters pending state","Server deadline passes","Server records timeout as rejection and replans","Screens refresh from the same request state"],"outcome":"rerouted","reason":"timeout"}

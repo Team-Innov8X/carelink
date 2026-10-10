@@ -9,7 +9,7 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = await requireRole(["ambulance_driver", "driver"]);
+  const auth = await requireRole(["ambulance_driver", "driver", "patient"]);
   if (!auth.authorized || !auth.user) {
     return Response.json(
       { error: auth.reason },
@@ -20,7 +20,8 @@ export async function GET(
   const { id } = await params;
   await initializeIndexes();
   const { requests, drivers, hospitals } = await sosCollections();
-  const sos = await requests.findOne({ _id: id, driverId: auth.user.id, status: "accepted" });
+  const isPatient = (auth.user as { role?: string }).role === "patient";
+  const sos = await requests.findOne({ _id: id, ...(isPatient ? { patientId: auth.user.id } : { driverId: auth.user.id }), status: "accepted" });
   if (!sos) {
     return Response.json({ error: "Accepted SOS request not found for this driver" }, { status: 404 });
   }

@@ -1,0 +1,1 @@
+{"id":"H1","name":"Normal acceptance","description":"The selected condition has a feasible match; the first hospital accepts.","steps":["Driver selects configured condition","Top feasible hospital receives an automatic bed request","Hospital accepts before timeout","Driver and patient see confirmed destination and ETA"],"outcome":"confirmed","reason":"accepted"}

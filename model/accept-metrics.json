@@ -1,0 +1,348 @@
+{
+  "modelType": "custom_l2_logistic_regression",
+  "tuningSplit": "validation (days 31–40)",
+  "testEvaluation": "Not yet evaluated; first test run is allowed only after rec-pre-test.",
+  "baseline": "Nearest-feasible policy baseline represented by p_accept=1 at the chosen nearest feasible candidate; log loss is unfair to this hard 0/1 baseline.",
+  "selectedLambda": 0.001,
+  "lambdaTrials": [
+    {
+      "lambda": 0.001,
+      "validationBrier": 0.1324123528372324
+    },
+    {
+      "lambda": 0.01,
+      "validationBrier": 0.13246073056319055
+    },
+    {
+      "lambda": 0.1,
+      "validationBrier": 0.13323721504509037
+    },
+    {
+      "lambda": 1,
+      "validationBrier": 0.1354783000951932
+    },
+    {
+      "lambda": 10,
+      "validationBrier": 0.13635531672446435
+    }
+  ],
+  "validation": {
+    "model": {
+      "count": 1920,
+      "positiveCount": 1607,
+      "negativeCount": 313,
+      "positiveRate": 0.8369791666666667,
+      "brierScore": 0.1324123528372324,
+      "calibration10Bins": [
+        {
+          "bin": 0,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 1,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 2,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 3,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 4,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 5,
+          "count": 6,
+          "meanPrediction": 0.5798666681914881,
+          "observedRate": 0.6666666666666666
+        },
+        {
+          "bin": 6,
+          "count": 50,
+          "meanPrediction": 0.6682236330143997,
+          "observedRate": 0.68
+        },
+        {
+          "bin": 7,
+          "count": 485,
+          "meanPrediction": 0.7645769478202593,
+          "observedRate": 0.7505154639175258
+        },
+        {
+          "bin": 8,
+          "count": 1228,
+          "meanPrediction": 0.85142986473262,
+          "observedRate": 0.8697068403908795
+        },
+        {
+          "bin": 9,
+          "count": 151,
+          "meanPrediction": 0.9195379331702649,
+          "observedRate": 0.9072847682119205
+        }
+      ],
+      "accuracyAtHalf": 0.8369791666666667,
+      "logLoss": 0.43060657566466454
+    },
+    "nearestFeasibleBaseline": {
+      "count": 1920,
+      "positiveCount": 1607,
+      "negativeCount": 313,
+      "positiveRate": 0.8369791666666667,
+      "brierScore": 0.16302083333333334,
+      "calibration10Bins": [
+        {
+          "bin": 0,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 1,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 2,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 3,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 4,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 5,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 6,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 7,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 8,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 9,
+          "count": 1920,
+          "meanPrediction": 1,
+          "observedRate": 0.8369791666666667
+        }
+      ],
+      "accuracyAtHalf": 0.8369791666666667,
+      "logLoss": 5.630540110212043
+    },
+    "brierDifferenceModelMinusBaseline": -0.03060848049610093
+  },
+  "training": {
+    "sampleCount": 5760,
+    "positiveCount": 4786,
+    "negativeCount": 974
+  },
+  "parity": {
+    "savedVectors": 20,
+    "maxRuntimeParityError": 0
+  },
+  "syntheticDataOnly": true,
+  "test": {
+    "split": "test",
+    "days": [
+      41,
+      50
+    ],
+    "sampleCount": 1920,
+    "counts": {
+      "accepted": 1580,
+      "rejected": 340
+    },
+    "model": {
+      "count": 1920,
+      "positiveCount": 1580,
+      "negativeCount": 340,
+      "positiveRate": 0.8229166666666666,
+      "brierScore": 0.14334185555161552,
+      "calibration10Bins": [
+        {
+          "bin": 0,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 1,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 2,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 3,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 4,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 5,
+          "count": 3,
+          "meanPrediction": 0.5865609295806009,
+          "observedRate": 1
+        },
+        {
+          "bin": 6,
+          "count": 62,
+          "meanPrediction": 0.6671373583191125,
+          "observedRate": 0.7258064516129032
+        },
+        {
+          "bin": 7,
+          "count": 445,
+          "meanPrediction": 0.7650757725886018,
+          "observedRate": 0.7685393258426966
+        },
+        {
+          "bin": 8,
+          "count": 1271,
+          "meanPrediction": 0.8504837408223,
+          "observedRate": 0.8347757671125098
+        },
+        {
+          "bin": 9,
+          "count": 139,
+          "meanPrediction": 0.9155304206041793,
+          "observedRate": 0.9280575539568345
+        }
+      ],
+      "accuracyAtHalf": 0.8229166666666666,
+      "logLoss": 0.4577651413783942
+    },
+    "nearestFeasibleBaseline": {
+      "count": 1920,
+      "positiveCount": 1580,
+      "negativeCount": 340,
+      "positiveRate": 0.8229166666666666,
+      "brierScore": 0.17708333333333334,
+      "calibration10Bins": [
+        {
+          "bin": 0,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 1,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 2,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 3,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 4,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 5,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 6,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 7,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 8,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 9,
+          "count": 1920,
+          "meanPrediction": 1,
+          "observedRate": 0.8229166666666666
+        }
+      ],
+      "accuracyAtHalf": 0.8229166666666666,
+      "logLoss": 6.11624165326548
+    },
+    "brierDifferenceModelMinusBaseline": {
+      "estimate": -0.03374147778171787,
+      "lower95": -0.04025044317991602,
+      "upper95": -0.027137033145187263,
+      "resamples": 1000,
+      "seed": 20261021
+    },
+    "independentLabelsMatched": true,
+    "baselineNote": "Log loss is unfair to the nearest-feasible hard 0/1 baseline.",
+    "seed": 20261011
+  }
+}
