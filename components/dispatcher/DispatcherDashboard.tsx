@@ -1,22 +1,26 @@
 import React, { useMemo, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { MapView } from '../common/MapView';
+import { PatientHomeRequestBox } from '../patient/PatientHomeRequestBox';
 import {
   Building2,
   Ambulance as AmbulanceIcon,
   Pill,
-  ArrowRight,
   Sparkles,
   MapPin,
-  Clock,
   ChevronRight,
   LocateFixed,
-} from 'lucide-react';
+  Calendar,
+  Clock,
+  ShieldAlert,
+  CheckCircle2,
+  AlertTriangle,
+} from '../icons';
 
 type NearbyDriver = { id: string; name?: string; location: { latitude: number; longitude: number }; distanceKm: number };
 type PatientProfile = { name: string; email?: string | null; phone?: string | null };
 
-export const DispatcherDashboard: React.FC = () => {
+export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; requestPending?: boolean }> = () => {
   const {
     emergencies,
     hospitals,
@@ -74,12 +78,6 @@ export const DispatcherDashboard: React.FC = () => {
         setLocationLoading(false);
       }
     };
-
-    if (process.env.NODE_ENV === 'development') {
-      // The local demo uses the signed-in profile at Connaught Place, New Delhi.
-      void loadNearby([28.6328, 77.2195]);
-      return;
-    }
 
     if (!navigator.geolocation) {
       setLocationMessage('This browser does not support GPS location.');
@@ -150,6 +148,9 @@ export const DispatcherDashboard: React.FC = () => {
           {role === 'patient' ? 'Explore nearby hospitals, medicine availability, and your care requests.' : 'Here’s the current status of hospitals, ambulances and requests.'}
         </p>
       </div>
+
+      {/* Current Active Request Box under Your Care Dashboard */}
+      {role === 'patient' && <PatientHomeRequestBox />}
 
       {/* Network status cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

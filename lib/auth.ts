@@ -23,8 +23,10 @@ function createAuth(mongoClient: typeof client) {
         return;
       }
       if (process.env.NODE_ENV !== "production") console.info(`[password-reset] ${user.email}: ${url}`);
+      else throw new Error("Password reset email is not configured.");
     },
   },
+  session: { cookieCache: { enabled: true, maxAge: 300 } },
   socialProviders: {
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID || "",
@@ -59,6 +61,7 @@ function createAuth(mongoClient: typeof client) {
       licenseNumber: { type: "string", required: false, input: true },
       vehicleNumber: { type: "string", required: false, input: true },
       driverQualification: { type: "string", required: false, input: true },
+      onboardingCompleted: { type: "boolean", required: false, defaultValue: false, input: false },
     },
   },
   databaseHooks: {

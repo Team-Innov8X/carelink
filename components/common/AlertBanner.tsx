@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, RefreshCw, PhoneCall, X, Clock } from 'lucide-react';
+import { AlertTriangle, RefreshCw, PhoneCall, X, Clock } from '@/components/icons';
 import { Hospital } from '../../types';
 
 interface StaleDataWarningProps {
@@ -7,6 +7,7 @@ interface StaleDataWarningProps {
   onRefresh: (hospitalId: string) => void;
   onConfirm: (hospitalId: string) => void;
   onDismiss?: () => void;
+  staleThresholdMinutes?: number;
 }
 
 export const StaleDataWarning: React.FC<StaleDataWarningProps> = ({
@@ -14,8 +15,9 @@ export const StaleDataWarning: React.FC<StaleDataWarningProps> = ({
   onRefresh,
   onConfirm,
   onDismiss,
+  staleThresholdMinutes = 10,
 }) => {
-  if (hospital.lastUpdatedMinutesAgo < 10) return null;
+  if (hospital.lastUpdatedMinutesAgo < staleThresholdMinutes) return null;
 
   return (
     <div className="bg-amber-50 border border-amber-300/80 rounded-2xl p-4 sm:p-5 text-amber-900 shadow-sm relative animate-in fade-in slide-in-from-top-1 duration-200">

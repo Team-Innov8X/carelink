@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Heart, LogIn, X } from 'lucide-react';
+import { Heart, LogIn, X } from '@/components/icons';
 import { routeForRole } from '../../lib/role-route';
 
 interface LoginModalProps {

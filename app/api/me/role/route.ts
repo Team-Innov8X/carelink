@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   if (!isSelfServiceRole(body.role)) return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
   const users = await getUsersCollection();
   const result = await users.updateOne(
-    { _id: session.user.id as never, role: 'patient', onboardingComplete: { $ne: true } } as never,
+    { _id: session.user.id as never, role: 'patient', onboardingCompleted: { $ne: true } } as never,
     { $set: { role: body.role, updatedAt: new Date() } } as never,
   );
   if (!result.modifiedCount && (session.user as { role?: string }).role !== body.role) return NextResponse.json({ error: 'Role was already selected or could not be updated' }, { status: 409 });

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { HospitalBeds } from '../../types';
 import { HospitalRequestInbox } from './HospitalRequestInbox';
-import { Minus, Plus, Stethoscope } from 'lucide-react';
+import { Minus, Plus, Stethoscope } from '../icons';
 
 export const HospitalStaffView: React.FC = () => {
   const { hospitals, updateBedCounts, updateHospitalSpecialty } = useCareLink();
@@ -21,8 +21,12 @@ export const HospitalStaffView: React.FC = () => {
   ];
 
   const adjustBedCount = async (bedType: keyof HospitalBeds, delta: number) => {
-    const saved = await updateBedCounts(currentHospital.id, bedType, delta);
-    setCapacityMessage(saved ? '' : 'Bed availability changed or could not be saved. Refresh the page and try again.');
+    try {
+      await updateBedCounts(currentHospital.id, bedType, delta);
+      setCapacityMessage('');
+    } catch {
+      setCapacityMessage('Bed availability could not be updated. Refresh the page and try again.');
+    }
   };
 
   return (

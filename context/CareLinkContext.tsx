@@ -62,7 +62,7 @@ interface CareLinkContextType {
   acceptEmergency: (requestId: string) => void;
   rejectEmergency: (requestId: string, reason?: string) => void;
   rejectDriverEmergency: (requestId: string) => void;
-  updateBedCounts: (hospitalId: string, bedType: keyof HospitalBeds, delta: number) => Promise<boolean>;
+  updateBedCounts: (hospitalId: string, bedType: keyof HospitalBeds, delta: number) => void;
   setBedAvailability: (hospitalId: string, bedType: keyof HospitalBeds, available: number, total: number) => void;
   updateHospitalSpecialty: (hospitalId: string, specialty: string, doctors: number) => void;
   refreshHospitalData: (hospitalId: string) => void;
@@ -82,16 +82,21 @@ const CareLinkContext = createContext<CareLinkContextType | undefined>(undefined
 const mergeInitialRecords = <T extends { id: string }>(saved: T[] | undefined, initial: T[]): T[] => {
   const records = new Map((Array.isArray(saved) ? saved : []).map((record) => [record.id, record]));
   initial.forEach((record) => {
-    const current = records.get(record.id);
-    if (!current) records.set(record.id, record);
-    else if ('specialtyDoctors' in record) {
-      const defaults = (record as { specialtyDoctors?: Record<string, number> }).specialtyDoctors ?? {};
-      const existing = (current as T & { specialtyDoctors?: Record<string, number> }).specialtyDoctors ?? {};
-      records.set(record.id, { ...current, specialtyDoctors: { ...defaults, ...existing } });
-    }
+    if (!records.has(record.id)) records.set(record.id, record);
   });
   return Array.from(records.values());
 };
+
+async function loadHospitalsFromBackend(savedHospitals: Hospital[] | undefined) {
+  try {
+    const response = await fetch('/api/hospitals', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Hospital directory unavailable');
+    const registeredHospitals = await response.json() as Hospital[];
+    return mergeInitialRecords([...(Array.isArray(registeredHospitals) ? registeredHospitals : []), ...(Array.isArray(savedHospitals) ? savedHospitals : [])], INITIAL_HOSPITALS);
+  } catch {
+    return mergeInitialRecords(savedHospitals, INITIAL_HOSPITALS);
+  }
+}
 
 export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole?: Role }> = ({ children, initialRole }) => {
   const hydrated = useRef(false);
@@ -112,6 +117,7 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
   // Restore a fast local copy, then reconcile with the shared MongoDB snapshot.
   useEffect(() => {
     let cancelled = false;
+    let localHospitals: Hospital[] | undefined;
     try {
       const savedHospitals = localStorage.getItem('carelink_hospitals');
       const savedEmergencies = localStorage.getItem('carelink_emergencies');
@@ -120,9 +126,10 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
       const savedAmbulances = localStorage.getItem('carelink_ambulances');
       const savedDrivers = localStorage.getItem('carelink_drivers');
       const savedOrders = localStorage.getItem('carelink_orders');
+      if (savedHospitals) localHospitals = JSON.parse(savedHospitals);
       queueMicrotask(() => {
         if (cancelled) return;
-        if (savedHospitals) setHospitals(mergeInitialRecords(JSON.parse(savedHospitals), INITIAL_HOSPITALS));
+        if (localHospitals) setHospitals(mergeInitialRecords(localHospitals, INITIAL_HOSPITALS));
         if (savedEmergencies) setEmergencies(mergeInitialRecords(JSON.parse(savedEmergencies), INITIAL_EMERGENCIES));
         if (savedPharmacies) setPharmacies(mergeInitialRecords(JSON.parse(savedPharmacies), INITIAL_PHARMACIES));
         if (savedMedicines) setMedicines(mergeInitialRecords(JSON.parse(savedMedicines), INITIAL_MEDICINES));
@@ -134,15 +141,15 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
       // Ignore localStorage read errors
     }
 
-    fetch('/api/data', { cache: 'no-store' })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Database is unavailable');
-        return response.json();
-      })
-      .then(({ state }) => {
+    const sharedStateRequest = fetch('/api/data', { cache: 'no-store' })
+      .then(async (response) => response.ok ? await response.json() : null)
+      .catch(() => null);
+    Promise.all([sharedStateRequest, loadHospitalsFromBackend(undefined)])
+      .then(([shared, backendHospitals]) => {
         if (cancelled) return;
+        const state = shared?.state;
+        setHospitals(mergeInitialRecords([...backendHospitals, ...(localHospitals ?? []), ...(Array.isArray(state?.hospitals) ? state.hospitals : [])], INITIAL_HOSPITALS));
         if (state) {
-          setHospitals(mergeInitialRecords(state.hospitals, INITIAL_HOSPITALS));
           setEmergencies(mergeInitialRecords(state.emergencies, INITIAL_EMERGENCIES));
           setPharmacies(mergeInitialRecords(state.pharmacies, INITIAL_PHARMACIES));
           setMedicines(mergeInitialRecords(state.medicines, INITIAL_MEDICINES));
@@ -150,9 +157,6 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
           setDrivers(mergeInitialRecords(state.drivers, INITIAL_DRIVERS));
           setMedicineOrders(state.medicineOrders ?? []);
         }
-      })
-      .catch(() => {
-        // The app remains usable with the browser's saved copy when MongoDB is not configured.
       })
       .finally(() => {
         if (!cancelled) hydrated.current = true;
@@ -167,9 +171,9 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
           if (!response.ok) throw new Error('Shared state unavailable');
           return response.json();
         })
-        .then(({ state }) => {
+        .then(async ({ state }) => {
           if (!state) return;
-          setHospitals(mergeInitialRecords(state.hospitals, INITIAL_HOSPITALS));
+          setHospitals(await loadHospitalsFromBackend(state.hospitals));
           setEmergencies(mergeInitialRecords(state.emergencies, INITIAL_EMERGENCIES));
           setPharmacies(mergeInitialRecords(state.pharmacies, INITIAL_PHARMACIES));
           setMedicines(mergeInitialRecords(state.medicines, INITIAL_MEDICINES));
@@ -181,7 +185,18 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
     };
     window.addEventListener('carelink-authenticated', reloadSharedState);
     window.addEventListener('carelink-data-refresh', reloadSharedState);
+    const refreshInventory = () => {
+      fetch('/api/data', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null).then(({ state } = {}) => {
+        if (!state?.hospitals) return;
+        const incoming = mergeInitialRecords(state.hospitals, INITIAL_HOSPITALS);
+        setHospitals((current) => JSON.stringify(current) === JSON.stringify(incoming) ? current : incoming);
+        if (Array.isArray(state.medicines)) setMedicines((current) => JSON.stringify(current) === JSON.stringify(state.medicines) ? current : mergeInitialRecords(state.medicines, INITIAL_MEDICINES));
+        if (Array.isArray(state.medicineOrders)) setMedicineOrders((current) => JSON.stringify(current) === JSON.stringify(state.medicineOrders) ? current : state.medicineOrders);
+      }).catch(() => {});
+    };
+    const inventoryTimer = window.setInterval(refreshInventory, 10000);
     return () => {
+      window.clearInterval(inventoryTimer);
       window.removeEventListener('carelink-authenticated', reloadSharedState);
       window.removeEventListener('carelink-data-refresh', reloadSharedState);
     };
@@ -292,6 +307,8 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
           return {
             ...req,
             status: 'En Route',
+            acceptedAt: req.acceptedAt || new Date().toISOString(),
+            enRouteAt: req.enRouteAt || new Date().toISOString(),
             checklist: {
               ...req.checklist,
               detailsShared: true,
@@ -323,26 +340,37 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
     setEmergencies((prev) => prev.map((req) => req.id === requestId ? { ...req, status: 'Rejected' } : req));
   };
 
-  const updateBedCounts = async (
+  const updateBedCounts = (
     hospitalId: string,
     bedType: keyof HospitalBeds,
     delta: number
-  ): Promise<boolean> => {
-    try {
-      const response = await fetch(`/api/hospitals/${encodeURIComponent(hospitalId)}/capacity`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bedType, delta }),
-      });
-      if (!response.ok) return false;
-      window.dispatchEvent(new Event('carelink-data-refresh'));
-      return true;
-    } catch {
-      return false;
-    }
+  ) => {
+    setHospitals((prev) =>
+      prev.map((h) => {
+        if (h.id === hospitalId) {
+          const current = h.beds[bedType];
+          const newAvail = Math.min(
+            current.total,
+            Math.max(0, current.available + delta)
+          );
+          return {
+            ...h,
+            lastUpdatedMinutesAgo: 0, // Freshly updated!
+            beds: {
+              ...h.beds,
+              [bedType]: {
+                ...current,
+                available: newAvail,
+              },
+            },
+          };
+        }
+        return h;
+      })
+    );
   };
 
-  const updateHospitalSpecialty = async (hospitalId: string, specialty: string, doctors: number) => {
+  const updateHospitalSpecialty = (hospitalId: string, specialty: string, doctors: number) => {
     const normalized = specialty.trim();
     if (!normalized) return;
     setHospitals((prev) => prev.map((hospital) => {
@@ -356,25 +384,18 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
         lastUpdatedMinutesAgo: 0,
       };
     }));
-    try {
-      const response = await fetch(`/api/hospitals/${encodeURIComponent(hospitalId)}/staffing`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ specialty: normalized, doctors: Math.max(0, Math.floor(doctors)) }),
-      });
-      if (!response.ok) window.dispatchEvent(new Event('carelink-data-refresh'));
-      else window.dispatchEvent(new Event('carelink-data-refresh'));
-    } catch {
-      window.dispatchEvent(new Event('carelink-data-refresh'));
-    }
   };
 
   const setBedAvailability = (hospitalId: string, bedType: keyof HospitalBeds, available: number, total: number) => {
-    const safeTotal = Math.max(0, Math.floor(total));
-    const safeAvailable = Math.min(safeTotal, Math.max(0, Math.floor(available)));
+    if (!Number.isInteger(total) || !Number.isInteger(available) || total < 0 || available < 0) return;
+    const currentHospital = hospitals.find((hospital) => hospital.id === hospitalId);
+    const currentBed = currentHospital?.beds[bedType];
+    if (!currentBed) return;
+    const occupied = currentBed.total - currentBed.available;
+    if (total < occupied || available > total) return;
     setHospitals((prev) => prev.map((hospital) => hospital.id !== hospitalId ? hospital : ({
       ...hospital,
-      beds: { ...hospital.beds, [bedType]: { total: safeTotal, available: safeAvailable } },
+      beds: { ...hospital.beds, [bedType]: { total, available } },
       lastUpdatedMinutesAgo: 0,
     })));
   };
@@ -403,6 +424,7 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
         if (req.id === requestId) {
           return {
             ...req,
+            ...(key === 'arrivedAtHospital' && value ? { status: 'Arrived' as const, arrivedAt: new Date().toISOString() } : {}),
             checklist: {
               ...req.checklist,
               [key]: value,
@@ -421,6 +443,7 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
           return {
             ...req,
             status: 'Completed',
+            handedOverAt: new Date().toISOString(),
             checklist: {
               arrivedAtHospital: true,
               detailsShared: true,
@@ -444,38 +467,15 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
     const pharm = pharmacies.find((p) => p.id === pharmacyId);
     if (!med || !pharm) return;
 
-    // Deduct stock
-    setMedicines((prev) =>
-      prev.map((m) => {
-        if (m.id === medicineId) {
-          const currentStock = m.stock[pharmacyId] || 0;
-          return {
-            ...m,
-            stock: {
-              ...m.stock,
-              [pharmacyId]: Math.max(0, currentStock - quantity),
-            },
-          };
-        }
-        return m;
+    void fetch('/api/pharmacy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'order', medicineId, pharmacyId, quantity, isUrgent }) })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'This medicine is no longer available.');
+        setMedicines(result.medicines);
+        setMedicineOrders(result.medicineOrders);
+        window.dispatchEvent(new Event('carelink-data-refresh'));
       })
-    );
-
-    // Create order entry
-    const newOrder: MedicineOrder = {
-      id: `ORD-${Date.now().toString().slice(-4)}`,
-      medicineId,
-      medicineName: med.name,
-      pharmacyId,
-      pharmacyName: pharm.name,
-      requestedBy: role === 'dispatcher' ? 'Ambulance Unit DL-01' : 'General Patient',
-      quantity,
-      status: 'Confirmed',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isUrgent,
-    };
-
-    setMedicineOrders((prev) => [newOrder, ...prev]);
+      .catch((error: unknown) => window.alert(error instanceof Error ? error.message : 'This medicine is no longer available.'));
   };
 
   const updateMedicineStock = (

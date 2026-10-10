@@ -1,4 +1,4 @@
-import type { UserRole } from "@/lib/roles";
+import type { UserRole } from "../auth";
 
 export interface IUser {
   _id?: string;
@@ -12,6 +12,7 @@ export interface IUser {
   phone?: string;
   vehicleNumber?: string; // For ambulance drivers
   status?: "available" | "busy" | "offline"; // Real-time operational status for drivers/staff
+  onboardingCompleted?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

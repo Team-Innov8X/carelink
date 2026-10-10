@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Pencil, UserRound, X, KeyRound } from 'lucide-react';
+import { Check, Pencil, UserRound, X, KeyRound } from '@/components/icons';
 import { authClient } from '../../lib/auth-client';
 import { useCareLink } from '../../context/CareLinkContext';
 

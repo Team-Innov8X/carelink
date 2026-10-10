@@ -1,17 +1,12 @@
 import React, { useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { PriorityLevel } from '../../types';
+import { hospitalSpecialties } from '../../data/hospitalSpecialties';
 import {
   X,
   Siren,
-  MapPin,
-  HeartPulse,
-  Activity,
-  User,
-  Clock,
-  ShieldAlert,
   Sparkles,
-} from 'lucide-react';
+} from '@/components/icons';
 
 interface NewEmergencyModalProps {
   isOpen: boolean;
@@ -73,15 +68,7 @@ export const NewEmergencyModal: React.FC<NewEmergencyModalProps> = ({ isOpen, on
     setActiveTab('recommendations');
   };
 
-  const facilityOptions = [
-    'Trauma Care',
-    'ICU',
-    'Ventilator',
-    'Cardiac',
-    'Neuro',
-    'Orthopedic',
-    'Pediatric',
-  ];
+  const facilityOptions = [...hospitalSpecialties];
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">

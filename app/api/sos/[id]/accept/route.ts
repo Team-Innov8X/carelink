@@ -1,5 +1,5 @@
 import { requireRole } from "@/lib/auth-utils";
-import { mapsUrl, sosCollections, validCoordinates } from "@/lib/sos";
+import { expireAndReofferDriverOffers, mapsUrl, sosCollections, validCoordinates } from "@/lib/sos";
 
 export const runtime = "nodejs";
 
@@ -10,20 +10,23 @@ export async function POST(request: Request, context: RouteContext<"/api/sos/[id
   try { body = await request.json(); } catch { /* no body is allowed */ }
   const { id } = await context.params;
   const { requests, drivers } = await sosCollections();
-  const driver = await drivers.findOne({ userId: auth.user.id, available: true });
+  await expireAndReofferDriverOffers();
+  await drivers.updateMany({ userId: auth.user.id, pendingOfferExpiresAt: { $lte: new Date() } }, { $unset: { pendingOfferRequestId: '', pendingOfferExpiresAt: '' } });
+  const driver = await drivers.findOne({ userId: auth.user.id, available: true, $or: [{ pendingOfferRequestId: id }, { pendingOfferRequestId: { $exists: false } }] });
   if (!driver) return Response.json({ error: "Driver is not marked available" }, { status: 409 });
   if (body.location !== undefined && !validCoordinates(body.location)) return Response.json({ error: "location must contain valid coordinates" }, { status: 400 });
   if (validCoordinates(body.location)) await drivers.updateOne({ userId: auth.user.id }, { $set: { location: body.location, locationUpdatedAt: new Date() } });
-  const reserved = await drivers.updateOne({ userId: auth.user.id, available: true }, { $set: { available: false, activeRequestId: id, updatedAt: new Date() } });
+  const reserved = await drivers.updateOne({ userId: auth.user.id, available: true, $or: [{ pendingOfferRequestId: id }, { pendingOfferRequestId: { $exists: false } }] }, { $set: { available: false, activeRequestId: id, updatedAt: new Date() }, $unset: { pendingOfferRequestId: '', pendingOfferExpiresAt: '' } });
   if (reserved.modifiedCount !== 1) return Response.json({ error: "Driver is already handling another request" }, { status: 409 });
-  const sos = await requests.findOne({ _id: id, status: "searching", driverId: null });
+  const sos = await requests.findOne({ _id: id, status: "searching", driverId: null, rejectedDriverIds: { $ne: auth.user.id }, $or: [{ assignedDriverId: auth.user.id }, { assignedDriverId: { $exists: false } }] });
   if (!sos) {
-    await drivers.updateOne({ userId: auth.user.id, activeRequestId: id }, { $set: { available: true }, $unset: { activeRequestId: "" } });
+    await drivers.updateOne({ userId: auth.user.id, activeRequestId: id }, { $set: { available: true }, $unset: { activeRequestId: "", pendingOfferRequestId: '', pendingOfferExpiresAt: '' } });
     return Response.json({ error: "SOS request is no longer available" }, { status: 409 });
   }
-  const result = await requests.updateOne({ _id: id, status: "searching", driverId: null }, { $set: { status: "accepted", driverId: auth.user.id, acceptedAt: new Date() } });
+  const acceptedAt = new Date();
+  const result = await requests.updateOne({ _id: id, status: "searching", driverId: null, rejectedDriverIds: { $ne: auth.user.id }, $or: [{ assignedDriverId: auth.user.id }, { assignedDriverId: { $exists: false } }] }, { $set: { status: "accepted", driverId: auth.user.id, acceptedAt, tripStage: 'accepted', tripTimestamps: { accepted: acceptedAt } }, $unset: { assignedDriverId: '', assignmentExpiresAt: '' } });
   if (result.modifiedCount !== 1) {
-    await drivers.updateOne({ userId: auth.user.id, activeRequestId: id }, { $set: { available: true }, $unset: { activeRequestId: "" } });
+    await drivers.updateOne({ userId: auth.user.id, activeRequestId: id }, { $set: { available: true }, $unset: { activeRequestId: "", pendingOfferRequestId: '', pendingOfferExpiresAt: '' } });
     return Response.json({ error: "SOS request is no longer available" }, { status: 409 });
   }
   await requests.updateMany(

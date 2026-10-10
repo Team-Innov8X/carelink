@@ -1,25 +1,16 @@
 import { NextResponse } from "next/server";
 import { seedDatabase } from "@/scripts/seed/seed-database";
-import { requireRole } from "@/lib/auth-utils";
-import { errorResponse } from "@/lib/api-response";
 
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV !== "development") {
-    const auth = await requireRole("admin");
-    if (!auth.authorized) return errorResponse(auth.reason, auth.reason === "UNAUTHENTICATED" ? 401 : 403);
-  }
-  let variant: "demo" | "stale-low" | "verify" = "demo";
+  const secret = process.env.SEED_SECRET;
+  if (!secret) return NextResponse.json({ success: false, error: 'Seeding is disabled.' }, { status: 404 });
+  if (request.headers.get('authorization') !== `Bearer ${secret}`) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
-    const body = await request.json() as { variant?: unknown };
-    if (body.variant !== undefined) {
-      if (body.variant !== "demo" && body.variant !== "stale-low" && body.variant !== "verify") return errorResponse("variant must be demo, stale-low, or verify", 400);
-      variant = body.variant;
-    }
-  } catch (error) {
-    if (!(error instanceof SyntaxError)) return errorResponse("Could not read seed options", 400);
-  }
-  try {
-    return NextResponse.json(await seedDatabase(variant));
+    const url = new URL(request.url);
+    const lat = Number(url.searchParams.get('lat'));
+    const lng = Number(url.searchParams.get('lng'));
+    if (url.searchParams.get('lat') === null || url.searchParams.get('lng') === null) return NextResponse.json({ success: false, error: 'Provide lat and lng to seed demo data near the presenter.' }, { status: 400 });
+    return NextResponse.json(await seedDatabase(lat, lng));
   } catch (error: unknown) {
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "Seeding failed" },

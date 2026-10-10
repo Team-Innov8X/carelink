@@ -2,14 +2,17 @@ import React, { useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { submitBedRequest } from '../../utils/hospitalRequests';
 import { StaleDataWarning } from '../common/AlertBanner';
+import { hospitalSpecialties } from '../../data/hospitalSpecialties';
+import { NearbyFacilitiesPanel } from './NearbyFacilitiesPanel';
 import {
   Search,
   RotateCcw,
   Sparkles,
-} from 'lucide-react';
+} from '@/components/icons';
 
 export const HospitalDirectory: React.FC = () => {
   const {
+    role,
     hospitals,
     emergencies,
     selectedEmergencyId,
@@ -25,9 +28,16 @@ export const HospitalDirectory: React.FC = () => {
   const [dismissedStaleIds, setDismissedStaleIds] = useState<string[]>([]);
   const [requestingHospitalId, setRequestingHospitalId] = useState<string | null>(null);
   const [requestMessage, setRequestMessage] = useState('');
+  const [bedType, setBedType] = useState<'general' | 'icu' | 'trauma' | 'ventilators'>('general');
+  const [sortBest, setSortBest] = useState(true);
+  const [confirmations, setConfirmations] = useState<Record<string, string>>({});
+  const [staleThresholdMinutes, setStaleThresholdMinutes] = useState(10);
+  if (role === 'patient') return <NearbyFacilitiesPanel />;
+  React.useEffect(() => { fetch('/api/settings', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null).then((result) => { if (result?.settings?.staleThresholdMinutes) setStaleThresholdMinutes(result.settings.staleThresholdMinutes); }).catch(() => {}); }, []);
 
   // Filter logic
   const filteredHospitals = hospitals.filter((hosp) => {
+    if (/carelink test hospital/i.test(hosp.name)) return false;
     // Search query
     if (
       searchQuery &&
@@ -43,7 +53,9 @@ export const HospitalDirectory: React.FC = () => {
     if (distanceFilter === 'under20' && hosp.distanceKm > 20) return false;
 
     // Availability filter
-    if (availabilityFilter !== 'all' && hosp.status.toLowerCase() !== availabilityFilter) {
+    const resourceAvailable = hosp.beds[bedType].available > 0;
+    const resourceStatus = resourceAvailable ? hosp.beds[bedType].available <= 2 ? 'limited' : 'available' : 'full';
+    if (availabilityFilter !== 'all' && resourceStatus !== availabilityFilter) {
       return false;
     }
 
@@ -56,6 +68,11 @@ export const HospitalDirectory: React.FC = () => {
     }
 
     return true;
+  }).sort((a, b) => {
+    if (!sortBest) return a.distanceKm - b.distanceKm;
+    const aFit = Number(a.beds[bedType].available > 0) * 100 - a.lastUpdatedMinutesAgo * 1.5 - a.etaMin;
+    const bFit = Number(b.beds[bedType].available > 0) * 100 - b.lastUpdatedMinutesAgo * 1.5 - b.etaMin;
+    return bFit - aFit;
   });
 
   const resetFilters = () => {
@@ -75,9 +92,10 @@ export const HospitalDirectory: React.FC = () => {
     setRequestingHospitalId(hospitalId);
     setRequestMessage('');
     try {
-      const result = await submitBedRequest(hospital, emergency);
+      const result = await submitBedRequest(hospital, emergency, bedType);
       const routedHospital = result.request?.hospitalName || hospital.name;
-      setRequestMessage(result.message || `${result.existing ? 'An open request is already waiting at' : 'Bed request sent to'} ${routedHospital}. Hospital staff will review it shortly.`);
+      setConfirmations((current) => ({ ...current, [hospitalId]: `Pending confirmation · ${result.request?.bedCategory?.toUpperCase() || bedType.toUpperCase()}` }));
+      setRequestMessage(`${result.existing ? 'An open request is already waiting at' : 'Bed request sent to'} ${routedHospital}. Hospital staff will review it shortly.`);
     } catch (error) {
       setRequestMessage(error instanceof Error ? error.message : 'Could not send the bed request.');
     } finally {
@@ -87,7 +105,7 @@ export const HospitalDirectory: React.FC = () => {
 
   const handleViewHospital = (hospitalId: string) => {
     setSelectedHospitalId(hospitalId);
-    setActiveTab('hospital-portal');
+    setActiveTab('hospitals');
   };
 
   return (
@@ -106,19 +124,22 @@ export const HospitalDirectory: React.FC = () => {
           className="px-4 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold text-xs rounded-xl shadow-md flex items-center gap-2 self-start sm:self-auto transition-all"
         >
           <Sparkles className="w-4 h-4" />
-          <span>Patient Smart Match (AI)</span>
+          <span>Patient Smart Match</span>
         </button>
       </div>
+
+      <NearbyFacilitiesPanel />
 
       {requestMessage && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900">{requestMessage}</p>}
 
       {/* Show warnings for any hospital with outdated data. */}
       {hospitals
-        .filter((h) => h.lastUpdatedMinutesAgo >= 10 && !dismissedStaleIds.includes(h.id))
+        .filter((h) => h.lastUpdatedMinutesAgo >= staleThresholdMinutes && !dismissedStaleIds.includes(h.id))
         .map((staleHosp) => (
           <StaleDataWarning
             key={`stale-${staleHosp.id}`}
             hospital={staleHosp}
+            staleThresholdMinutes={staleThresholdMinutes}
             onRefresh={(id) => refreshHospitalData(id)}
             onConfirm={(id) => {
               alert(`Dispatch telephone confirmation initiated with ${staleHosp.name} triage desk.`);
@@ -130,6 +151,8 @@ export const HospitalDirectory: React.FC = () => {
 
       {/* Filter and Search Bar (Mockup Screen 3) */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-wrap items-center gap-3">
+        <label className="text-xs font-semibold text-slate-600">Resource<select value={bedType} onChange={(event) => setBedType(event.target.value as typeof bedType)} className="ml-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"><option value="general">General / OPD</option><option value="icu">ICU</option><option value="trauma">Trauma</option><option value="ventilators">Ventilator</option></select></label>
+        <label className="text-xs font-semibold text-slate-600">Sort by<select value={sortBest ? 'best' : 'distance'} onChange={(event) => setSortBest(event.target.value === 'best')} className="ml-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"><option value="best">Best match</option><option value="distance">Closest</option></select></label>
         {/* Search input */}
         <div className="relative flex-1 min-w-[200px]">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -173,12 +196,7 @@ export const HospitalDirectory: React.FC = () => {
           className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 font-medium outline-none cursor-pointer hover:border-slate-300"
         >
           <option value="all">Specialization: All</option>
-          <option value="trauma">Trauma Care</option>
-          <option value="cardiac">Cardiac</option>
-          <option value="icu">ICU</option>
-          <option value="ventilator">Ventilator</option>
-          <option value="orthopedic">Orthopedic</option>
-          <option value="maternity">Maternity</option>
+          {hospitalSpecialties.map((specialty) => <option key={specialty} value={specialty}>{specialty}</option>)}
         </select>
 
         {/* Reset button */}
@@ -204,17 +222,19 @@ export const HospitalDirectory: React.FC = () => {
                 <th className="py-3.5 px-4">Trauma Beds</th>
                 <th className="py-3.5 px-4">Specialization</th>
                 <th className="py-3.5 px-4">Status</th>
+                <th className="py-3.5 px-4">Last updated</th>
                 <th className="py-3.5 px-4 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredHospitals.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">No hospital records are available.</td></tr>
+                <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No hospital records are available.</td></tr>
               )}
               {filteredHospitals.map((hosp) => {
-                const isAvail = hosp.status === 'Available';
-                const isLimited = hosp.status === 'Limited';
-                const isFull = hosp.status === 'Full';
+                const availableForResource = hosp.beds[bedType].available;
+                const isAvail = availableForResource > 2;
+                const isLimited = availableForResource > 0 && availableForResource <= 2;
+                const isFull = availableForResource <= 0;
 
                 return (
                   <tr
@@ -231,7 +251,7 @@ export const HospitalDirectory: React.FC = () => {
                           <div className="font-bold text-sm text-slate-900 group-hover:text-sky-600 transition-colors">
                             {hosp.name}
                           </div>
-                          <div className="text-[11px] text-slate-400 truncate max-w-[200px]">
+                          <div title={hosp.location.address} className="text-[11px] text-slate-400 truncate max-w-[260px]">
                             {hosp.location.address}
                           </div>
                         </div>
@@ -241,7 +261,7 @@ export const HospitalDirectory: React.FC = () => {
                     {/* Distance & ETA */}
                     <td className="py-4 px-4">
                       <div className="font-semibold text-slate-800">{hosp.distanceKm} km</div>
-                      <div className="text-[11px] text-slate-400">ETA: ~{hosp.etaMin} min</div>
+                      <div className="text-[11px] text-slate-400">ETA: ~{hosp.etaMin} min · estimate</div>
                     </td>
 
                     {/* General Beds */}
@@ -252,6 +272,7 @@ export const HospitalDirectory: React.FC = () => {
                       <span className="text-slate-400 font-mono text-xs">
                         /{hosp.beds.general.total}
                       </span>
+                      <div className="text-[10px] text-slate-500">{hosp.beds.general.reserved ?? 0} reserved</div>
                     </td>
 
                     {/* ICU Beds */}
@@ -266,6 +287,7 @@ export const HospitalDirectory: React.FC = () => {
                       <span className="text-slate-400 font-mono text-xs">
                         /{hosp.beds.icu.total}
                       </span>
+                      <div className="text-[10px] text-slate-500">{hosp.beds.icu.reserved ?? 0} reserved</div>
                     </td>
 
                     {/* Trauma Beds */}
@@ -282,6 +304,7 @@ export const HospitalDirectory: React.FC = () => {
                       <span className="text-slate-400 font-mono text-xs">
                         /{hosp.beds.trauma.total}
                       </span>
+                      <div className="text-[10px] text-slate-500">{hosp.beds.trauma.reserved ?? 0} reserved</div>
                     </td>
 
                     {/* Specialization */}
@@ -297,6 +320,8 @@ export const HospitalDirectory: React.FC = () => {
                         ))}
                       </div>
                     </td>
+
+                    <td className="py-4 px-4"><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${hosp.lastUpdatedMinutesAgo >= staleThresholdMinutes * 3 ? 'bg-rose-100 text-rose-800' : hosp.lastUpdatedMinutesAgo >= staleThresholdMinutes ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>{hosp.lastUpdatedMinutesAgo < 1 ? 'Just now' : `${hosp.lastUpdatedMinutesAgo} min ago`}</span></td>
 
                     {/* Status badge */}
                     <td className="py-4 px-4">
@@ -314,7 +339,7 @@ export const HospitalDirectory: React.FC = () => {
                             isAvail ? 'bg-emerald-600' : isLimited ? 'bg-amber-600' : 'bg-rose-600'
                           }`}
                         />
-                        {hosp.status}
+                        {isAvail ? 'Available' : isLimited ? 'Limited' : 'Full'} for {bedType.toUpperCase()}
                       </span>
                     </td>
 
@@ -339,6 +364,7 @@ export const HospitalDirectory: React.FC = () => {
                           {requestingHospitalId === hosp.id ? 'Sending…' : 'Request Bed'}
                         </button>
                       </div>
+                      {confirmations[hosp.id] && <p className="mt-1 text-[10px] font-semibold text-sky-700">{confirmations[hosp.id]}</p>}
                     </td>
                   </tr>
                 );

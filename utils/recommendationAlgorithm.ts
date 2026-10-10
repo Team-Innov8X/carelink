@@ -14,10 +14,13 @@ export interface HospitalRecommendation {
     ventilators: number;
   };
   hasCapacity: boolean;
+  stale: boolean;
+  exclusionReason?: string;
   scoreBreakdown: {
     facilityScore: number;
     etaScore: number;
-    capacityScore: number;
+    freshnessScore: number;
+    resourceScore: number;
   };
 }
 
@@ -25,10 +28,12 @@ export function calculateHospitalRecommendations(
   request: EmergencyRequest,
   hospitals: Hospital[],
   etaByHospital: Record<string, number> = {},
+  weights = { resource: 50, travel: 30, freshness: 20 },
+  staleThresholdMinutes = 10,
 ): HospitalRecommendation[] {
   const recommendations = hospitals.map((hosp) => {
     const etaMin = etaByHospital[hosp.id] ?? hosp.etaMin;
-    // 1. Facility match score (40% weight)
+    // Transparent score weights: resource match 50%, travel 30%, freshness 20%.
     const required = request.requiredFacilities;
     const matchingSpecialties = required.filter((spec) =>
       hosp.specialties.some((hs) => hs.toLowerCase().includes(spec.toLowerCase()) || spec.toLowerCase().includes(hs.toLowerCase()))
@@ -37,10 +42,8 @@ export function calculateHospitalRecommendations(
       (spec) => !matchingSpecialties.includes(spec)
     );
     const facilityRatio = required.length > 0 ? matchingSpecialties.length / required.length : 1;
-    const facilityScore = facilityRatio * 45;
 
-    // 2. ETA & Distance score (35% weight)
-    // If ETA is <= request.etaLimitMin, higher score
+    // Travel score favors hospitals within the case's target ETA.
     const targetEta = request.etaLimitMin || 20;
     let etaRatio = 1;
     if (etaMin <= targetEta) {
@@ -48,10 +51,8 @@ export function calculateHospitalRecommendations(
     } else {
       etaRatio = Math.max(0.1, 1 - (etaMin - targetEta) / 20);
     }
-    const etaScore = Math.min(35, Math.max(5, etaRatio * 35));
+    const etaScore = Math.min(30, Math.max(0, etaRatio * 30));
 
-    // 3. Bed Capacity score (20% weight)
-    let capacityScore = 0;
     let hasCapacity = false;
     
     // Check if hospital has the specialized bed needed
@@ -62,25 +63,21 @@ export function calculateHospitalRecommendations(
     const traumaAvail = hosp.beds.trauma.available;
     const icuAvail = hosp.beds.icu.available;
     const ventAvail = hosp.beds.ventilators.available;
-    const genAvail = hosp.beds.general.available;
-
-    if (needsTrauma && traumaAvail > 0) capacityScore += 8;
-    if (needsIcu && icuAvail > 0) capacityScore += 6;
-    if (needsVent && ventAvail > 0) capacityScore += 6;
-    if (genAvail > 0) capacityScore += 5;
+    const bedMatches = [!needsTrauma || traumaAvail > 0, !needsIcu || icuAvail > 0, !needsVent || ventAvail > 0].filter(Boolean).length;
+    const bedRequirements = [needsTrauma, needsIcu, needsVent].filter(Boolean).length;
 
     hasCapacity =
       (!needsTrauma || traumaAvail > 0) &&
       (!needsIcu || icuAvail > 0) &&
       (!needsVent || ventAvail > 0);
 
-    // Bonus for Available status
-    if (hosp.status === 'Available') capacityScore += 5;
-    if (hosp.status === 'Full') capacityScore = Math.max(0, capacityScore - 15);
-
-    const totalRaw = facilityScore + etaScore + capacityScore;
-    // Normalize to 50-98 range for realistic medical triage scoring
-    const matchScore = Math.min(98, Math.max(35, Math.round(totalRaw)));
+    const resourceRaw = facilityRatio * 30 + (bedRequirements ? 20 * (bedMatches / bedRequirements) : 20);
+    const resourceScore = Math.round(resourceRaw / 50 * weights.resource);
+    const weightedEtaScore = Math.round(etaScore / 30 * weights.travel);
+    const stale = hosp.lastUpdatedMinutesAgo >= staleThresholdMinutes;
+    const freshnessScore = Math.max(0, weights.freshness * (1 - Math.min(hosp.lastUpdatedMinutesAgo, staleThresholdMinutes * 6) / (staleThresholdMinutes * 6)));
+    const matchScore = Math.max(0, Math.min(100, Math.round(resourceScore + weightedEtaScore + freshnessScore)));
+    const exclusionReason = !hasCapacity ? 'No bed available for a required resource' : missingSpecialties.length ? `Missing ${missingSpecialties.join(', ')}` : undefined;
 
     return {
       hospital: hosp,
@@ -96,14 +93,17 @@ export function calculateHospitalRecommendations(
         ventilators: hosp.beds.ventilators.available,
       },
       hasCapacity,
+      stale,
+      exclusionReason,
       scoreBreakdown: {
-        facilityScore: Math.round(facilityScore),
-        etaScore: Math.round(etaScore),
-        capacityScore: Math.round(capacityScore),
+        facilityScore: Math.round(facilityRatio * weights.resource),
+        etaScore: weightedEtaScore,
+        freshnessScore: Math.round(freshnessScore),
+        resourceScore,
       },
     };
   });
 
   // Sort descending by matchScore
-  return recommendations.sort((a, b) => b.matchScore - a.matchScore);
+  return recommendations.sort((a, b) => Number(a.stale) - Number(b.stale) || Number(b.hasCapacity) - Number(a.hasCapacity) || b.matchScore - a.matchScore);
 }

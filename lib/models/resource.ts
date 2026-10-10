@@ -10,7 +10,6 @@ export type EquipmentCategory =
   | "dialysis_machine"
   | "ecg_monitor";
 export type SpecialistCategory =
-  | "emergency_physician"
   | "cardiologist"
   | "neurologist"
   | "trauma_surgeon"
@@ -30,6 +29,7 @@ export interface IResource {
   totalQuantity: number;
   availableQuantity: number;
   heldQuantity: number; // Currently reserved/held by pending requests
+  confirmedQuantity?: number;
   status: "available" | "limited" | "unavailable";
   metadata?: Record<string, unknown>;
   createdAt: Date;

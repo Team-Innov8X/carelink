@@ -1,6 +1,6 @@
 import React from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
-import { AlertOctagon, ArrowRight, X, RefreshCw, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { AlertOctagon, ArrowRight, X, RefreshCw, ShieldAlert, CheckCircle2 } from '@/components/icons';
 
 export const DoubleBookingModal: React.FC = () => {
   const {

@@ -10,13 +10,11 @@ import {
   Ambulance,
   Building2,
   HeartPulse,
-  Activity,
   User,
-  ShieldCheck,
   CheckSquare,
   Square,
   Sparkles,
-} from 'lucide-react';
+} from '@/components/icons';
 import { HandoffChecklist } from '../../types';
 
 export const PatientHandoffView: React.FC = () => {
@@ -27,6 +25,7 @@ export const PatientHandoffView: React.FC = () => {
     updateHandoffChecklist,
     completeHandoff,
     setActiveTab,
+    role,
   } = useCareLink();
 
   const currentEmergency =
@@ -39,6 +38,12 @@ export const PatientHandoffView: React.FC = () => {
   const assignedHospital = hospitals.find(
     (h) => h.id === currentEmergency.assignedHospitalId
   ) || hospitals[0];
+
+  const wasRejected = currentEmergency.status === 'Rejected';
+  if (wasRejected) {
+    const reason = currentEmergency.vitals.conditionNotes.match(/(?:Rejected|Re-routed):?\s*([^\[]+)/i)?.[1]?.trim() || 'The hospital could not accept this request.';
+    return <section className="mx-auto max-w-3xl rounded-2xl border border-rose-200 bg-white p-6 shadow-sm"><button onClick={() => setActiveTab('dashboard')} className="text-sm font-semibold text-slate-500">← Back to dashboard</button><div className="mt-5 flex items-center gap-3"><span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-800">REJECTED</span><h1 className="text-xl font-bold">Case {currentEmergency.id}</h1></div><p className="mt-4 text-sm text-slate-700"><b>Hospital response:</b> {reason}</p><p className="mt-2 text-sm text-slate-500">No destination or live route is assigned while this case is rejected.</p><button type="button" onClick={() => { setActiveTab('recommendations'); }} className="mt-5 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-bold text-white">Reroute to next-ranked hospital</button></section>;
+  }
 
   if (!assignedHospital) {
     return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">No hospital has been assigned to this patient.</div>;
@@ -63,23 +68,28 @@ export const PatientHandoffView: React.FC = () => {
 
   // Steps matching Mockup Screen 6
   const steps = [
-    { title: 'Request', completed: true },
+    { title: 'Requested', completed: true },
+      { title: 'Accepted', completed: ['Accepted', 'Assigned', 'En Route', 'Arrived', 'Handed over', 'Completed'].includes(currentEmergency.status) || Boolean(currentEmergency.acceptedAt) },
     {
       title: 'Hospital Assigned',
       completed:
         currentEmergency.status === 'Assigned' ||
         currentEmergency.status === 'En Route' ||
-        currentEmergency.status === 'Completed',
+        ['Arrived', 'Completed'].includes(currentEmergency.status),
     },
     {
       title: 'En Route',
       completed:
-        currentEmergency.status === 'En Route' || currentEmergency.status === 'Completed',
+        currentEmergency.status === 'En Route' || ['Arrived', 'Handed over', 'Completed'].includes(currentEmergency.status),
       active: currentEmergency.status === 'En Route',
     },
     {
-      title: 'Handoff',
-      completed: currentEmergency.status === 'Completed',
+      title: 'Arrived',
+      completed: currentEmergency.status === 'Arrived' || ['Handed over', 'Completed'].includes(currentEmergency.status) || currentEmergency.checklist.arrivedAtHospital,
+    },
+    {
+      title: 'Handed over',
+      completed: currentEmergency.status === 'Handed over' || currentEmergency.status === 'Completed',
     },
   ];
 
@@ -95,8 +105,8 @@ export const PatientHandoffView: React.FC = () => {
           <span>Back to Dashboard</span>
         </button>
 
-        <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+        <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 ${wasRejected ? 'bg-rose-100 text-rose-800 border-rose-200' : currentEmergency.status === 'Completed' ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-emerald-100 text-emerald-800 border-emerald-200'}`}>
+          <span className={`w-2 h-2 rounded-full ${wasRejected ? 'bg-rose-500' : 'bg-emerald-500 animate-ping'}`}></span>
           {currentEmergency.status.toUpperCase()}
         </span>
       </div>
@@ -145,6 +155,13 @@ export const PatientHandoffView: React.FC = () => {
               </div>
             );
           })}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+          <span>Requested {new Date(currentEmergency.requestedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          {currentEmergency.acceptedAt && <span>Accepted {new Date(currentEmergency.acceptedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+          {currentEmergency.enRouteAt && <span>En route {new Date(currentEmergency.enRouteAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+          {currentEmergency.arrivedAt && <span>Arrived {new Date(currentEmergency.arrivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+          {currentEmergency.handedOverAt && <span>Handed over {new Date(currentEmergency.handedOverAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
         </div>
       </div>
 
@@ -250,7 +267,7 @@ export const PatientHandoffView: React.FC = () => {
               <h3 className="font-bold text-base text-slate-900">Live Tracking</h3>
               <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
                 <Clock className="w-3.5 h-3.5" />
-                <span>ETA to Hospital: {currentEmergency.currentEtaMin || 6} min</span>
+                <span>Estimated ETA to Hospital: {currentEmergency.currentEtaMin || 6} min</span>
               </div>
             </div>
 
@@ -265,7 +282,7 @@ export const PatientHandoffView: React.FC = () => {
 
             <div className="space-y-2">
               <label
-                onClick={() => handleToggleChecklist('arrivedAtHospital')}
+              onClick={() => role !== 'patient' && handleToggleChecklist('arrivedAtHospital')}
                 className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer select-none hover:text-slate-900"
               >
                 {currentEmergency.checklist.arrivedAtHospital ? (
@@ -279,7 +296,7 @@ export const PatientHandoffView: React.FC = () => {
               </label>
 
               <label
-                onClick={() => handleToggleChecklist('detailsShared')}
+                onClick={() => role !== 'patient' && handleToggleChecklist('detailsShared')}
                 className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer select-none hover:text-slate-900"
               >
                 {currentEmergency.checklist.detailsShared ? (
@@ -293,7 +310,7 @@ export const PatientHandoffView: React.FC = () => {
               </label>
 
               <label
-                onClick={() => handleToggleChecklist('vitalsHandedOver')}
+                onClick={() => role !== 'patient' && handleToggleChecklist('vitalsHandedOver')}
                 className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer select-none hover:text-slate-900"
               >
                 {currentEmergency.checklist.vitalsHandedOver ? (
@@ -307,7 +324,7 @@ export const PatientHandoffView: React.FC = () => {
               </label>
 
               <label
-                onClick={() => handleToggleChecklist('bedConfirmed')}
+                onClick={() => role !== 'patient' && handleToggleChecklist('bedConfirmed')}
                 className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer select-none hover:text-slate-900"
               >
                 {currentEmergency.checklist.bedConfirmed ? (

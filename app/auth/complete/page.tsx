@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { routeForRole } from '@/lib/role-route';
 
-export default function AuthCompletePage() {
+function AuthCompleteForm() {
   const params = useSearchParams();
   const [error, setError] = useState('');
   useEffect(() => {
@@ -14,4 +14,8 @@ export default function AuthCompletePage() {
       .catch(e => setError(e instanceof Error ? e.message : 'Could not complete sign-in.'));
   }, [params]);
   return <main className="flex min-h-screen items-center justify-center bg-slate-100 p-6"><p role={error ? 'alert' : 'status'} className="rounded-2xl bg-white p-6 text-sm text-slate-700 shadow">{error || 'Finishing sign-in…'}</p></main>;
+}
+
+export default function AuthCompletePage() {
+  return <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-slate-100 p-6">Finishing sign-in…</main>}><AuthCompleteForm /></Suspense>;
 }

@@ -3,7 +3,7 @@
 import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Heart, Mail, Lock, Building2, MapPin, FileText, Stethoscope, Store, Ambulance, User } from 'lucide-react';
+import { Heart, Mail, Lock, Building2, MapPin, FileText, Stethoscope, Store, Ambulance, User } from '@/components/icons';
 import { authClient } from '../../lib/auth-client';
 import { routeForRole } from '../../lib/role-route';
 

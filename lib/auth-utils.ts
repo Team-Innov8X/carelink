@@ -1,26 +1,29 @@
 import { headers } from "next/headers";
-import { getAuth } from "./auth";
-import connectMongo from "./mongodb";
-import type { UserRole } from "./roles";
+import { auth, UserRole } from "./auth";
 import { getHospitalsCollection } from "./models";
 
 /**
  * Retrieve current user & session on the server side.
  */
 export async function getServerSession() {
+  const startedAt = performance.now();
   const reqHeaders = await headers();
-  await connectMongo();
-  return await getAuth().api.getSession({
+  const session = await auth.api.getSession({
     headers: reqHeaders,
   });
+  if (process.env.CARELINK_PERF_LOGS === "1") {
+    console.info(JSON.stringify({ event: "carelink.perf", name: "session_lookup", durationMs: Math.round((performance.now() - startedAt) * 100) / 100, authenticated: Boolean(session?.user) }));
+  }
+  return session;
 }
 
-/** Resolve a hospital staff account to its linked hospital, supporting legacy signups that stored only the name. */
+/** Resolve legacy hospital staff profiles that stored only the facility name. */
 export async function resolveHospitalId(user: { hospitalId?: string; hospitalName?: string }) {
   if (user.hospitalId) return user.hospitalId;
-  if (!user.hospitalName?.trim()) return null;
+  const hospitalName = user.hospitalName?.trim();
+  if (!hospitalName) return null;
   const hospital = await (await getHospitalsCollection()).findOne(
-    { name: user.hospitalName.trim() },
+    { name: hospitalName },
     { projection: { _id: 1 } },
   );
   return hospital?._id?.toString() ?? null;
@@ -33,9 +36,9 @@ export async function requireRole(
   sessionOrRoles?: Awaited<ReturnType<typeof getServerSession>> | UserRole | UserRole[],
   explicitRoles?: UserRole | UserRole[],
 ): Promise<RoleAuthorization> {
-  const hasSessionArgument = arguments.length > 1;
-  const session = hasSessionArgument ? sessionOrRoles as Awaited<ReturnType<typeof getServerSession>> : await getServerSession();
-  const allowedRoles = hasSessionArgument ? explicitRoles : sessionOrRoles as UserRole | UserRole[] | undefined;
+  const isSession = Boolean(sessionOrRoles && typeof sessionOrRoles === "object" && !Array.isArray(sessionOrRoles) && ("user" in sessionOrRoles || "session" in sessionOrRoles));
+  const session = isSession ? (sessionOrRoles as Awaited<ReturnType<typeof getServerSession>>) : await getServerSession();
+  const allowedRoles = isSession ? explicitRoles : (sessionOrRoles as UserRole | UserRole[] | undefined);
   if (!session || !session.user) {
     return { authorized: false, reason: "UNAUTHENTICATED" as const, user: null };
   }
