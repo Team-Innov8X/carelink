@@ -12,6 +12,7 @@ export async function getServerSession() {
   const reqHeaders = await headers();
   const session = await auth.api.getSession({
     headers: reqHeaders,
+    query: { disableCookieCache: true },
   });
   if (process.env.CARELINK_PERF_LOGS === "1") {
     console.info(JSON.stringify({ event: "carelink.perf", name: "session_lookup", durationMs: Math.round((performance.now() - startedAt) * 100) / 100, authenticated: Boolean(session?.user) }));

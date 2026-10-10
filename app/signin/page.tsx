@@ -26,7 +26,13 @@ export default function SignInPage() {
       const result = await authClient.signIn.email({ email: normalizedIdentifier.toLowerCase(), password });
 
       if (result.error) throw new Error(result.error.message || 'Sign in failed. Check your credentials.');
-      const signedInRole = (result.data?.user as (typeof result.data.user & { role?: string }) | undefined)?.role || 'patient';
+      const signedInUser = result.data?.user as (typeof result.data.user & { role?: string; pharmacyName?: string; pharmacyAddress?: string; pharmacyLicenseNumber?: string }) | undefined;
+      let signedInRole = signedInUser?.role || 'patient';
+      if (signedInRole === 'patient' && signedInUser?.pharmacyName && signedInUser.pharmacyAddress && signedInUser.pharmacyLicenseNumber) {
+        const roleResponse = await fetch('/api/me/role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'pharmacy' }) });
+        if (!roleResponse.ok) throw new Error('Your pharmacy account role could not be restored. Please contact support.');
+        signedInRole = 'pharmacy';
+      }
       router.replace(routeForRole(signedInRole));
       router.refresh();
     } catch (signInError) {

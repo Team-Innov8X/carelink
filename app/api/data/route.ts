@@ -78,11 +78,14 @@ export async function PUT(request: Request) {
     const collection = await stateCollection();
     const current = await collection.findOne({ _id: 'carelink' });
     if (current?.state && Array.isArray(state.hospitals)) {
-      const currentState = current.state as { medicines?: unknown[]; medicineOrders?: unknown[] };
+      const currentState = current.state as { medicines?: unknown[]; medicineOrders?: unknown[]; pharmacies?: Array<{ id: string }> };
       // Inventory and order changes use atomic pharmacy endpoints; preserve them
       // when another portal saves its local dashboard snapshot.
       state.medicines = currentState.medicines ?? state.medicines;
       state.medicineOrders = currentState.medicineOrders ?? state.medicineOrders;
+      const pharmacyById = new Map((currentState.pharmacies ?? []).map((pharmacy) => [pharmacy.id, pharmacy]));
+      for (const pharmacy of state.pharmacies as Array<{ id: string }>) if (!pharmacyById.has(pharmacy.id)) pharmacyById.set(pharmacy.id, pharmacy);
+      state.pharmacies = Array.from(pharmacyById.values());
       const currentHospitals = (current.state as { hospitals?: Array<Record<string, unknown>> }).hospitals ?? [];
       const byId = new Map(currentHospitals.map((hospital) => [hospital.id, hospital]));
       state.hospitals = state.hospitals.map((hospital: Record<string, unknown>) => {
