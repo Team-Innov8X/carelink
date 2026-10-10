@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { DelayedSkeleton, RequestListSkeleton } from '../common/Skeletons';
-import { fetchPatientSosRequests } from '../../lib/client-sos';
 import {
   Siren,
   Search,
@@ -52,7 +51,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
   const [requests, setRequests] = useState<PatientRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('active');
   const [searchQuery, setSearchQuery] = useState('');
   const requestInFlight = useRef(false);
   const [cancellingId, setCancellingId] = useState('');
@@ -122,7 +121,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
   });
 
   const activeCount = requests.filter(
-    (r) => !['completed', 'cancelled', 'rejected'].includes(r.status.toLowerCase())
+    (r) => !['completed', 'cancelled', 'rejected', 'no_driver_found', 'expired'].includes(r.status.toLowerCase())
   ).length;
 
   return (

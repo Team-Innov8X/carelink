@@ -1,8 +1,8 @@
 import { requireRole } from "@/lib/auth-utils";
-import { sosCollections } from "@/lib/sos";
+import { advanceDispatch, sosCollections } from "@/lib/sos";
 import { getUsersCollection } from "@/lib/models/db";
 import { distanceKm, validCoordinates, workflowCollections } from "@/lib/sos";
-import { EMERGENCY_FALLBACK_TEXT, POLL_SECONDS, STALE_LOCATION_SECONDS } from "@/lib/dispatch/constants";
+import { EMERGENCY_FALLBACK_TEXT, POLL_SECONDS, SOS_SEARCH_RADIUS_KM, STALE_LOCATION_SECONDS } from "@/lib/dispatch/constants";
 import clientPromise from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 
@@ -12,11 +12,24 @@ export async function GET() {
   const auth = await requireRole("patient");
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
   const { requests, drivers } = await sosCollections();
+  const pendingSos = await requests.findOne({ patientId: auth.user.id, status: "searching", type: { $ne: "normal" } }, { sort: { createdAt: -1 }, projection: { _id: 1 } });
+  if (pendingSos) await advanceDispatch(pendingSos._id);
   const item = await requests.findOne({
     patientId: auth.user.id,
     status: { $in: ["searching", "accepted", "no_driver_found", "cancelled", "completed", "expired"] },
   }, { sort: { createdAt: -1 } });
   if (!item) return Response.json({ request: null, serverTime: new Date().toISOString(), pollSeconds: POLL_SECONDS, staleLocationSeconds: STALE_LOCATION_SECONDS });
+  const nearbyAvailableDriverCount = item.status === "searching" && validCoordinates(item.location)
+    ? (await drivers.find({
+        available: true,
+        activeRequestId: { $exists: false },
+        currentTripId: { $in: [null] },
+        location: { $exists: true },
+        locationUpdatedAt: { $gte: new Date(Date.now() - STALE_LOCATION_SECONDS * 1000) },
+      }).project({ location: 1 }).toArray()).filter((driver) =>
+        validCoordinates(driver.location) && distanceKm(item.location, driver.location) <= SOS_SEARCH_RADIUS_KM,
+      ).length
+    : 0;
   const accepted = item.status === "accepted" && Boolean(item.driverId);
   const assignedDriverId = accepted ? item.driverId : undefined;
   const driver = assignedDriverId
@@ -61,6 +74,7 @@ export async function GET() {
     completedAt: item.completedAt ?? null,
     cancelledAt: (item as typeof item & { cancelledAt?: Date }).cancelledAt ?? null,
     fallbackInstruction: item.status === "no_driver_found" ? EMERGENCY_FALLBACK_TEXT : null,
+    nearbyAvailableDriverCount,
     estimatedEtaMinutes: accepted ? etaMinutes : null,
     distanceKm: accepted && driverLocation ? Number(distanceKm(driverLocation, item.location).toFixed(1)) : null,
     serverTime: new Date().toISOString(),
