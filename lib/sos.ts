@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Document } from "mongodb";
 import clientPromise from "./mongodb.ts";
+import { ensureNotificationRecipientIndex } from "./models/db.ts";
 
 export type Coordinates = { latitude: number; longitude: number };
 
@@ -244,7 +245,7 @@ export async function workflowCollections() {
   const ttlHours = Math.max(1, Number(process.env.NOTIFICATION_TTL_HOURS) || 24);
   workflowIndexesPromise ??= Promise.all([
     notifications.createIndex({ createdAt: 1 }, { name: 'notifications_ttl', expireAfterSeconds: ttlHours * 3600 }).catch(() => db.command({ collMod: 'notifications', index: { name: 'notifications_ttl', expireAfterSeconds: ttlHours * 3600 } })),
-    notifications.createIndex({ recipientId: 1, createdAt: -1 }, { name: 'notifications_recipient_created' }),
+    ensureNotificationRecipientIndex(notifications),
   ]).then(() => undefined).catch(error => { workflowIndexesPromise = undefined; throw error; });
   await workflowIndexesPromise;
   const hospitalRequests = await getHospitalRequestsCollection();

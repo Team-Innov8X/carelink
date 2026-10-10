@@ -27,6 +27,14 @@ export const rankRequestSchema = z.object({
   maxTravelMinutes: z.number().finite().min(1).max(240).optional(),
   bedCategory: z.string().trim().min(1).max(100).optional(),
   priority: z.enum(["balanced", "resources", "travel", "freshness"]).optional(),
+  urgency: z.enum(["routine", "urgent", "emergency"]).optional(),
+  // Opt-in, isolated fixture fallback used only by the Smart Match chat UI.
+  demoFallback: z.boolean().optional().default(false),
+  medicine: z.object({
+    name: z.string().trim().min(1).max(160),
+    formulation: z.string().trim().min(1).max(120).optional(),
+    quantity: z.number().int().min(1).max(1000).default(1),
+  }).optional(),
 });
 
 export const createHoldSchema = z.object({

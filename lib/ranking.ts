@@ -88,9 +88,11 @@ export function rankHospitals(
 /** Uses Google Routes when configured; falls back to deterministic straight-line ETA estimates. */
 export async function addTravelTimes(
   hospitals: RankingHospital[], origin: RankingInput["ambulanceLocation"],
+  options: { allowEstimatedFallback?: boolean } = {},
 ): Promise<RankingHospital[]> {
   const key = process.env.GOOGLE_MAPS_API_KEY;
-  if (!key || hospitals.length === 0) return hospitals.map((hospital) => ({ ...hospital, travelTimeMinutes: estimateMinutes(origin, hospital.location.coordinates) }));
+  const fallback = (hospital: RankingHospital) => options.allowEstimatedFallback === false ? undefined : estimateMinutes(origin, hospital.location.coordinates);
+  if (!key || hospitals.length === 0) return hospitals.map((hospital) => ({ ...hospital, travelTimeMinutes: fallback(hospital) }));
   try {
     const response = await fetch("https://routes.googleapis.com/directions/v2:computeRouteMatrix", {
       method: "POST", headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key, "X-Goog-FieldMask": "originIndex,destinationIndex,duration,condition" },
@@ -107,9 +109,9 @@ export async function addTravelTimes(
     if (!response.ok) throw new Error("Routes API request failed");
     const rows = await response.json() as Array<{ destinationIndex: number; duration?: string; condition?: string }>;
     const times = new Map(rows.map((row) => [row.destinationIndex, row.condition === "ROUTE_EXISTS" && row.duration ? Number.parseFloat(row.duration) / 60 : undefined]));
-    return hospitals.map((hospital, index) => ({ ...hospital, travelTimeMinutes: times.get(index) ?? estimateMinutes(origin, hospital.location.coordinates) }));
+    return hospitals.map((hospital, index) => ({ ...hospital, travelTimeMinutes: times.get(index) ?? fallback(hospital) }));
   } catch {
-    return hospitals.map((hospital) => ({ ...hospital, travelTimeMinutes: estimateMinutes(origin, hospital.location.coordinates) }));
+    return hospitals.map((hospital) => ({ ...hospital, travelTimeMinutes: fallback(hospital) }));
   }
 }
 

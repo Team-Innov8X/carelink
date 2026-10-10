@@ -1,4 +1,4 @@
-import { Collection } from "mongodb";
+import { Collection, type Document } from "mongodb";
 import clientPromise from "../mongodb.ts";
 import type { IHospital } from "./hospital.ts";
 import type { IResource } from "./resource.ts";
@@ -36,6 +36,31 @@ export async function getUsersCollection(): Promise<Collection<IUser>> {
   return db.collection<IUser>("user"); // Uses Better Auth 'user' collection
 }
 
+let notificationRecipientIndexPromise: Promise<void> | null = null;
+
+/** Reconcile the notification recipient index to one stable name. Older code
+ * created the same key pattern without a name, which conflicts with the named
+ * index created by workflowCollections. */
+export function ensureNotificationRecipientIndex<TSchema extends Document>(collection: Collection<TSchema>): Promise<void> {
+  if (notificationRecipientIndexPromise) return notificationRecipientIndexPromise;
+  notificationRecipientIndexPromise = (async () => {
+    const key = { recipientId: 1, createdAt: -1 };
+    const indexes = await collection.listIndexes().toArray();
+    const existing = indexes.find((index) => {
+      const entries = Object.entries(index.key as Record<string, number>);
+      return entries.length === 2 && entries[0][0] === "recipientId" && entries[0][1] === 1
+        && entries[1][0] === "createdAt" && entries[1][1] === -1;
+    });
+    if (existing?.name === "notifications_recipient_created") return;
+    if (existing?.name) await collection.dropIndex(existing.name);
+    await collection.createIndex(key, { name: "notifications_recipient_created" });
+  })().catch((error: unknown) => {
+    notificationRecipientIndexPromise = null;
+    throw error;
+  });
+  return notificationRecipientIndexPromise;
+}
+
 let indexesPromise: Promise<void> | null = null;
 
 /**
@@ -69,7 +94,7 @@ export function initializeIndexes(): Promise<void> {
     } else {
       await notifications.createIndex({ createdAt: 1 }, { expireAfterSeconds: notificationTtlHours * 3600, name: "notifications_ttl" });
     }
-    await notifications.createIndex({ recipientId: 1, createdAt: -1 });
+    await ensureNotificationRecipientIndex(notifications);
     await notifications.createIndex({ userId: 1, createdAt: -1 });
 
     const holds = await getHoldsCollection();

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import type { Role } from './types';
 import { CareLinkProvider, useCareLink } from './context/CareLinkContext';
 import { Navbar } from './components/common/Navbar';
@@ -19,7 +19,6 @@ import { MobileNav } from './components/mobile/MobileNav';
 import { PatientSOSStatus } from './components/sos/PatientSOSStatus';
 import { LoaderCircle, Siren, CheckCircle2, X } from './components/icons';
 import { PatientEmergencyRequestsView } from './components/patient/PatientEmergencyRequestsView';
-import { PatientSmartMatch } from './components/patient/PatientSmartMatch';
 import { PatientHospitalBooking } from './components/patient/PatientHospitalBooking';
 import { RoutineDriverBookingView } from './components/patient/RoutineDriverBookingView';
 import { TriageChatView } from './components/patient/TriageChatView';
@@ -127,7 +126,7 @@ const MainAppContent: React.FC = () => {
           {activeTab === 'hospitals' && (role === 'patient' ? <PatientHospitalBooking /> : <HospitalDirectory />)}
           {activeTab === 'hospital-view' && <HospitalDetailsView />}
           {activeTab === 'hospital-portal' && <HospitalStaffView />}
-          {activeTab === 'recommendations' && (role === 'patient' ? <PatientSmartMatch /> : <SmartRecommendations />)}
+          {activeTab === 'recommendations' && <SmartRecommendations />}
           {activeTab === 'handoff' && <PatientHandoffView />}
           {activeTab === 'pharmacy' && <MedicineSearch mode="patient" />}
           {activeTab === 'reports' && <ReportsView />}
