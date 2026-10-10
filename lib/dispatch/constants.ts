@@ -15,6 +15,7 @@ export const SOS_OFFER_BATCH_SIZE = readNumber("SOS_OFFER_BATCH_SIZE", 3, 1, "DI
 export const SOS_MAX_ROUNDS = readNumber("SOS_MAX_ROUNDS", 3, 1, "DISPATCH_MAX_ROUNDS");
 export const SOS_SEARCH_RADIUS_KM = readNumber("SOS_SEARCH_RADIUS_KM", 10, 1, "DISPATCH_RADIUS_KM");
 export const NORMAL_REQUEST_EXPIRY_MIN = readNumber("NORMAL_REQUEST_EXPIRY_MIN", 15, 1);
+export const SOS_UNDO_SECONDS = readNumber("SOS_UNDO_SECONDS", 5, 1);
 export const POLL_SECONDS = readNumber("POLL_SECONDS", 3, 1);
 export const LOCATION_PING_SECONDS = readNumber("LOCATION_PING_SECONDS", 5, 1);
 export const STALE_LOCATION_SECONDS = readNumber("STALE_LOCATION_SECONDS", 30, 1);

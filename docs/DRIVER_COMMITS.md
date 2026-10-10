@@ -27,6 +27,7 @@
 | 1 — data model and state machine | Complete; pure types, shared config, transition rules, invariants, and tests; no UI/API behavior changed | `drv: add dispatch state machine and invariants` |
 | 2 — dispatch and APIs | Complete; SOS idempotency, round dispatch, normal requests, guarded accept/decline/cancel, and API aliases | `drv: implement dispatch APIs and atomic acceptance` |
 | 3 — driver dashboard | Complete; four driver tabs, live normal requests, server-clock SOS alerts, active trip/map view, and task history | `drv: complete driver dashboard workflow` |
+| 4 — patient side | Complete; one-tap SOS with short undo, address fallback, current-request timeline/map, and normal-request restoration | `drv: complete patient request workflow` |
 
 ## Phase 1 implementation notes
 
@@ -55,6 +56,14 @@
 - SOS offer alerts use server time and the persisted offer expiration, display a countdown ring, and provide Accept/Decline actions from any tab. Expired offers are recorded through the existing offer transition log and surfaced as missed history entries. Local storage suppresses duplicate popups across same-user tabs; atomic server acceptance remains the final double-accept guard.
 - Accepted trips switch to Current Trip, where the existing trip controls are paired with the live trip map, patient call link, ETA, and cancellation action. Completed and cancelled assigned trips and expired SOS offers are shown in Task History.
 - Verification: `npx eslint` on the four changed dashboard/API files, `npx tsc --noEmit`, `npx vitest run` (38 tests), `npm run build`, and `git diff --check` pass. Live MongoDB and signed-in visual browser checks were not available in this session.
+
+## Phase 4 implementation notes
+
+- Removed the SOS confirmation step. A successfully created SOS now offers the configured five-second undo window; server idempotency still prevents duplicate records. The undo action cancels through the existing patient-owned cancellation route.
+- If device GPS is blocked or unavailable, the SOS toast offers a pickup address field. A patient-authenticated route geocodes the address with the existing OpenStreetMap/Nominatim ecosystem and submits coordinates to the existing SOS dispatch path. Routine requests now geocode manually edited pickup addresses when GPS coordinates are absent.
+- Expanded the dashboard's existing request panel into the current request timeline with driver contact/vehicle, ETA, stale location age, cancellation, destination, and live map after assignment. `GET /api/patient/active-request` now includes the latest active or terminal status and the configured fallback instruction for `no_driver_found`.
+- Normal transport booking returns patients to the dashboard current-request panel after submit; assigned normal requests can also be cancelled from the history view. Removed the hardcoded emergency phone number and use the server-configured fallback text.
+- Verification: targeted ESLint, `npx tsc --noEmit`, `npx vitest run` (38 tests), `npm run build`, and `git diff --check` pass. Live geocoding and authenticated visual checks need a running app/session and were not available here.
 
 ## Functional gaps found for later phases
 

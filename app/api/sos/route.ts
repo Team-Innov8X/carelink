@@ -1,7 +1,7 @@
 import { requireRole } from "@/lib/auth-utils";
 import { advanceDispatch, createRequestId, ensureHospitalRequestForSos, getHospitalRequestsCollection, sosCollections, validCoordinates } from "@/lib/sos";
 import { getUsersCollection } from "@/lib/models/db";
-import { EMERGENCY_FALLBACK_TEXT } from "@/lib/dispatch/constants";
+import { EMERGENCY_FALLBACK_TEXT, SOS_UNDO_SECONDS } from "@/lib/dispatch/constants";
 
 export const runtime = "nodejs";
 
@@ -69,10 +69,11 @@ export async function POST(request: Request) {
   const auth = await requireRole("patient");
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
 
-  let body: { location?: unknown; incidentType?: unknown; requiredEquipment?: unknown };
+  let body: { location?: unknown; incidentType?: unknown; requiredEquipment?: unknown; pickupAddress?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "Invalid JSON body" }, { status: 400 }); }
   const patientLocation = body.location;
   if (!validCoordinates(patientLocation)) return Response.json({ error: "location must include valid latitude and longitude" }, { status: 400 });
+  if (body.pickupAddress !== undefined && (typeof body.pickupAddress !== "string" || body.pickupAddress.trim().length > 240)) return Response.json({ error: "pickupAddress must be a string of at most 240 characters" }, { status: 400 });
   const incidentType = body.incidentType === undefined ? "Emergency assistance requested" : body.incidentType;
   if (typeof incidentType !== "string" || incidentType.trim().length < 2 || incidentType.length > 120) {
     return Response.json({ error: "incidentType must be between 2 and 120 characters" }, { status: 400 });
@@ -87,7 +88,7 @@ export async function POST(request: Request) {
   const retried = await requests.findOne({ patientId: auth.user.id, idempotencyKey });
   if (retried) {
     const hospitalRequest = await ensureHospitalRequestForSos(retried).catch(() => null);
-    return Response.json({ request: { id: retried._id, status: retried.status, createdAt: retried.createdAt }, hospitalRequestId: hospitalRequest?._id ?? null, message: "This SOS was already created.", existing: true });
+    return Response.json({ request: { id: retried._id, status: retried.status, createdAt: retried.createdAt }, hospitalRequestId: hospitalRequest?._id ?? null, message: "This SOS was already created.", undoWindowSeconds: SOS_UNDO_SECONDS, existing: true });
   }
   const existing = await requests.findOne({ patientId: auth.user.id, type: { $ne: "normal" }, status: { $in: ["searching", "accepted"] } });
   if (existing) {
@@ -96,15 +97,17 @@ export async function POST(request: Request) {
       request: { id: existing._id, status: existing.status, createdAt: existing.createdAt },
       hospitalRequestId: hospitalRequest?._id ?? null,
       message: "You already have an active emergency request",
+      undoWindowSeconds: SOS_UNDO_SECONDS,
       existing: true,
     });
   }
   const profile = auth.user as typeof auth.user & { email?: string; phone?: string };
   const createdAt = new Date();
+  const pickupLocation = { ...patientLocation, ...(typeof body.pickupAddress === "string" && body.pickupAddress.trim() ? { address: body.pickupAddress.trim() } : {}) };
   const sos = {
     _id: createRequestId(), patientId: auth.user.id, patientName: auth.user.name,
     patientEmail: profile.email, patientPhone: profile.phone,
-    location: patientLocation, incidentType: incidentType.trim(),
+    location: pickupLocation, incidentType: incidentType.trim(),
     requiredEquipment: [...new Set(((body.requiredEquipment ?? []) as string[]).map((item) => item.trim()).filter(Boolean))],
     type: "sos" as const, requestType: "emergency" as const, idempotencyKey,
     status: "searching" as const, driverId: null, dispatchRound: 0, createdAt,
@@ -127,6 +130,7 @@ export async function POST(request: Request) {
 
   return Response.json({
     request: { id: sos._id, status: sos.status, createdAt: sos.createdAt },
+    undoWindowSeconds: SOS_UNDO_SECONDS,
     hospitalRequestId,
     message: hospitalRequestId
       ? "SOS sent to ambulance drivers and the nearest hospital."

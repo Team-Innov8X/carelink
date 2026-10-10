@@ -7,16 +7,12 @@ import {
   MapPin,
   Clock,
   User,
-  Phone,
   FileText,
   Accessibility,
   CheckCircle2,
   AlertCircle,
   LocateFixed,
-  Calendar,
-  Building,
   ArrowRight,
-  ShieldAlert,
 } from '../icons';
 
 export const RoutineDriverBookingView: React.FC = () => {
@@ -79,15 +75,14 @@ export const RoutineDriverBookingView: React.FC = () => {
       setFeedback({ type: 'error', message: 'Please provide a pickup address or use GPS location.' });
       return;
     }
-    if (!coordinates) {
-      setFeedback({ type: 'error', message: 'Get your current location before booking so the driver receives accurate pickup coordinates.' });
+    if (!coordinates && pickupAddress.trim().length < 5) {
+      setFeedback({ type: 'error', message: 'Enter a pickup address or use GPS so the driver can find the pickup.' });
       return;
     }
 
     setIsSubmitting(true);
     setFeedback(null);
 
-    const targetCoords = coordinates;
     const preferredTimeDisplay = timingType === 'asap'
       ? 'Immediate (Next Available Driver)'
       : scheduledDateTime || 'Scheduled';
@@ -101,6 +96,15 @@ export const RoutineDriverBookingView: React.FC = () => {
     ].filter(Boolean).join(' | ');
 
     try {
+      let targetCoords = coordinates;
+      if (!targetCoords) {
+        const lookup = await fetch('/api/places/geocode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address: pickupAddress.trim() }) });
+        const geocoded = await lookup.json();
+        if (!lookup.ok) throw new Error(geocoded.error || 'Could not locate the pickup address.');
+        targetCoords = geocoded.location as { latitude: number; longitude: number };
+        setCoordinates(targetCoords);
+        if (geocoded.displayName) setPickupAddress(geocoded.displayName);
+      }
       idempotencyKey.current ??= window.crypto.randomUUID();
       const response = await fetch('/api/requests', {
         method: 'POST',
@@ -127,6 +131,7 @@ export const RoutineDriverBookingView: React.FC = () => {
       });
 
       window.dispatchEvent(new Event('carelink-sos-updated'));
+      setActiveTab('dashboard');
     } catch (error) {
       setFeedback({
         type: 'error',
@@ -346,7 +351,7 @@ export const RoutineDriverBookingView: React.FC = () => {
                   required
                   placeholder="Street, Landmark, Apartment / Flat number"
                   value={pickupAddress}
-                  onChange={(e) => setPickupAddress(e.target.value)}
+                  onChange={(e) => { setPickupAddress(e.target.value); setCoordinates(null); }}
                   className="w-full text-xs px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200"
                 />
               </div>
