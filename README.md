@@ -61,6 +61,12 @@ The MongoDB `drivers` collection stores `{ userId, available, location }`. Add h
 
 ## Learn More
 
+### Hospital recommendation simulation
+
+`/hospital-demo` presents the H1–H7 synthetic workflow scenarios and frozen acceptance-model metrics. Recommendation configuration lives in `data/conditions.json`, `data/hospital-profiles.json`, and `lib/recommend/constants.ts`. Condition mappings, capabilities, acceptance behavior and case volumes are placeholders or synthetic data; they have not been clinically validated. The model is decision support only, the driver can override an option subject to hard feasibility rules, and the greedy ranking is not globally optimal. It must not be described as a survival prediction or guarantee.
+
+To inspect the artifacts, run `npm run rec-gen-data`, `npm run rec-train`, and `npm run rec-replay` only when preparing a fresh experiment branch. The frozen holdout scripts are one-shot and create lock files; do not rerun them or regenerate data after reviewing test results. See [the recommendation evidence package](evidence/rec/README.md) for the exact commands, assumptions, limitations and results.
+
 ## Useful commands
 
 - `npm run dev` — development server

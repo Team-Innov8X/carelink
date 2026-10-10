@@ -25,6 +25,8 @@
 | 3 | `3aecfc4f4977d2c32cd56fab460e38776fa39f8a` | Feasibility-first ranking, model fallbacks, override validation and seeded engine checks |
 | 4 | `1f89c03b793347eecf946c9ee9f604b6d56f9d27` | Recommendation, response, timeout and patient/driver APIs connected to holds |
 | 5 | `e765a9ef3693ec1f906e5ba51f960264df1a91ad` | Driver, patient and hospital recommendation workflow views |
+| 6 | `d7a76a67597cbe58875f8b482b380959190a3e5d` | One-shot 300-episode test replay and H1–H7 demo scenarios |
+| 7 | pending | Evidence package, completed UI audit and owner-input report |
 
 The final implementation and evidence package is committed after phases 6–7. The working branch is `rec-feature`; the product spec supplied by the user is intentionally untracked and excluded from commits.
 
