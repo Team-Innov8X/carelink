@@ -19,92 +19,31 @@ import { MobileNav } from './components/mobile/MobileNav';
 import { PatientSOSStatus } from './components/sos/PatientSOSStatus';
 import { LoaderCircle, Siren, CheckCircle2, X } from './components/icons';
 import { PatientEmergencyRequestsView } from './components/patient/PatientEmergencyRequestsView';
+import { PatientSmartMatch } from './components/patient/PatientSmartMatch';
+import { PatientHospitalBooking } from './components/patient/PatientHospitalBooking';
 import { RoutineDriverBookingView } from './components/patient/RoutineDriverBookingView';
 import { TriageChatView } from './components/patient/TriageChatView';
 import { HospitalStaffView } from './components/hospitalStaff/HospitalStaffView';
 
-const SOS_NOTICE_TIMEOUT_MS = 30_000;
-
 const MainAppContent: React.FC = () => {
-  const { activeTab, role } = useCareLink();
+  const { activeTab, role, setActiveTab } = useCareLink();
   const [isNewEmergencyOpen, setIsNewEmergencyOpen] = useState(false);
   const [sosSubmitting, setSosSubmitting] = useState(false);
   const sosSubmittingRef = useRef(false);
   const [sosMessage, setSosMessage] = useState('');
-  const [sosRequestId, setSosRequestId] = useState('');
-  const [sosCancelPending, setSosCancelPending] = useState(false);
-  const [sosNoticePaused, setSosNoticePaused] = useState(false);
-  const [sosNoticeVersion, setSosNoticeVersion] = useState(0);
+  const [sosRequestId, setSosRequestId] = useState<string | null>(null);
   const sosToastTimer = useRef<number | null>(null);
-  const sosNoticeRemaining = useRef(SOS_NOTICE_TIMEOUT_MS);
-  const sosNoticeDeadline = useRef(0);
-  const sosNoticePauseReasons = useRef(new Set<'pointer' | 'focus'>());
-  useEffect(() => () => { if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); }, []);
 
-  useEffect(() => {
-    if (!sosMessage || sosNoticePaused) return;
-    sosNoticeDeadline.current = Date.now() + sosNoticeRemaining.current;
-    sosToastTimer.current = window.setTimeout(() => {
-      sosToastTimer.current = null;
-      sosNoticeRemaining.current = 0;
-      sosNoticePauseReasons.current.clear();
-      setSosNoticePaused(false);
-      setSosMessage('');
-      setSosRequestId('');
-    }, sosNoticeRemaining.current);
-    return () => {
-      if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current);
-      sosToastTimer.current = null;
-    };
-  }, [sosMessage, sosNoticePaused, sosNoticeVersion]);
-
-  const showSosToast = (message: string, requestId?: string | null) => {
-    if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current);
-    sosToastTimer.current = null;
-    sosNoticeRemaining.current = SOS_NOTICE_TIMEOUT_MS;
-    setSosNoticeVersion((version) => version + 1);
-    if (requestId !== undefined) setSosRequestId(requestId ?? '');
+  const showSosToast = (message: string, requestId: string | null = null) => {
     setSosMessage(message);
-  };
-
-  const pauseSosNotice = (reason: 'pointer' | 'focus') => {
-    if (sosNoticePauseReasons.current.has(reason)) return;
-    if (sosNoticePauseReasons.current.size === 0 && sosNoticeDeadline.current) {
-      sosNoticeRemaining.current = Math.max(0, sosNoticeDeadline.current - Date.now());
-    }
-    sosNoticePauseReasons.current.add(reason);
-    setSosNoticePaused(true);
-  };
-
-  const resumeSosNotice = (reason: 'pointer' | 'focus') => {
-    sosNoticePauseReasons.current.delete(reason);
-    setSosNoticePaused(sosNoticePauseReasons.current.size > 0);
-  };
-
-  const dismissSosNotice = () => {
+    setSosRequestId(requestId);
     if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current);
-    sosToastTimer.current = null;
-    sosNoticeRemaining.current = 0;
-    sosNoticePauseReasons.current.clear();
-    setSosNoticePaused(false);
-    setSosRequestId('');
-    setSosMessage('');
-  };
-
-  const cancelSosRequest = async () => {
-    if (!sosRequestId || sosCancelPending) return;
-    if (!window.confirm('Cancel this emergency SOS? Dispatch will stop if the patient has not been picked up yet.')) return;
-    setSosCancelPending(true);
-    try {
-      const response = await fetch(`/api/sos/${encodeURIComponent(sosRequestId)}/cancel`, { method: 'POST' });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'This SOS can no longer be cancelled.');
-      window.dispatchEvent(new Event('carelink-sos-updated'));
-      showSosToast('SOS cancelled. It remains in your Emergency Request history.', null);
-    } catch (cause) {
-      showSosToast(cause instanceof Error ? cause.message : 'Could not cancel this SOS.');
-    } finally {
-      setSosCancelPending(false);
+    if (message) {
+      sosToastTimer.current = window.setTimeout(() => {
+        setSosMessage('');
+        setSosRequestId(null);
+        sosToastTimer.current = null;
+      }, 6500);
     }
   };
 
@@ -185,10 +124,10 @@ const MainAppContent: React.FC = () => {
           {activeTab === 'triage' && <TriageChatView />}
           {activeTab === 'driver-request' && <RoutineDriverBookingView />}
           {activeTab === 'notifications' && <NotificationCenter />}
-          {activeTab === 'hospitals' && <HospitalDirectory />}
+          {activeTab === 'hospitals' && (role === 'patient' ? <PatientHospitalBooking /> : <HospitalDirectory />)}
           {activeTab === 'hospital-view' && <HospitalDetailsView />}
           {activeTab === 'hospital-portal' && <HospitalStaffView />}
-          {activeTab === 'recommendations' && <SmartRecommendations />}
+          {activeTab === 'recommendations' && (role === 'patient' ? <PatientSmartMatch /> : <SmartRecommendations />)}
           {activeTab === 'handoff' && <PatientHandoffView />}
           {activeTab === 'pharmacy' && <MedicineSearch mode="patient" />}
           {activeTab === 'reports' && <ReportsView />}
@@ -214,10 +153,6 @@ const MainAppContent: React.FC = () => {
         <aside
           role="status"
           aria-live="polite"
-          onMouseEnter={() => pauseSosNotice('pointer')}
-          onMouseLeave={() => resumeSosNotice('pointer')}
-          onFocus={() => pauseSosNotice('focus')}
-          onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) resumeSosNotice('focus'); }}
           className="fixed bottom-[calc(9rem+env(safe-area-inset-bottom))] right-4 z-50 max-w-[calc(100vw-2rem)] sm:max-w-md rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl md:bottom-20 md:right-6 animate-in fade-in slide-in-from-bottom-2 duration-200"
         >
           <div className="flex items-start justify-between gap-3">
@@ -228,18 +163,17 @@ const MainAppContent: React.FC = () => {
               <div>
                 <p className="font-bold text-slate-900 text-sm">Emergency request status</p>
                 <p className="mt-1 text-xs text-slate-600 leading-relaxed">{sosMessage}</p>
-                <p className="mt-2 text-[11px] font-medium text-slate-500">Track this request in Requests · Automatically dismisses after 30 seconds</p>
-                <div aria-hidden="true" className="mt-2 h-1 overflow-hidden rounded bg-slate-200"><span key={sosNoticeVersion} style={{ animationDuration: `${SOS_NOTICE_TIMEOUT_MS}ms` }} className="block h-full w-full origin-left rounded bg-sky-700 animate-sos-timeout" /></div>
-                {sosRequestId && <button type="button" disabled={sosCancelPending} onClick={() => void cancelSosRequest()} className="mt-3 min-h-10 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 hover:bg-rose-100 disabled:opacity-60">{sosCancelPending ? 'Cancelling…' : 'Cancel SOS'}</button>}
+                <p className="mt-2 text-[11px] font-medium text-slate-400">Track live driver status under &quot;Your Emergency Requests&quot; · Closes in 6.5s</p>
+                {sosRequestId && <button type="button" onClick={() => { setActiveTab('requests'); if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); setSosMessage(''); setSosRequestId(null); }} className="mt-2 text-xs font-bold text-sky-800 underline underline-offset-2">View emergency request details</button>}
               </div>
             </div>
-            <button type="button" onClick={dismissSosNotice} aria-label="Dismiss SOS message" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
+            <button type="button" onClick={() => { if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); setSosMessage(''); setSosRequestId(null); }} aria-label="Dismiss emergency notification" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
               <X className="h-4 w-4" />
             </button>
           </div>
         </aside>
       )}
-      {role === 'patient' && <PatientSOSStatus />}
+      {role === 'patient' && <PatientSOSStatus transientNoticeVisible={Boolean(sosMessage)} />}
 
       {/* Modals */}
       <NewEmergencyModal

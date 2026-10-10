@@ -8,10 +8,14 @@ export type SosRequest = {
   _id: string;
   patientId: string;
   patientName: string;
+  passengerName?: string;
   patientEmail?: string;
   patientPhone?: string;
   location: Coordinates;
   incidentType: string;
+  requestType?: 'emergency' | 'routine';
+  preferredTime?: string;
+  notes?: string;
   requiredEquipment: string[];
   status: "searching" | "accepted" | "completed" | "cancelled" | "no_driver_found";
   driverId: string | null;
@@ -28,7 +32,6 @@ export type SosRequest = {
   assignmentExpiresAt?: Date;
   assignmentOfferedAt?: Date;
   completedAt?: Date;
-  requestType?: "emergency" | "routine";
   dispatchRound?: number;
   noDriverFoundAt?: Date;
 };

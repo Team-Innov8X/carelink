@@ -7,16 +7,12 @@ import {
   MapPin,
   Clock,
   User,
-  Phone,
   FileText,
   Accessibility,
   CheckCircle2,
   AlertCircle,
   LocateFixed,
-  Calendar,
-  Building,
   ArrowRight,
-  ShieldAlert,
 } from '../icons';
 
 export const RoutineDriverBookingView: React.FC = () => {
@@ -49,8 +45,8 @@ export const RoutineDriverBookingView: React.FC = () => {
   const handleGetCurrentLocation = () => {
     setIsLocating(true);
     if (!navigator.geolocation) {
-      setFeedback({ type: 'error', message: 'Location is unavailable. Enter a pickup address and try GPS again from a supported device.' });
       setIsLocating(false);
+      setFeedback({ type: 'error', message: 'This browser cannot provide GPS coordinates. Enable location services to request a driver.' });
       return;
     }
 
@@ -61,8 +57,9 @@ export const RoutineDriverBookingView: React.FC = () => {
         setIsLocating(false);
       },
       (err) => {
-        setFeedback({ type: 'error', message: err.code === err.PERMISSION_DENIED ? 'Location access was denied. Enter a pickup address or allow location access.' : 'Could not get your location. Try again or enter a pickup address.' });
+        setCoordinates(null);
         setIsLocating(false);
+        setFeedback({ type: 'error', message: err.code === err.PERMISSION_DENIED ? 'Allow location access to request a driver.' : 'Your current location is unavailable. Please try again.' });
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -79,7 +76,7 @@ export const RoutineDriverBookingView: React.FC = () => {
       return;
     }
     if (!coordinates) {
-      setFeedback({ type: 'error', message: 'Get your current location before booking so the driver receives accurate pickup coordinates.' });
+      setFeedback({ type: 'error', message: 'Use GPS to set the pickup coordinates before submitting your request.' });
       return;
     }
 
@@ -107,6 +104,7 @@ export const RoutineDriverBookingView: React.FC = () => {
           location: targetCoords,
           incidentType: `Routine Transport: ${reason}`,
           requestType: 'routine',
+          patientName: patientName.trim() || undefined,
           patientPhone: patientPhone.trim(),
           preferredTime: preferredTimeDisplay,
           requiredEquipment: mobilityNeeds,
@@ -378,7 +376,7 @@ export const RoutineDriverBookingView: React.FC = () => {
                 <select
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  className="w-full text-xs px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  className="w-full appearance-none text-xs px-3.5 py-2.5 pr-10 leading-5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200"
                 >
                   <option value="Routine Checkup">Routine Doctor Checkup / OPD</option>
                   <option value="Dialysis Treatment">Scheduled Dialysis Treatment</option>

@@ -26,7 +26,7 @@ async function appState() {
 }
 
 function pharmacyForUser(user: { pharmacyId?: string }) {
-  return user.pharmacyId && INITIAL_PHARMACIES.some((p) => p.id === user.pharmacyId) ? user.pharmacyId : 'pharm-1';
+  return user.pharmacyId && INITIAL_PHARMACIES.some((p) => p.id === user.pharmacyId) ? user.pharmacyId : null;
 }
 
 export async function GET() {
@@ -34,12 +34,18 @@ export async function GET() {
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
   try {
     const { state, updatedAt } = await appState();
-    return Response.json({ medicines: state.medicines, medicineOrders: state.medicineOrders, pharmacies: state.pharmacies, pharmacyId: pharmacyForUser(auth.user as typeof auth.user & { pharmacyId?: string }), updatedAt: typeof updatedAt === 'string' ? updatedAt : updatedAt?.toISOString() ?? new Date().toISOString() });
+    const user = auth.user as typeof auth.user & { role?: string; pharmacyId?: string };
+    const pharmacyId = pharmacyForUser(user);
+    if (user.role === 'pharmacy' && !pharmacyId) return Response.json({ error: 'Your pharmacy account is not linked to a pharmacy.' }, { status: 403 });
+    const medicineOrders = (state.medicineOrders ?? []).filter((order) =>
+      user.role === 'pharmacy' ? order.pharmacyId === pharmacyId : user.role === 'patient' ? order.patientId === auth.user.id : true,
+    );
+    return Response.json({ medicines: state.medicines, medicineOrders, pharmacies: state.pharmacies, pharmacyId, updatedAt: typeof updatedAt === 'string' ? updatedAt : updatedAt?.toISOString() ?? new Date().toISOString() });
   } catch { return Response.json({ error: 'Could not load pharmacy data.' }, { status: 503 }); }
 }
 
 export async function POST(request: Request) {
-  const auth = await requireRole('pharmacy');
+  const auth = await requireRole(['pharmacy', 'patient', 'dispatcher']);
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
   let body: { action?: string; medicineId?: string; pharmacyId?: string; quantity?: number; name?: string; form?: string; category?: string; indication?: string; minimum?: number; status?: string; orderId?: string; reason?: string; isUrgent?: boolean; patientId?: string; caseId?: string; driverId?: string; ambulanceId?: string };
   try { body = await request.json(); } catch { return Response.json({ error: 'Invalid request body.' }, { status: 400 }); }
@@ -47,7 +53,8 @@ export async function POST(request: Request) {
   if (body.action === 'order' && !pharmacyRole && !['patient', 'dispatcher'].includes((auth.user as typeof auth.user & { role?: string }).role ?? '')) return Response.json({ error: 'You cannot request pharmacy orders.' }, { status: 403 });
   if (body.action !== 'order' && !pharmacyRole) return Response.json({ error: 'Only pharmacy staff can manage inventory and orders.' }, { status: 403 });
   const requestedPharmacy = body.pharmacyId;
-  const pharmacyId = pharmacyRole ? pharmacyForUser(auth.user as typeof auth.user & { pharmacyId?: string }) : requestedPharmacy && INITIAL_PHARMACIES.some((p) => p.id === requestedPharmacy) ? requestedPharmacy : 'pharm-1';
+  const pharmacyId = pharmacyRole ? pharmacyForUser(auth.user as typeof auth.user & { pharmacyId?: string }) : requestedPharmacy && INITIAL_PHARMACIES.some((p) => p.id === requestedPharmacy) ? requestedPharmacy : null;
+  if (!pharmacyId) return Response.json({ error: pharmacyRole ? 'Your pharmacy account is not linked to a pharmacy.' : 'Choose a valid pharmacy for this order.' }, { status: 400 });
   const now = new Date();
   const db = (await clientPromise).db();
   try {
@@ -86,7 +93,7 @@ export async function POST(request: Request) {
         const available = Number(med.stock?.[pharmacyId] ?? 0);
         if (available < body.quantity!) return Response.json({ error: 'Unavailable: there is not enough unreserved stock.' }, { status: 409 });
         const pharmacy = state.pharmacies.find((item) => item.id === pharmacyId) ?? INITIAL_PHARMACIES[0];
-        const order: StateOrder = { id: `ORD-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, medicineId: med.id, medicineName: med.name, pharmacyId, pharmacyName: pharmacy.name, requestedBy: auth.user.name, quantity: body.quantity!, status: 'New', timestamp: now.toISOString(), isUrgent: Boolean(body.isUrgent), patientId: body.patientId, caseId: body.caseId, driverId: body.driverId, ambulanceId: body.ambulanceId, reserved: false };
+        const order: StateOrder = { id: `ORD-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, medicineId: med.id, medicineName: med.name, pharmacyId, pharmacyName: pharmacy.name, requestedBy: auth.user.name, quantity: body.quantity!, status: 'New', timestamp: now.toISOString(), isUrgent: Boolean(body.isUrgent), patientId: pharmacyRole ? body.patientId : auth.user.id, caseId: body.caseId, driverId: body.driverId, ambulanceId: body.ambulanceId, reserved: false };
         med.stock = { ...med.stock, [pharmacyId]: available - body.quantity! };
         med.updatedAt = now.toISOString();
         const saved = await collection.updateOne({ _id: 'carelink', 'state.medicines': current.state.medicines, 'state.medicineOrders': current.state.medicineOrders }, { $set: { 'state.medicines': medicines, 'state.medicineOrders': [order, ...orders], pharmacyUpdatedAt: now } });

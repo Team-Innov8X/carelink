@@ -559,6 +559,7 @@ export async function requestBedHold(params: {
   const claimed = await resourcesCol.findOneAndUpdate(
     {
       _id: resourceQueryId as ObjectId,
+      status: { $ne: "unavailable" },
       $expr: {
         $gt: [
           {

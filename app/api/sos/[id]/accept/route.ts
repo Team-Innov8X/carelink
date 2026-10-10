@@ -23,16 +23,21 @@ export async function POST(request: Request, context: RouteContext<"/api/sos/[id
   const sos = await requests.findOne({ _id: id, status: "searching" });
   if (!sos) return Response.json({ error: "This request has already been taken." }, { status: 409 });
   const acceptedAt = new Date();
-  const reserved = await drivers.updateOne({ userId: auth.user.id, available: true, activeRequestId: { $exists: false } }, { $set: { available: false, activeRequestId: id, updatedAt: acceptedAt, ...(validCoordinates(body.location) ? { location: body.location, locationUpdatedAt: acceptedAt } : {}) } });
-  if (!reserved.modifiedCount) return Response.json({ error: "Driver is already handling another request" }, { status: 409 });
-  const result = await requests.findOneAndUpdate(
-    { _id: id, status: "searching" },
-    { $set: { status: "accepted", driverId: auth.user.id, assignedDriverId: auth.user.id, acceptedAt, tripStage: "accepted", tripTimestamps: { accepted: acceptedAt } } },
-    { returnDocument: "after" },
+  const reserved = await drivers.updateOne(
+    { userId: auth.user.id, available: true, activeRequestId: { $exists: false } },
+    { $set: { available: false, activeRequestId: id, updatedAt: acceptedAt, ...(validCoordinates(body.location) ? { location: body.location, locationUpdatedAt: acceptedAt } : {}) } },
   );
-  if (!result) {
-    await drivers.updateOne({ userId: auth.user.id, activeRequestId: id }, { $set: { available: true, updatedAt: new Date() }, $unset: { activeRequestId: "" } });
-    return Response.json({ error: "This request has already been taken." }, { status: 409 });
+  if (!reserved.modifiedCount) return Response.json({ error: "Driver is already handling another request" }, { status: 409 });
+  const result = await requests.updateOne({ _id: id, status: "searching", driverId: null, rejectedDriverIds: { $ne: auth.user.id }, $or: [{ assignedDriverId: auth.user.id }, { assignedDriverId: { $exists: false } }] }, { $set: { status: "accepted", driverId: auth.user.id, acceptedAt, tripStage: 'accepted', tripTimestamps: { accepted: acceptedAt } }, $unset: { assignedDriverId: '', assignmentExpiresAt: '' } });
+  if (result.modifiedCount !== 1) {
+    await drivers.updateOne({ userId: auth.user.id, activeRequestId: id }, { $set: { available: true }, $unset: { activeRequestId: "", pendingOfferRequestId: '', pendingOfferExpiresAt: '' } });
+    return Response.json({ error: "SOS request is no longer available" }, { status: 409 });
+  }
+  if (sos.requestType !== 'routine') {
+    await requests.updateMany(
+      { patientId: sos.patientId, _id: { $ne: id }, status: "searching", requestType: { $ne: 'routine' } },
+      { $set: { status: "cancelled", cancelledAt: new Date(), cancellationReason: "Another active SOS for this patient was accepted" } },
+    );
   }
   await offers.updateOne({ _id: offer._id, status: "offered", expiresAt: { $gt: now } }, { $set: { status: "accepted" } });
   await offers.updateMany({ requestId: id, driverId: { $ne: auth.user.id }, status: "offered" }, { $set: { status: "taken" } });
