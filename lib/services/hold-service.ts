@@ -32,6 +32,9 @@ export interface ICreateHoldParams {
   originLocation?: [number, number]; // [longitude, latitude] for proximity ranking
   holdTimeoutMinutes?: number; // Defaults to 15 minutes
   notes?: string;
+  recommendationRequestKey?: string;
+  recommendationTripId?: string;
+  recommendationConditionId?: string;
 }
 
 const configuredHoldDuration = Number(process.env.HOLD_DURATION_MS);
@@ -95,6 +98,10 @@ export async function createHold(params: ICreateHoldParams) {
   const holdsCol = await getHoldsCollection();
   const quantityToHold = params.quantity ?? 1;
   const timeoutMinutes = params.holdTimeoutMinutes || HOLD_DURATION_MS / 60_000;
+  if (params.recommendationRequestKey) {
+    const existing = await holdsCol.findOne({ recommendationRequestKey: params.recommendationRequestKey });
+    if (existing) return { success: true as const, reason: null, message: "Existing recommendation request returned.", hold: { ...existing, id: existing._id?.toString() ?? existing.id }, existing: true as const };
+  }
 
   // Atomic reservation check: resource exists at hospital AND availableQuantity - heldQuantity >= quantityToHold
   const resourceId = params.resourceId && ObjectId.isValid(params.resourceId) ? new ObjectId(params.resourceId) : params.resourceId;
@@ -134,6 +141,10 @@ export async function createHold(params: ICreateHoldParams) {
         status: "pending",
         expiresAt: new Date(Date.now() + timeoutMinutes * 60 * 1000),
         notes: params.notes,
+        recommendationRequestKey: params.recommendationRequestKey,
+        recommendationTripId: params.recommendationTripId,
+        recommendationConditionId: params.recommendationConditionId,
+        recommendationResponseDeadline: params.recommendationRequestKey ? new Date(Date.now() + timeoutMinutes * 60_000) : undefined,
         originLocation: params.originLocation,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -143,6 +154,10 @@ export async function createHold(params: ICreateHoldParams) {
     });
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === 11000) {
+      if (params.recommendationRequestKey) {
+        const existing = await holdsCol.findOne({ recommendationRequestKey: params.recommendationRequestKey });
+        if (existing) return { success: true as const, reason: null, message: "Existing recommendation request returned.", hold: { ...existing, id: existing._id?.toString() ?? existing.id }, existing: true as const };
+      }
       return { success: false, reason: "DUPLICATE_PENDING" as const, message: "You already have a pending hold for this resource." };
     }
     throw error;
@@ -904,11 +919,12 @@ export async function confirmPatientBedHold(
  * Reject a pending bed hold by hospital staff and promote next in queue.
  */
 export async function rejectPatientBedHold(
-  holdIdOrParams: string | { holdId: string; hospitalId: string },
+  holdIdOrParams: string | { holdId: string; hospitalId: string; reason?: "rejected" | "expired" },
   hospitalIdArg?: string,
 ) {
   const holdId = typeof holdIdOrParams === "object" ? holdIdOrParams.holdId : holdIdOrParams;
   const hospitalId = typeof holdIdOrParams === "object" ? holdIdOrParams.hospitalId : hospitalIdArg!;
+  const reason = typeof holdIdOrParams === "object" ? holdIdOrParams.reason ?? "rejected" : "rejected";
 
   const holdsCol = await getHoldsCollection();
   const resourcesCol = await getResourcesCollection();
@@ -925,7 +941,7 @@ export async function rejectPatientBedHold(
   const rejected = await holdsCol.updateOne(
     { _id: hold._id, status: "pending" },
     {
-      $set: { status: "rejected", updatedAt: now },
+      $set: { status: reason, reason, releaseReason: reason, updatedAt: now, purgeAt: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000) },
       $unset: { expiresAt: "" },
     },
   );

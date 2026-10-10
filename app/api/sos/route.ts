@@ -2,6 +2,8 @@ import { requireRole } from "@/lib/auth-utils";
 import { advanceDispatch, createRequestId, ensureHospitalRequestForSos, getHospitalRequestsCollection, sosCollections, validCoordinates } from "@/lib/sos";
 import { getUsersCollection } from "@/lib/models/db";
 import { EMERGENCY_FALLBACK_TEXT, SOS_UNDO_SECONDS } from "@/lib/dispatch/constants";
+import conditions from "@/data/conditions.json";
+import { expireTripRecommendation } from "@/lib/recommend/production";
 
 export const runtime = "nodejs";
 
@@ -19,11 +21,12 @@ export async function GET() {
   const query = role === "dispatcher" ? {} : { patientId: auth.user.id };
   const requestQueryStartedAt = performance.now();
   const patientProjection = role === "dispatcher" ? undefined : {
-    _id: 1, patientId: 1, patientName: 1, patientPhone: 1, status: 1, type: 1, requestType: 1, location: 1, destination: 1, urgency: 1, notes: 1, incidentType: 1,
+    _id: 1, patientId: 1, patientName: 1, patientPhone: 1, status: 1, type: 1, requestType: 1, location: 1, destination: 1, urgency: 1, notes: 1, incidentType: 1, recommendation: 1,
     createdAt: 1, acceptedAt: 1, arrivedAt: 1, completedAt: 1, driverId: 1,
     requiredEquipment: 1, tripStage: 1, tripTimestamps: 1, vitalsUpdate: 1, issue: 1,
   };
   let items = await requests.find(query, patientProjection ? { projection: patientProjection } : undefined).sort({ createdAt: -1 }).limit(50).toArray();
+  await Promise.all(items.filter((item) => item.recommendation?.status === "requested").map((item) => expireTripRecommendation(item._id)));
   await Promise.all(items.filter((item) => item.status === "searching" && item.type !== "normal").map((item) => advanceDispatch(item._id)));
   if (items.some((item) => item.status === "searching" && item.type !== "normal")) {
     items = await requests.find(query, patientProjection ? { projection: patientProjection } : undefined).sort({ createdAt: -1 }).limit(50).toArray();
@@ -62,7 +65,8 @@ export async function GET() {
     tripTimestamps: item.tripTimestamps,
     vitalsUpdate: item.vitalsUpdate,
     issue: item.issue,
-    destination: (() => { const target = hospitalBySosId.get(item._id); return target ? { name: target.hospitalName, status: target.status, bedCategory: target.bedCategory, rejectionReason: target.rejectionReason } : null; })(),
+    destination: item.recommendation?.selectedHospitalId ? { name: item.recommendation.selectedHospitalName, status: item.recommendation.status === 'confirmed' ? 'accepted' : item.recommendation.status === 'unserved' ? 'rejected' : 'pending', bedCategory: conditions.find((condition) => condition.id === item.recommendation?.conditionId)?.resourceType === 'icu_bed' ? 'icu' : 'emergency' } : (() => { const target = hospitalBySosId.get(item._id); return target ? { name: target.hospitalName, status: target.status, bedCategory: target.bedCategory, rejectionReason: target.rejectionReason } : null; })(),
+    recommendation: item.recommendation ?? null,
     hospitalRequest: (() => { const target = hospitalBySosId.get(item._id); return target ? { status: target.status, hospitalName: target.hospitalName, acceptedAt: target.acceptedAt, bedCategory: target.bedCategory } : null; })(),
     driverAssigned: Boolean(item.driverId),
     driver: item.driverId ? (() => { const driver = driverById.get(item.driverId); const profile = driverProfileById.get(item.driverId); return driver ? { name: profile?.name ?? 'Assigned driver', vehicleNumber: profile?.vehicleNumber ?? driver.vehicleNumber ?? driver.ambulanceId ?? null, ambulanceType: driver.ambulanceType ?? null, location: driver.location ?? null } : null; })() : null,

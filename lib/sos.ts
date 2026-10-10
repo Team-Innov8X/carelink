@@ -13,6 +13,13 @@ import {
 import { selectSosOfferBatch } from "./dispatch/round-planner.ts";
 
 export type Coordinates = { latitude: number; longitude: number };
+export type StoredRecommendation = {
+  requestId: string; conditionId: string; conditionLabel: string; urgency: number; status: string;
+  ranked: Array<Record<string, unknown>>; selectedHospitalId?: string; selectedHospitalName?: string;
+  selectedHospitalLocation?: Coordinates; currentHoldId?: string; responseDeadline?: Date; reroutes: number;
+  rejectedHospitalIds: string[]; overrideReason?: string; unservedReason?: string; fallbackText?: string;
+  fallbackFlags: string[]; timeline: Array<{ status: string; at: Date; actor: string; reason: string; hospitalId?: string; hospitalName?: string }>;
+};
 
 export type SosRequest = {
   _id: string;
@@ -53,6 +60,7 @@ export type SosRequest = {
   expiresAt?: Date;
   transitionLog?: Array<{ from: string | null; to: string; at: Date; actor: { type: string; id: string }; reason: string }>;
   dispatchStatus?: "created" | "offered" | "accepted" | "en_route_to_patient" | "arrived_at_patient" | "picked_up" | "en_route_to_hospital" | "completed" | "no_driver_found" | "cancelled" | "expired";
+  recommendation?: StoredRecommendation;
 };
 
 export const DISPATCH_BATCH_SIZE = SOS_OFFER_BATCH_SIZE;

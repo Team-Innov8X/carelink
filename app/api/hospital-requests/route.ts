@@ -88,6 +88,8 @@ export async function GET() {
         sosRequestId: `BED-${id.slice(-8)}`,
         holdId: id,
         requestType: 'bed',
+        isRecommendation: Boolean(hold.recommendationRequestKey),
+        responseDeadline: hold.recommendationResponseDeadline,
         hospitalId: hold.hospitalId,
         hospitalName: profile.hospitalName ?? '',
         patientId,
@@ -100,6 +102,8 @@ export async function GET() {
         createdAt: hold.createdAt,
         admitted: Boolean(admission) || hold.status === 'fulfilled',
         admittedAt: admission?.admittedAt ?? hold.fulfilledAt,
+        etaMinutes: hold.patientDetails?.etaMinutes,
+        acceptedAt: hold.confirmedAt,
         queuePosition: hold.queuePosition,
         reservationExpiresAt: hold.expiresAt,
       };
