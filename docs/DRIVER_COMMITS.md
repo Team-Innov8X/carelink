@@ -26,6 +26,7 @@
 | 0 — audit and UI baseline | Complete; visual review is limited by the signed-out browser session | `drv: document existing SOS workflow and UI audit` |
 | 1 — data model and state machine | Complete; pure types, shared config, transition rules, invariants, and tests; no UI/API behavior changed | `drv: add dispatch state machine and invariants` |
 | 2 — dispatch and APIs | Complete; SOS idempotency, round dispatch, normal requests, guarded accept/decline/cancel, and API aliases | `drv: implement dispatch APIs and atomic acceptance` |
+| 3 — driver dashboard | Complete; four driver tabs, live normal requests, server-clock SOS alerts, active trip/map view, and task history | `drv: complete driver dashboard workflow` |
 
 ## Phase 1 implementation notes
 
@@ -46,6 +47,14 @@
 - Driver pre-acceptance offer data now contains a rounded approximate pickup area and omits patient name and phone. Exact location/contact details remain in the assigned-trip response after acceptance.
 - Verification: `npm test -- --run` (38 tests), `npx tsc --noEmit`, and `npm run build` all pass. The new route handlers appear in the production route manifest.
 - No dashboard layout work was done. Full database concurrency/authorization integration tests require a disposable test MongoDB and remain a verification limitation; Phase 3 is the next spec phase.
+
+## Phase 3 implementation notes
+
+- Reused the existing driver dashboard and its slate/sky/rose styling, adding Overview, Requests, Current Trip, and Task History tabs without introducing a new dashboard design.
+- Kept the online toggle and location-sharing status visible across tabs. Normal transport offers appear only in Requests, include urgency, approximate distance, destination, and notes, and do not trigger SOS popups.
+- SOS offer alerts use server time and the persisted offer expiration, display a countdown ring, and provide Accept/Decline actions from any tab. Expired offers are recorded through the existing offer transition log and surfaced as missed history entries. Local storage suppresses duplicate popups across same-user tabs; atomic server acceptance remains the final double-accept guard.
+- Accepted trips switch to Current Trip, where the existing trip controls are paired with the live trip map, patient call link, ETA, and cancellation action. Completed and cancelled assigned trips and expired SOS offers are shown in Task History.
+- Verification: `npx eslint` on the four changed dashboard/API files, `npx tsc --noEmit`, `npx vitest run` (38 tests), `npm run build`, and `git diff --check` pass. Live MongoDB and signed-in visual browser checks were not available in this session.
 
 ## Functional gaps found for later phases
 

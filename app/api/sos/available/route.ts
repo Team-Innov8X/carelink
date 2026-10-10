@@ -3,6 +3,7 @@ import { distanceKm, expireAndReofferDriverOffers, mapsUrl, sosCollections, vali
 import clientPromise from "@/lib/mongodb";
 import { expireHospitalReservations } from '@/lib/hospital-reservations';
 import { ObjectId } from 'mongodb';
+import { POLL_SECONDS } from '@/lib/dispatch/constants';
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,7 @@ function privateOfferCard(sos: Awaited<ReturnType<typeof getOpenRequests>>[numbe
     location,
     roughArea: location ? `${location.latitude.toFixed(2)}, ${location.longitude.toFixed(2)}` : "Approximate area unavailable",
     destination: sos.type === "normal" ? sos.destination?.name ?? "Destination to be confirmed" : undefined,
+    notes: sos.type === "normal" ? sos.notes ?? "" : undefined,
     urgency: sos.urgency ?? "urgent",
     requiredEquipment: sos.requiredEquipment ?? [],
     createdAt: sos.createdAt,
@@ -49,16 +51,18 @@ export async function GET() {
       driver: driverSummary,
       requests: (await Promise.all(openRequests.map(async (sos) => {
         const offer = await offers.findOne({ requestId: sos._id, driverId: auth.user!.id, status: { $in: ["offered", "pending"] }, expiresAt: { $gt: now } });
-        return offer ? privateOfferCard(sos, offer.expiresAt) : null;
+        return offer && validCoordinates(sos.location) ? privateOfferCard(sos, offer.expiresAt) : null;
       }))).filter(Boolean),
       message: "Go available to accept an SOS request",
+      serverTime: now.toISOString(),
+      pollSeconds: POLL_SECONDS,
     });
   }
   const activeSos = driver.activeRequestId ? await requests.findOne({ _id: driver.activeRequestId, driverId: auth.user.id, status: "accepted" }) : null;
   const open = activeSos ? [] : await getOpenRequests(requests, auth.user.id);
   const sosRequests = (await Promise.all(open.map(async (sos) => {
     const offer = await offers.findOne({ requestId: sos._id, driverId: auth.user!.id, status: { $in: ["offered", "pending"] }, expiresAt: { $gt: now } });
-    return offer ? { sos, offer } : null;
+    return offer && validCoordinates(sos.location) ? { sos, offer } : null;
   }))).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
   const { hospitalRequests } = await workflowCollections();
   let hospitalRequest = activeSos ? await hospitalRequests.findOne({ sosRequestId: activeSos._id }) : null;
@@ -88,6 +92,8 @@ export async function GET() {
     driverLocation: validCoordinates(driver.location) ? driver.location : null,
     activeRequest: activeSos ? { id: activeSos._id, type: activeSos.type ?? (activeSos.requestType === "routine" ? "normal" : "sos"), incidentType: activeSos.incidentType, patientName: activeSos.patientName, patientPhone: activeSos.patientPhone, location: activeSos.location, destinationRequest: activeSos.type === "normal" ? activeSos.destination ?? null : null, notes: activeSos.type === "normal" ? activeSos.notes ?? "" : undefined, driverLocation: driverPoint ?? null, distanceKm: driverPoint ? Number(distanceKm(driverPoint, activeSos.location).toFixed(1)) : null, estimatedEtaMinutes, requiredEquipment: activeSos.requiredEquipment, acceptedAt: activeSos.acceptedAt, arrivedAt: activeSos.arrivedAt ?? null, tripStage, tripTimestamps: activeSos.tripTimestamps ?? {}, vitalsUpdate: activeSos.vitalsUpdate ?? null, issue: activeSos.issue ?? null, destination: hospitalRequest ? { id: hospitalRequest.hospitalId, name: hospitalRequest.hospitalName, bedCategory: hospitalRequest.bedCategory, status: hospitalRequest.status, rejectionReason: hospitalRequest.rejectionReason, location: destination ? { latitude: destination.lat, longitude: destination.lng } : undefined } : null, directionsUrl: mapsUrl((tripStage === 'patient_on_board' || tripStage === 'en_route_hospital' || tripStage === 'arrived_hospital') && destination ? { latitude: destination.lat, longitude: destination.lng } : activeSos.location, driverPoint) } : null,
     requests: sosRequests.map(({ sos, offer }) => privateOfferCard(sos, offer.expiresAt, validCoordinates(driver.location) ? driver.location : null)),
+    serverTime: now.toISOString(),
+    pollSeconds: POLL_SECONDS,
   });
 }
 
