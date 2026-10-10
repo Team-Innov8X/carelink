@@ -15,4 +15,4 @@ This post-test edit records the test output and trade-off only. Model weights, f
 
 ## Test-run case review
 
-The one-shot replay review selected test-day-49-episode-2: baseline handover success 90.9%, model-aware 81.8%. This episode's complete patient outcomes and event logs are preserved in results.json under caseReview. Model-aware success was 9/11 patients versus 10/11 baseline. This synthetic case is an observed failure/trade-off, not evidence of real-world performance. The six S1–S6 JSONL files are fixed-seed sampled replay records; they are not separately scripted versions of the Phase 5 scenario definitions.
+The one-shot replay review selected test-day-49-episode-2: baseline handover success 90.9%, model-aware 81.8%. This episode's complete patient outcomes and event logs are preserved in results.json under caseReview. Model-aware success was 9/11 patients versus 10/11 baseline. This synthetic case is an observed failure/trade-off, not evidence of real-world performance. The six S1–S6 JSONL files are deterministic scenario demonstrations generated from validation days 31–40; they are demonstrations, separate from the 300-episode test evaluation.
