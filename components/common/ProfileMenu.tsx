@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Pencil, UserRound, X } from 'lucide-react';
+import { Check, Pencil, UserRound, X, KeyRound } from 'lucide-react';
 import { authClient } from '../../lib/auth-client';
 import { useCareLink } from '../../context/CareLinkContext';
 
@@ -64,6 +64,7 @@ export function ProfileMenu() {
         ].map(([label, value]) => <div key={label} className="flex items-start justify-between gap-4 py-2.5 text-sm"><dt className="text-slate-500">{label}</dt><dd className="max-w-56 break-words text-right font-medium text-slate-800">{value}</dd></div>)}</dl>
         <button type="button" onClick={() => { setEditing(true); setMessage(''); }} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white"><Pencil className="h-4 w-4" />Edit details</button>
       </>}
+      <a href="/forgot-password" className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700"><KeyRound className="h-4 w-4" />Reset password</a>
       {message && <p role="status" className="mt-2 text-xs text-slate-600">{message}</p>}
     </section>}
   </div>;

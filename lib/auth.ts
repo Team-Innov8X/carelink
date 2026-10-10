@@ -1,6 +1,5 @@
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
-import { username } from "better-auth/plugins";
 import { client } from "./mongodb";
 import { isSelfServiceRole } from "./roles";
 
@@ -13,6 +12,18 @@ function createAuth(mongoClient: typeof client) {
   baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
   emailAndPassword: {
     enabled: true,
+    sendResetPassword: async ({ user, url }) => {
+      if (process.env.RESEND_API_KEY && process.env.RESEND_FROM) {
+        const response = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ from: process.env.RESEND_FROM, to: [user.email], subject: "Reset your CareLink password", text: `Use this link to reset your CareLink password (valid for one hour): ${url}` }),
+        });
+        if (!response.ok) throw new Error("Password reset email could not be sent.");
+        return;
+      }
+      if (process.env.NODE_ENV !== "production") console.info(`[password-reset] ${user.email}: ${url}`);
+    },
   },
   socialProviders: {
     google: {
@@ -20,14 +31,13 @@ function createAuth(mongoClient: typeof client) {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
     },
   },
-  plugins: [username()],
   user: {
     additionalFields: {
       role: {
         type: "string",
         defaultValue: "patient",
         required: false,
-        input: true,
+        input: false,
       },
       phone: {
         type: "string",
