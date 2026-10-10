@@ -60,7 +60,7 @@ export async function GET() {
   try {
   const scope = hospitalScope(authorization.user as typeof authorization.user & Record<string, unknown>);
   if (!scope) return Response.json({ error: 'Your account is not linked to a hospital.' }, { status: 403 });
-  const { hospitalAdmissions } = await workflowCollections();
+  const hospitalAdmissions = (await clientPromise).db().collection('hospitalAdmissions');
   const admissions = await hospitalAdmissions.find({ ...scope, dischargedAt: { $exists: false } }).sort({ admittedAt: -1 }).limit(200).toArray();
   return Response.json({ admissions });
   } catch (error) {
@@ -124,8 +124,7 @@ export async function POST(request: Request) {
     const patient = hold.patientId ? await users.findOne({ $or: [{ id: hold.patientId }, { _id: hold.patientId as never }] }) : null;
     const admittedAt = hold.fulfilledAt ?? new Date();
     const { hospitalAdmissions } = await workflowCollections();
-    await hospitalAdmissions.createIndex({ hospitalRequestId: 1 }, { unique: true });
-    await hospitalAdmissions.updateOne({ hospitalRequestId: holdId }, { $setOnInsert: {
+    await hospitalAdmissions.updateOne({ _id: holdId }, { $setOnInsert: {
       _id: holdId,
       hospitalRequestId: holdId,
       hospitalId,
@@ -152,10 +151,9 @@ export async function POST(request: Request) {
   if (!hospitalRequest) return Response.json({ error: 'Accepted request not found for this hospital.' }, { status: 404 });
   if (hospitalRequest.status !== 'accepted') return Response.json({ error: 'Accept the request and reserve a bed before recording admission.' }, { status: 409 });
 
-  await hospitalAdmissions.createIndex({ hospitalRequestId: 1 }, { unique: true });
   const admittedAt = new Date();
   await hospitalAdmissions.updateOne(
-    { hospitalRequestId: hospitalRequest._id },
+    { _id: hospitalRequest._id },
     { $setOnInsert: {
       _id: hospitalRequest._id,
       hospitalRequestId: hospitalRequest._id,

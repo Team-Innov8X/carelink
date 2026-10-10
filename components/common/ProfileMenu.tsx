@@ -1,13 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Pencil, UserRound, X, KeyRound } from '@/components/icons';
+import { useRouter } from 'next/navigation';
+import { Check, Pencil, UserRound, X, KeyRound, LogOut } from '@/components/icons';
 import { authClient } from '../../lib/auth-client';
 import { useCareLink } from '../../context/CareLinkContext';
 
 type ProfileFields = { name?: string; username?: string; phone?: string; hospitalName?: string };
 
 export function ProfileMenu() {
+  const router = useRouter();
   const { data: session } = authClient.useSession();
   const { hospitals } = useCareLink();
   const [open, setOpen] = useState(false);
@@ -15,6 +17,7 @@ export function ProfileMenu() {
   const [fields, setFields] = useState<ProfileFields>({});
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [isSigningOut, setIsSigningOut] = useState(false);
   type ProfileUser = NonNullable<typeof session>['user'] & ProfileFields & { role?: string };
   const user = session?.user as ProfileUser | undefined;
   const role = user?.role || 'patient';
@@ -44,6 +47,18 @@ export function ProfileMenu() {
     }
   };
 
+  const signOut = async () => {
+    setIsSigningOut(true);
+    try {
+      await authClient.signOut();
+      router.push('/signin');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not sign out. Please try again.');
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
   return <div className="relative">
     <button type="button" onClick={showProfile} aria-expanded={open} aria-label={`View profile for ${displayName}`} className="flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-3 text-left hover:border-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500">
       <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white">{user?.image ? <img src={user.image} alt="" className="h-full w-full object-cover" /> : initials || <UserRound className="h-4 w-4" />}</span>
@@ -65,6 +80,7 @@ export function ProfileMenu() {
         <button type="button" onClick={() => { setEditing(true); setMessage(''); }} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white"><Pencil className="h-4 w-4" />Edit details</button>
       </>}
       <a href="/forgot-password" className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700"><KeyRound className="h-4 w-4" />Reset password</a>
+      <button type="button" onClick={() => void signOut()} disabled={isSigningOut} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 disabled:opacity-60"><LogOut className="h-4 w-4" />{isSigningOut ? 'Signing out…' : 'Log out'}</button>
       {message && <p role="status" className="mt-2 text-xs text-slate-600">{message}</p>}
     </section>}
   </div>;

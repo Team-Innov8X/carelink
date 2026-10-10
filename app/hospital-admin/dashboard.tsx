@@ -7,7 +7,8 @@ import { HospitalRequestInbox } from '../../components/hospitalStaff/HospitalReq
 import { SearchField } from '../../components/common/SearchField';
 import { hospitalSpecialties } from '../../data/hospitalSpecialties';
 import { readApiJson } from '@/lib/client-api';
-import { dischargeHospitalAdminDemoCase, getHospitalAdminDemoAdmissions } from '@/lib/hospital-admin-demo';
+import { dischargeHospitalAdminDemoCase, getHospitalAdminDemoAdmissions, getHospitalAdminDemoActivity } from '@/lib/hospital-admin-demo';
+import { SettingsView } from '@/components/settings/SettingsView';
 
 const tileColors = ['text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200'];
 type BedType = 'general' | 'icu' | 'trauma' | 'ventilators';
@@ -262,14 +263,32 @@ function DoctorRoster({ searchQuery }: { searchQuery: string }) {
 }
 
 function ActivityLog() {
-  const [entries, setEntries] = useState<Array<{ _id: string; action: string; actorName?: string; details: Record<string, unknown>; createdAt: string }>>([]);
+  const [entries, setEntries] = useState<Array<{ _id: string; action: string; actorName?: string; details: Record<string, unknown>; createdAt: string; isDemo?: boolean }>>([]);
   const [message, setMessage] = useState('Loading activity…');
-  useEffect(() => { fetch('/api/hospital-admin/activity', { cache: 'no-store' }).then(async (response) => { const result = await readApiJson<{ entries?: typeof entries; error?: string }>(response, 'Could not load the activity log.'); if (!response.ok) throw new Error(result.error || 'Could not load the activity log.'); setEntries(result.entries ?? []); setMessage(''); }).catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'Could not load activity.')); }, []);
-  return <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Audit / activity log</h2><p className="mt-1 text-sm text-slate-500">Recent changes made by hospital staff.</p>{message && <p className="mt-4 text-sm text-slate-500">{message}</p>}<ul className="mt-4 divide-y divide-slate-100">{entries.map((entry) => <li key={entry._id} className="py-3"><p className="font-semibold">{entry.action}</p><p className="mt-1 text-xs text-slate-500">{entry.actorName || 'Hospital staff'} · {new Date(entry.createdAt).toLocaleString()}</p>{Object.keys(entry.details || {}).length > 0 && <p className="mt-1 text-xs text-slate-600">{JSON.stringify(entry.details)}</p>}</li>)}{!message && !entries.length && <li className="py-4 text-sm text-slate-500">No activity has been recorded yet.</li>}</ul></section>;
+  useEffect(() => {
+    let active = true;
+    const demoEntries = getHospitalAdminDemoActivity();
+    setEntries(demoEntries);
+    const refresh = async () => {
+      try {
+        const response = await fetch('/api/hospital-admin/activity', { cache: 'no-store' });
+        const result = await readApiJson<{ entries?: typeof entries; error?: string }>(response, 'Could not load the activity log.');
+        if (!response.ok) throw new Error(result.error || 'Could not load the activity log.');
+        if (active) { setEntries([...getHospitalAdminDemoActivity(), ...(result.entries ?? [])]); setMessage(''); }
+      } catch (error) {
+        if (active) setMessage(error instanceof Error ? `${error.message} Demo activity is shown below.` : 'Could not load live activity. Demo activity is shown below.');
+      }
+    };
+    void refresh();
+    const onDemoUpdated = () => { setEntries([...getHospitalAdminDemoActivity()]); void refresh(); };
+    window.addEventListener('hospital-admin-demo-updated', onDemoUpdated);
+    return () => { active = false; window.removeEventListener('hospital-admin-demo-updated', onDemoUpdated); };
+  }, []);
+  return <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Audit / activity log</h2><p className="mt-1 text-sm text-slate-500">Recent changes made by hospital staff.</p>{message && <p className="mt-4 text-sm text-slate-500">{message}</p>}<ul className="mt-4 divide-y divide-slate-100">{entries.map((entry) => <li key={entry._id} className="py-3"><p className="font-semibold">{entry.action}{entry.isDemo && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800">Demo</span>}</p><p className="mt-1 text-xs text-slate-500">{entry.actorName || 'Hospital staff'} · {new Date(entry.createdAt).toLocaleString()}</p>{Object.keys(entry.details || {}).length > 0 && <p className="mt-1 text-xs text-slate-600">{JSON.stringify(entry.details)}</p>}</li>)}{!message && !entries.length && <li className="py-4 text-sm text-slate-500">No activity has been recorded yet.</li>}</ul></section>;
 }
 
 function HospitalAdminContent({ hospitalName }: { hospitalName: string }) {
-  const [section, setSection] = useState<'cases' | 'beds' | 'doctors' | 'patients' | 'activity' | 'simulation'>('cases');
+  const [section, setSection] = useState<'cases' | 'beds' | 'doctors' | 'patients' | 'activity' | 'simulation' | 'settings'>('cases');
   const [searchQuery, setSearchQuery] = useState('');
   const [pendingCount, setPendingCount] = useState(0);
   const [simulationMessage, setSimulationMessage] = useState('');
@@ -293,6 +312,7 @@ function HospitalAdminContent({ hospitalName }: { hospitalName: string }) {
               { key: 'patients' as const, label: 'Patients Admitted' },
               { key: 'activity' as const, label: 'Audit / Activity' },
               { key: 'simulation' as const, label: 'Demo Simulation' },
+              { key: 'settings' as const, label: 'Settings' },
             ].map((item) => <button key={item.key} type="button" onClick={() => setSection(item.key)} className={`shrink-0 rounded-lg px-3 py-2.5 text-left text-sm font-semibold md:w-full ${section === item.key ? 'bg-sky-700 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>{item.label}</button>)}
           </nav>
           <div className="min-w-0">
@@ -301,6 +321,7 @@ function HospitalAdminContent({ hospitalName }: { hospitalName: string }) {
             {section === 'patients' && <PatientsAdmitted searchQuery={searchQuery} />}
             {section === 'cases' && <HospitalRequestInbox searchQuery={searchQuery} />}
             {section === 'activity' && <ActivityLog />}
+            {section === 'settings' && <SettingsView />}
             {section === 'simulation' && <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Demo simulation panel</h2><p className="mt-1 text-sm text-slate-500">Preview stale-data and diversion states locally. The last-bed race uses an isolated test counter.</p>{simulationMessage && <p role="status" className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">{simulationMessage}</p>}<div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => setSimulationMessage('Preview only: capacity would be marked stale. Live hospital data was not changed.')} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">Preview stale data</button><button type="button" onClick={async () => { try { const response = await fetch('/api/hospital-admin/simulate-concurrency', { method: 'POST' }); const result = await readApiJson<{ message?: string; error?: string }>(response, 'Could not run the concurrency simulation.'); setSimulationMessage(response.ok ? result.message || 'The concurrency simulation completed.' : result.error || 'Could not run the concurrency simulation.'); } catch (error) { setSimulationMessage(error instanceof Error ? error.message : 'Could not run the concurrency simulation.'); } }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Fire two simultaneous requests</button><button type="button" onClick={() => setSimulationMessage('Preview only: new requests would be diverted. Live hospital intake was not changed.')} className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-900">Preview hospital offline</button></div></section>}
           </div>
         </div>

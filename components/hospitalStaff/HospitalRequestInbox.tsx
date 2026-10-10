@@ -91,9 +91,9 @@ export function HospitalRequestInbox({ searchQuery = '' }: { searchQuery?: strin
         : await fetch(`/api/hospital-requests/${encodeURIComponent(request._id)}/accept`, { method: 'POST' });
       const result = await readApiJson<{ error?: string }>(response, 'Could not accept this patient request.');
       if (!response.ok) throw new Error(result.error || 'Could not accept this patient request.');
-      setMessage(`${request.patientName}'s request was accepted and one bed was reserved.`);
       window.dispatchEvent(new Event('carelink-data-refresh'));
-      await refresh();
+      setMessage(`${request.patientName}'s request was accepted. Recording admission…`);
+      await admit(request);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not accept this patient request.');
       await refresh();
