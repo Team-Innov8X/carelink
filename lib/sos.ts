@@ -11,7 +11,7 @@ import {
 } from "./dispatch/constants.ts";
 import { selectSosOfferBatch } from "./dispatch/round-planner.ts";
 
-export type Coordinates = { latitude: number; longitude: number };
+export type Coordinates = { latitude: number; longitude: number; address?: string };
 
 export type SosRequest = {
   _id: string;
@@ -47,8 +47,6 @@ export type SosRequest = {
   type?: "sos" | "normal";
   urgency?: string;
   destination?: { hospitalId?: string; name?: string; latitude?: number; longitude?: number };
-  notes?: string;
-  preferredTime?: string;
   idempotencyKey?: string;
   activePatientId?: string;
   expiresAt?: Date;

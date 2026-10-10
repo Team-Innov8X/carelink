@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { auth, UserRole } from "./auth";
 import { getHospitalsCollection } from "./models";
 import { normalizeRole } from "./roles";
+import { connectMongoClient } from "./mongodb";
 
 /**
  * Retrieve current user & session on the server side.
