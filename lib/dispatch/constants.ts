@@ -28,6 +28,6 @@ export const MAX_ROUTE_ACCURACY_M = readNumber("MAX_ROUTE_ACCURACY_M", 100, 1);
 export const LOCATION_RETENTION_DAYS = readNumber("LOCATION_RETENTION_DAYS", 30, 1);
 export const LOCATION_RETENTION_SECONDS = LOCATION_RETENTION_DAYS * 24 * 60 * 60;
 export const EMERGENCY_FALLBACK_TEXT = process.env.EMERGENCY_FALLBACK_TEXT?.trim()
-  || "If no driver is found, contact your local emergency services immediately.";
+  || "Please seek emergency care now or contact your local emergency services.";
 
 export const SOS_OFFER_DURATION_MS = SOS_OFFER_SECONDS * 1000;

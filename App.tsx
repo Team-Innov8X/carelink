@@ -166,7 +166,7 @@ const MainAppContent: React.FC = () => {
         <Sidebar />
 
         {/* Dynamic Center View */}
-        <main className="flex-1 p-4 pb-32 sm:p-6 sm:pb-32 lg:p-8 lg:pb-32 max-w-7xl mx-auto w-full overflow-y-auto">
+        <main className={activeTab === 'triage' ? 'flex-1 min-w-0 w-full p-0 overflow-hidden' : 'flex-1 p-4 pb-32 sm:p-6 sm:pb-32 lg:p-8 lg:pb-32 max-w-7xl mx-auto w-full overflow-y-auto'}>
           {activeTab === 'dashboard' && <DispatcherDashboard />}
           {activeTab === 'requests' && (
             role === 'patient' ? (
@@ -192,7 +192,7 @@ const MainAppContent: React.FC = () => {
       {/* Responsive Mobile Bottom Tab Bar matching Panel 10 */}
       <MobileNav />
 
-      <button
+      {activeTab !== 'triage' && <button
         type="button"
         onClick={() => handleSOS()}
         disabled={sosSubmitting}
@@ -202,7 +202,7 @@ const MainAppContent: React.FC = () => {
       >
         {sosSubmitting ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Siren className="h-5 w-5" />}
         {sosSubmitting ? 'Sending…' : role === 'patient' ? 'SOS' : 'SOS Call'}
-      </button>
+      </button>}
       {role === 'patient' && sosMessage && (
         <aside
           role="status"
@@ -228,7 +228,7 @@ const MainAppContent: React.FC = () => {
           </div>
         </aside>
       )}
-      {role === 'patient' && <PatientSOSStatus transientNoticeVisible={Boolean(sosMessage)} />}
+      {role === 'patient' && activeTab !== 'triage' && <PatientSOSStatus transientNoticeVisible={Boolean(sosMessage)} />}
 
       {/* Modals */}
       <NewEmergencyModal

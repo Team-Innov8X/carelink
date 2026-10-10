@@ -10,6 +10,7 @@ import {
   HeartPulse,
   Activity,
 } from '../icons';
+import { isDemoFeatureVisible } from '@/lib/demo-config';
 
 export const MobileNav: React.FC = () => {
   const { activeTab, setActiveTab, medicines, role } = useCareLink();
@@ -42,7 +43,7 @@ export const MobileNav: React.FC = () => {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 md:hidden py-1.5 px-3 shadow-lg">
       <div className="flex items-center justify-around">
-        {tabs.map((tab) => {
+        {tabs.filter((tab) => isDemoFeatureVisible(tab.id)).map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button

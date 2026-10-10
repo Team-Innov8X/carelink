@@ -71,7 +71,8 @@ export async function POST(request: Request) {
   } catch (error) {
     output = fallbackReply(gate.redFlag, EMERGENCY_FALLBACK_TEXT);
     fallback = true;
-    errorCode = error instanceof Error ? error.message.slice(0, 48) : 'TRIAGE_MODEL_ERROR';
+    const code = error instanceof Error ? error.message : '';
+    errorCode = /^TRIAGE_[A-Z_]+$/.test(code) ? code : error instanceof Error && error.name === 'ZodError' ? 'TRIAGE_INVALID_RESPONSE' : error instanceof Error && error.name === 'TimeoutError' ? 'TRIAGE_TIMEOUT' : 'TRIAGE_MODEL_ERROR';
   }
 
   if (gate.redFlag) {
