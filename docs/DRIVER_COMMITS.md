@@ -24,6 +24,16 @@
 | Phase | Status | Commit |
 |---|---|---|
 | 0 — audit and UI baseline | Complete; visual review is limited by the signed-out browser session | `drv: document existing SOS workflow and UI audit` |
+| 1 — data model and state machine | Complete; pure types, shared config, transition rules, invariants, and tests; no UI/API behavior changed | `drv: add dispatch state machine and invariants` |
+
+## Phase 1 implementation notes
+
+- Added canonical request, offer, driver-presence, location-ping, snapshot, and transition-log types under `lib/dispatch/state-machine.ts`.
+- Added pure request/offer transitions, scoped patient/idempotency-key retry resolution, atomic in-memory offer acceptance with sibling superseding, and I1–I5 invariant validation.
+- Added centralized configuration in `lib/dispatch/constants.ts`. Defaults: 10-second SOS offers, 3 drivers per round, 3 rounds, 10 km search radius, 15-minute normal-request expiry, 3-second polling, 5-second GPS pings, 30-second stale-location threshold, 30-second route refresh, 200 m deviation threshold, and 30-day location retention. Fallback text is configurable and otherwise instructs patients to contact local emergency services.
+- Existing dispatch implementation is not yet wired to these constants; that integration belongs to Phase 2, when dispatch behavior is updated.
+- Verification: `npm test -- --run` (35 tests), `npx tsc --noEmit`, and `npm run build` all pass.
+- UI and existing API behavior were not changed. The model is not yet wired into MongoDB or API routes; that is Phase 2.
 
 ## Functional gaps found for later phases
 
