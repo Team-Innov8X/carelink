@@ -1,5 +1,5 @@
 import { requireRole } from "@/lib/auth-utils";
-import { createRequestId, ensureHospitalRequestForSos, getHospitalRequestsCollection, sosCollections, validCoordinates } from "@/lib/sos";
+import { createRequestId, ensureHospitalRequestForSos, getHospitalRequestsCollection, sosCollections, validCoordinates, workflowCollections } from "@/lib/sos";
 
 export const runtime = "nodejs";
 
@@ -34,9 +34,12 @@ export async function GET() {
     id: item._id,
     status: item.status,
     incidentType: item.incidentType,
+    requestType: item.requestType ?? (/^Routine Transport:/i.test(item.incidentType) ? 'routine' : 'emergency'),
     patientName: item.patientName,
     patientPhone: item.patientPhone,
     requiredEquipment: item.requiredEquipment,
+    preferredTime: item.preferredTime,
+    notes: item.notes,
     createdAt: item.createdAt,
     acceptedAt: item.acceptedAt,
     tripStage: item.tripStage,
@@ -52,7 +55,7 @@ export async function POST(request: Request) {
   const auth = await requireRole("patient");
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
 
-  let body: { location?: unknown; incidentType?: unknown; requiredEquipment?: unknown };
+  let body: { location?: unknown; incidentType?: unknown; requiredEquipment?: unknown; requestType?: unknown; preferredTime?: unknown; notes?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "Invalid JSON body" }, { status: 400 }); }
   const patientLocation = body.location;
   if (!validCoordinates(patientLocation)) return Response.json({ error: "location must include valid latitude and longitude" }, { status: 400 });
@@ -63,6 +66,11 @@ export async function POST(request: Request) {
   if (body.requiredEquipment !== undefined && (!Array.isArray(body.requiredEquipment) || body.requiredEquipment.some((item) => typeof item !== "string" || item.length > 80))) {
     return Response.json({ error: "requiredEquipment must be an array of strings" }, { status: 400 });
   }
+  const requestedType = body.requestType === undefined ? 'emergency' : body.requestType;
+  if (requestedType !== 'emergency' && requestedType !== 'routine') return Response.json({ error: 'requestType must be emergency or routine' }, { status: 400 });
+  const requestType: 'emergency' | 'routine' = requestedType;
+  if (body.preferredTime !== undefined && (typeof body.preferredTime !== 'string' || body.preferredTime.length > 120)) return Response.json({ error: 'preferredTime must be 120 characters or fewer' }, { status: 400 });
+  if (body.notes !== undefined && (typeof body.notes !== 'string' || body.notes.length > 1000)) return Response.json({ error: 'notes must be 1,000 characters or fewer' }, { status: 400 });
 
   const { requests } = await sosCollections();
   const existing = await requests.findOne({ patientId: auth.user.id, status: { $in: ["searching", "accepted"] } });
@@ -81,17 +89,46 @@ export async function POST(request: Request) {
     patientEmail: profile.email, patientPhone: profile.phone,
     location: patientLocation, incidentType: incidentType.trim(),
     requiredEquipment: [...new Set(((body.requiredEquipment ?? []) as string[]).map((item) => item.trim()).filter(Boolean))],
+    requestType,
+    preferredTime: typeof body.preferredTime === 'string' ? body.preferredTime.trim() : undefined,
+    notes: typeof body.notes === 'string' ? body.notes.trim() : undefined,
     status: "searching" as const, driverId: null, createdAt: new Date(),
   };
   await requests.insertOne(sos);
 
-  const hospitalRequest = await ensureHospitalRequestForSos(sos).catch(() => null);
+  const { drivers } = await sosCollections();
+  const activeDrivers = await drivers.find({ available: true, lastSeenAt: { $gte: new Date(Date.now() - 30_000) }, activeRequestId: { $exists: false } }).toArray();
+  if (activeDrivers.length) {
+    try {
+      const { notifications } = await workflowCollections();
+      const createdAt = new Date();
+      await Promise.all(activeDrivers.map((driver) => notifications.updateOne(
+        { _id: `driver-request-${sos._id}-${driver.userId}` },
+        { $setOnInsert: {
+          _id: `driver-request-${sos._id}-${driver.userId}`,
+          recipientId: driver.userId,
+          type: requestType === 'routine' ? 'routine_transport_request' : 'sos_driver_offer',
+          title: requestType === 'routine' ? 'Routine transport request nearby' : 'Emergency SOS nearby',
+          message: `${sos.patientName} needs ${sos.incidentType}. Open the driver dashboard to review the pickup.`,
+          relatedRequestId: sos._id,
+          createdAt,
+        } },
+        { upsert: true },
+      )));
+    } catch (error) {
+      console.error('Could not create driver notifications for SOS request:', error);
+    }
+  }
+
+  const hospitalRequest = requestType === 'routine' ? null : await ensureHospitalRequestForSos(sos).catch(() => null);
   const hospitalRequestId = hospitalRequest?._id ?? null;
 
   return Response.json({
     request: { id: sos._id, status: sos.status, createdAt: sos.createdAt },
     hospitalRequestId,
-    message: hospitalRequestId
+    message: requestType === 'routine'
+      ? 'Routine transport request sent to the driver fleet.'
+      : hospitalRequestId
       ? "SOS sent to ambulance drivers and the nearest hospital."
       : "SOS sent to available ambulance drivers; no active hospital is registered yet.",
   }, { status: 201 });

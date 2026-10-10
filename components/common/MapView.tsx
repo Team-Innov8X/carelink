@@ -31,6 +31,9 @@ interface MapViewProps {
   showNetworkMarkers?: boolean;
   driverLocations?: { id: string; name?: string; location: [number, number]; distanceKm?: number }[];
   facilities?: MapFacility[];
+  useContextFallback?: boolean;
+  emptyMessage?: string;
+  routeMode?: 'driver_to_patient' | 'patient_to_hospital';
 }
 
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({
@@ -51,6 +54,9 @@ export const MapView: React.FC<MapViewProps> = ({
   showNetworkMarkers = true,
   driverLocations = [],
   facilities,
+  useContextFallback = true,
+  emptyMessage = 'No location records to show.',
+  routeMode = 'driver_to_patient',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Leaflet.Map | null>(null);
@@ -70,15 +76,19 @@ export const MapView: React.FC<MapViewProps> = ({
     ?? hospitals.find((item) => item.status === 'Available');
   const mapCenter = useMemo<[number, number] | null>(() => {
     if (center) return center;
+    if (!useContextFallback) return null;
     const point = emergency?.location ?? ambulance?.location ?? hospital?.location;
     return point ? [point.lat, point.lng] : null;
-  }, [center, emergency?.location, ambulance?.location, hospital?.location]);
+  }, [center, useContextFallback, emergency?.location, ambulance?.location, hospital?.location]);
   const mapCenterRef = useRef<[number, number] | null>(mapCenter);
   useEffect(() => { mapCenterRef.current = mapCenter; }, [mapCenter]);
   const hasMapCenter = mapCenter !== null;
-  const routeKey = patientLocation && driverLocation
-    ? [driverLocation, patientLocation, ...(hospitalLocation ? [hospitalLocation] : [])].map(([lat, lng]) => `${lat},${lng}`).join('|')
-    : '';
+  const routePoints = useMemo(() => routeMode === 'patient_to_hospital' && patientLocation && hospitalLocation
+    ? [patientLocation, hospitalLocation]
+    : patientLocation && driverLocation
+      ? [driverLocation, patientLocation, ...(hospitalLocation ? [hospitalLocation] : [])]
+      : [], [routeMode, patientLocation, driverLocation, hospitalLocation]);
+  const routeKey = routePoints.map(([lat, lng]) => `${lat},${lng}`).join('|');
 
   useEffect(() => {
     if (!routeKey) return;
@@ -289,7 +299,7 @@ export const MapView: React.FC<MapViewProps> = ({
       L.marker(driver.location, { icon, title: `Nearby available driver: ${driverName}` }).bindPopup(`<strong>${driverName}</strong><br/>Available driver${distance}`).addTo(layers);
     });
 
-    const sosRoute = patientLocation && driverLocation ? [driverLocation, patientLocation, ...(hospitalLocation ? [hospitalLocation] : [])] as [number, number][] : null;
+    const sosRoute = routePoints.length > 1 ? routePoints as [number, number][] : null;
     if (sosRoute) {
       routeRef.current = L.polyline(currentRoutedPath ?? sosRoute, {
         color: '#e11d48',
@@ -315,10 +325,10 @@ export const MapView: React.FC<MapViewProps> = ({
       : null);
     if (focusedPoint) map.fitBounds(focusedPoint, { padding: [40, 40], maxZoom: 14, animate: false });
     else map.setView(mapCenter, zoom, { animate: false });
-  }, [mapReady, mapCenter, zoom, ambulances, hospitals, emergencies, hospital, showNetworkMarkers, showRouteLine, ambulance, patientLocation, patientName, driverLocation, hospitalLocation, driverLocations, currentRoutedPath, setSelectedEmergencyId, activeFacilities]);
+  }, [mapReady, mapCenter, zoom, ambulances, hospitals, emergencies, hospital, showNetworkMarkers, showRouteLine, ambulance, patientLocation, patientName, driverLocation, hospitalLocation, driverLocations, currentRoutedPath, setSelectedEmergencyId, activeFacilities, routePoints]);
 
   if (!mapCenter) {
-    return <div className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-500" style={{ height }}>No location records to show.</div>;
+    return <div className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-center text-sm text-slate-500" style={{ height }}>{emptyMessage}</div>;
   }
 
   return (

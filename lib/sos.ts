@@ -13,6 +13,9 @@ export type SosRequest = {
   location: Coordinates;
   incidentType: string;
   requiredEquipment: string[];
+  requestType?: 'emergency' | 'routine';
+  preferredTime?: string;
+  notes?: string;
   status: "searching" | "accepted" | "completed" | "cancelled";
   driverId: string | null;
   rejectedDriverIds?: string[];
@@ -190,7 +193,7 @@ export function chooseBedCategory(
 export type CareNotification = {
   _id: string;
   recipientId: string;
-  type: "hospital_request_pending" | "hospital_request_accepted" | "hospital_request_rejected" | "hospital_patient_admitted" | "hospital_request_rerouted" | "hospital_data_stale";
+  type: "hospital_request_pending" | "hospital_request_accepted" | "hospital_request_rejected" | "hospital_patient_admitted" | "hospital_request_rerouted" | "hospital_data_stale" | "sos_driver_offer" | "routine_transport_request";
   title: string;
   message: string;
   relatedRequestId: string;
@@ -272,7 +275,7 @@ export async function expireAndReofferDriverOffers() {
     if (!releasedRequest.modifiedCount) continue;
     await drivers.updateOne({ userId: previousDriverId, pendingOfferRequestId: request._id }, { $unset: { pendingOfferRequestId: '', pendingOfferExpiresAt: '' }, $set: { updatedAt: now } });
     const excluded = [...(request.rejectedDriverIds ?? []), previousDriverId];
-    const candidates = await drivers.find({ available: true, activeRequestId: { $exists: false }, pendingOfferRequestId: { $exists: false }, location: { $exists: true }, userId: { $nin: excluded } }).toArray();
+    const candidates = await drivers.find({ available: true, lastSeenAt: { $gt: new Date(now.getTime() - 30_000) }, activeRequestId: { $exists: false }, pendingOfferRequestId: { $exists: false }, location: { $exists: true }, userId: { $nin: excluded } }).toArray();
     const nearest = candidates.filter((driver) => validCoordinates(driver.location)).sort((a, b) => distanceKm(request.location, a.location!) - distanceKm(request.location, b.location!));
     for (const candidate of nearest) {
       const expiresAt = new Date(now.getTime() + 15_000);

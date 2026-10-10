@@ -22,6 +22,8 @@ export function TriageChatView() {
   const [messages, setMessages] = useState<Message[]>([{ id: 0, role: 'assistant', text: START }]);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sosBusy, setSosBusy] = useState(false);
+  const [sosMessage, setSosMessage] = useState('');
   const [hasError, setHasError] = useState(false);
   const [summary, setSummary] = useState<TriageResult | null>(null);
   const conversationId = useRef<string | undefined>(undefined);
@@ -30,9 +32,39 @@ export function TriageChatView() {
 
   useEffect(() => { conversationEnd.current?.scrollIntoView({ block: 'end' }); }, [messages, busy]);
 
-  const openSos = () => {
-    setActiveTab('dashboard');
-    window.setTimeout(() => document.querySelector<HTMLButtonElement>('[aria-label="Request emergency assistance with SOS"]')?.click(), 0);
+  const openSos = async () => {
+    if (sosBusy) return;
+    setSosBusy(true);
+    setSosMessage('Getting your location and sending the emergency request…');
+    try {
+      if (!navigator.geolocation) throw new Error('This browser cannot access your location. Enable location services and try SOS again.');
+      const location = await new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          ({ coords }) => resolve({ latitude: coords.latitude, longitude: coords.longitude }),
+          () => reject(new Error('Location permission is required to send an SOS request. Allow location access and try again.')),
+          { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+        );
+      });
+      const response = await fetch('/api/sos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          location,
+          incidentType: summary?.category ? `${summary.category} emergency` : 'Emergency assistance requested',
+          requestType: 'emergency',
+          requiredEquipment: [],
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (response.status === 401) { window.location.assign('/signin'); return; }
+      if (!response.ok) throw new Error(result.error || 'Could not send SOS. Please try again.');
+      window.dispatchEvent(new Event('carelink-sos-updated'));
+      setActiveTab('dashboard');
+    } catch (error) {
+      setSosMessage(error instanceof Error ? error.message : 'Could not send SOS. Please try again.');
+    } finally {
+      setSosBusy(false);
+    }
   };
 
   const openHospitals = () => {
@@ -94,6 +126,8 @@ export function TriageChatView() {
               <button type="button" onClick={openSos} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-rose-700 px-3 py-2 font-semibold text-white hover:bg-rose-800"><Siren className="h-4 w-4" />SOS</button>
             </div>
           )}
+
+          {sosMessage && <p role={sosMessage.startsWith('Getting') ? 'status' : 'alert'} className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">{sosBusy ? 'Sending SOS…' : sosMessage}</p>}
 
           <form onSubmit={send} className="sticky bottom-0 flex shrink-0 gap-2 border-t border-slate-200 bg-white p-3">
             <label className="sr-only" htmlFor="triage-message">Describe your symptoms</label>
