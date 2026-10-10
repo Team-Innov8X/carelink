@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { auth, UserRole } from "./auth";
 import { getHospitalsCollection } from "./models";
+import { normalizeRole } from "./roles";
 
 /**
  * Retrieve current user & session on the server side.
@@ -44,15 +45,16 @@ export async function requireRole(
   }
 
   if (allowedRoles) {
-    const rolesArray = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
-    const userRole = (session.user as { role?: UserRole }).role || "patient";
+    const rolesArray = (Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles]).map((role) => normalizeRole(role) || role);
+    const storedRole = (session.user as { role?: UserRole }).role || "patient";
+    const userRole = normalizeRole(storedRole) || storedRole;
 
     if (!rolesArray.includes(userRole as UserRole)) {
       return {
         authorized: false,
         reason: "FORBIDDEN" as const,
         user: session.user,
-        role: userRole,
+        role: storedRole,
       };
     }
   }

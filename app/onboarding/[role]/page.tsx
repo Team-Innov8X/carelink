@@ -2,6 +2,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
+import { normalizeRole } from '@/lib/roles';
 
 export default function OrganizationOnboardingPage() {
   const params = useParams<{ role: string }>(); const router = useRouter();
@@ -13,9 +14,10 @@ export default function OrganizationOnboardingPage() {
     if (isPending) return;
     if (!session) { router.replace('/signin'); return; }
     const profile = session.user as typeof session.user & { onboardingCompleted?: boolean; role?: string };
+    const accountRole = normalizeRole(profile.role);
     if (profile.onboardingCompleted) router.replace(role === 'hospital' ? '/hospital-admin' : '/pharmacy-dashboard');
-    else if (role === 'hospital' && profile.role !== 'hospital' && profile.role !== 'hospital_staff') router.replace('/');
-    else if (role === 'pharmacy' && profile.role !== 'pharmacy') router.replace('/');
+    else if (role === 'hospital' && accountRole !== 'hospital' && accountRole !== 'hospital_staff') router.replace('/');
+    else if (role === 'pharmacy' && accountRole !== 'pharmacy') router.replace('/');
   }, [isPending, role, router, session]);
   const submit = async (event: FormEvent) => { event.preventDefault(); setBusy(true); setError('');
     try { const response = await fetch('/api/onboarding', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) }); const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Could not save details.'); router.replace(role === 'hospital' ? '/hospital-admin' : '/pharmacy-dashboard'); router.refresh(); }
