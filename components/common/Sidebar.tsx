@@ -31,7 +31,11 @@ export const Sidebar: React.FC = () => {
     Object.values(m.stock).some((qty) => qty <= (m.minimumStock ?? (m.isEmergencyEssential ? 8 : 10)))
   ).length;
 
-  const navItems = [
+  const navItems = role === 'driver' ? [
+    { id: 'dashboard', label: 'Overview', icon: <LayoutDashboard className="w-5 h-5" /> },
+    { id: 'requests', label: 'Requests', icon: <Siren className="w-5 h-5" /> },
+    { id: 'history', label: 'Task History', icon: <Activity className="w-5 h-5" /> },
+  ] : [
     {
       id: 'dashboard',
       label: 'Dashboard',
@@ -116,7 +120,7 @@ export const Sidebar: React.FC = () => {
           return (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => { setActiveTab(item.id); if (role === 'driver' && item.id === 'history') window.dispatchEvent(new Event('carelink-driver-history-opened')); }}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${
                 isActive
                   ? 'bg-sky-600 text-white font-semibold shadow-md shadow-sky-900/30'

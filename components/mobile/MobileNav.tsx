@@ -8,6 +8,7 @@ import {
   Siren,
   Car,
   HeartPulse,
+  Activity,
 } from '../icons';
 
 export const MobileNav: React.FC = () => {
@@ -17,7 +18,13 @@ export const MobileNav: React.FC = () => {
   ).length;
 
   const tabs: { id: string; label: string; icon: React.ReactNode; badge?: number }[] =
-    role === 'patient'
+    role === 'driver'
+      ? [
+          { id: 'dashboard', label: 'Overview', icon: <LayoutDashboard className="w-5 h-5" /> },
+          { id: 'requests', label: 'Requests', icon: <Siren className="w-5 h-5" /> },
+          { id: 'history', label: 'History', icon: <Activity className="w-5 h-5" /> },
+        ]
+      : role === 'patient'
       ? [
           { id: 'dashboard', label: 'Home', icon: <LayoutDashboard className="w-5 h-5" /> },
           { id: 'triage', label: 'Symptom check', icon: <HeartPulse className="w-5 h-5" /> },
@@ -40,7 +47,7 @@ export const MobileNav: React.FC = () => {
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => { setActiveTab(tab.id); if (role === 'driver' && tab.id === 'history') window.dispatchEvent(new Event('carelink-driver-history-opened')); }}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl text-[10px] font-semibold transition-all relative ${
                 isActive ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'
               }`}

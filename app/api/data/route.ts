@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
-import clientPromise from "@/lib/mongodb";
+import clientPromise, { connectMongoClient } from "@/lib/mongodb";
 import { auth } from "@/lib/auth";
 import { INITIAL_HOSPITALS } from "@/data/mockHospitals";
 import { INITIAL_EMERGENCIES } from "@/data/mockEmergencies";
@@ -25,7 +25,10 @@ const stateCollection = async () => {
   return client.db().collection<{ _id: string; state: Record<string, unknown>; updatedAt?: Date }>("appState");
 };
 
-const hasSession = async () => Boolean(await auth.api.getSession({ headers: await headers() }));
+const hasSession = async () => {
+  await connectMongoClient();
+  return Boolean(await auth.api.getSession({ headers: await headers() }));
+};
 
 export async function GET() {
   if (!(await hasSession())) {

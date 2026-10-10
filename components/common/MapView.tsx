@@ -27,6 +27,7 @@ interface MapViewProps {
   patientLocation?: [number, number];
   patientName?: string;
   driverLocation?: [number, number];
+  showDriverLocationControl?: boolean;
   driverAccuracyM?: number | null;
   fitBoundsKey?: string;
   hospitalLocation?: [number, number];
@@ -49,6 +50,7 @@ export const MapView: React.FC<MapViewProps> = ({
   patientLocation,
   patientName,
   driverLocation,
+  showDriverLocationControl = false,
   driverAccuracyM,
   fitBoundsKey,
   hospitalLocation,
@@ -138,7 +140,9 @@ export const MapView: React.FC<MapViewProps> = ({
   const currentRoutedPath = routeKey && routedPath?.key === routeKey ? routedPath.path : null;
 
   useEffect(() => {
-    if (facilities && facilities.length > 0) return;
+    // Driver and trip maps disable network markers, so they should not call
+    // the public nearby-facilities services on every location refresh.
+    if (!showNetworkMarkers || (facilities && facilities.length > 0)) return;
     if (!mapCenter) return;
     const [lat, lng] = mapCenter;
     const controller = new AbortController();
@@ -151,6 +155,9 @@ export const MapView: React.FC<MapViewProps> = ({
       })
       .catch(() => {});
     return () => controller.abort();
+    // `showNetworkMarkers` is a fixed map mode for each MapView instance.
+    // Keep this dependency list stable for React Fast Refresh in development.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facilities, mapCenter]);
 
   const activeFacilities = facilities && facilities.length > 0 ? facilities : fetchedFacilities;
@@ -388,18 +395,19 @@ export const MapView: React.FC<MapViewProps> = ({
   return (
     <div className="relative isolate w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm" style={{ height }}>
       <div ref={containerRef} className="h-full w-full" aria-label="Map showing ambulances, hospitals, and emergency requests" />
-      {hasPanned && <button type="button" onClick={() => { const L = leafletRef.current; const map = mapRef.current; if (!L || !map) return; const points = [driverLocation, patientLocation, hospitalLocation].filter((point): point is [number, number] => Boolean(point)); if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 14 }); setHasPanned(false); }} className="absolute right-3 top-3 z-[1000] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow">Recenter</button>}
+      {showDriverLocationControl && driverLocation && <button type="button" onClick={() => { const map = mapRef.current; if (!map) return; map.setView(driverLocation, Math.max(map.getZoom(), zoom), { animate: true }); setHasPanned(false); }} className="absolute right-3 top-3 z-[1000] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow">My location</button>}
+      {hasPanned && <button type="button" onClick={() => { const L = leafletRef.current; const map = mapRef.current; if (!L || !map) return; const points = [driverLocation, patientLocation, hospitalLocation].filter((point): point is [number, number] => Boolean(point)); if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 14 }); setHasPanned(false); }} className={`absolute right-3 z-[1000] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow ${showDriverLocationControl ? 'top-14' : 'top-3'}`}>Recenter</button>}
       {showRouteLine && patientLocation && driverLocation && (routeConfig && typeof driverAccuracyM === 'number' && driverAccuracyM > routeConfig.maxRouteAccuracyM
         ? <div className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-amber-800 shadow">Driver GPS accuracy is low; route is hidden until a better fix arrives.</div>
         : <div className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-slate-700 shadow">{currentRoutedPath ? 'Road route' : 'Route approximate while directions load'}</div>)}
       {mapError && <div role="status" className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-rose-700 shadow">{mapError}</div>}
-      <div className="absolute bottom-3 left-3 z-[1000] flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white/95 px-3.5 py-2 text-xs font-medium text-slate-700 shadow-md backdrop-blur-sm">
+      {!showDriverLocationControl && <div className="absolute bottom-3 left-3 z-[1000] flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white/95 px-3.5 py-2 text-xs font-medium text-slate-700 shadow-md backdrop-blur-sm">
         {patientLocation ? <span><b className="text-rose-600">P</b> You / patient</span> : <span>🚑 Ambulance</span>}
         {driverLocations.length > 0 || driverLocation ? <span><b className="text-sky-600">D</b> Nearby driver</span> : null}
         <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full bg-[#2E7D4F]" /> Registered (Live data)</span>
         <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full bg-[#64748B]" /> Not registered</span>
         {!patientLocation && <span><b className="text-rose-600">!</b> Patient Request</span>}
-      </div>
+      </div>}
     </div>
   );
 };

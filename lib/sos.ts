@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Document } from "mongodb";
 import clientPromise from "./mongodb.ts";
+import { ensureNotificationIndexes } from "./models/db.ts";
 import {
   SOS_MAX_ROUNDS,
   SOS_OFFER_BATCH_SIZE,
@@ -38,6 +39,7 @@ export type SosRequest = {
   completedAt?: Date;
   requestType?: "emergency" | "routine";
   dispatchRound?: number;
+  dispatchRoundAt?: Date;
   noDriverFoundAt?: Date;
   type?: "sos" | "normal";
   urgency?: string;
@@ -257,11 +259,7 @@ export async function getHospitalRequestsCollection() {
 export async function workflowCollections() {
   const db = (await clientPromise).db();
   const notifications = db.collection<CareNotification>("notifications");
-  const ttlHours = Math.max(1, Number(process.env.NOTIFICATION_TTL_HOURS) || 24);
-  workflowIndexesPromise ??= Promise.all([
-    notifications.createIndex({ createdAt: 1 }, { name: 'notifications_ttl', expireAfterSeconds: ttlHours * 3600 }).catch(() => db.command({ collMod: 'notifications', index: { name: 'notifications_ttl', expireAfterSeconds: ttlHours * 3600 } })),
-    notifications.createIndex({ recipientId: 1, createdAt: -1 }, { name: 'notifications_recipient_created' }),
-  ]).then(() => undefined).catch(error => { workflowIndexesPromise = undefined; throw error; });
+  workflowIndexesPromise ??= ensureNotificationIndexes(notifications).catch(error => { workflowIndexesPromise = undefined; throw error; });
   await workflowIndexesPromise;
   const hospitalRequests = await getHospitalRequestsCollection();
   return {
@@ -334,6 +332,14 @@ export async function advanceDispatch(requestId: string) {
     new Set(excluded),
     now,
   );
+  // Do not burn through every dispatch round synchronously when nobody is
+  // online (or location-eligible) at the instant the SOS is created. Keep the
+  // request searchable so a driver who comes online during this window can be
+  // offered it on the next patient/driver poll.
+  if (!nearest.length) {
+    const roundStartedAt = request.dispatchRoundAt ?? request.createdAt;
+    if (now.getTime() - new Date(roundStartedAt).getTime() < OFFER_DURATION_MS) return;
+  }
   // Guard the round transition; concurrent pollers can only win this CAS once.
   const advanced = await requests.updateOne({ _id: requestId, status: "searching", ...currentRoundFilter }, { $set: { dispatchRound: nextRound, dispatchRoundAt: now } });
   if (!advanced.modifiedCount) return;
@@ -349,7 +355,6 @@ export async function advanceDispatch(requestId: string) {
       $unset: { activePatientId: "" },
       $push: { transitionLog: { from: "offered", to: "no_driver_found", at: now, actor: { type: "system", id: "dispatch" }, reason: "No eligible drivers found" } },
     });
-    else await advanceDispatch(requestId);
     return;
   }
   const expiresAt = new Date(now.getTime() + OFFER_DURATION_MS);

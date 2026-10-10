@@ -1,4 +1,4 @@
-import { Collection } from "mongodb";
+import { Collection, type Document } from "mongodb";
 import clientPromise from "../mongodb.ts";
 import type { IHospital } from "./hospital.ts";
 import type { IResource } from "./resource.ts";
@@ -36,6 +36,26 @@ export async function getUsersCollection(): Promise<Collection<IUser>> {
   return db.collection<IUser>("user"); // Uses Better Auth 'user' collection
 }
 
+export async function ensureNotificationIndexes<TSchema extends Document>(notifications: Collection<TSchema>): Promise<void> {
+  const notificationTtlHours = Math.max(1, Number(process.env.NOTIFICATION_TTL_HOURS) || 24);
+
+  // Create the query index first so the collection exists before listIndexes.
+  // Use MongoDB's generated name so this is compatible with existing installs.
+  await notifications.createIndex({ recipientId: 1, createdAt: -1 });
+  await notifications.createIndex({ userId: 1, createdAt: -1 });
+
+  // Older databases may have this index under MongoDB's default `createdAt_1`
+  // name. Always update the existing key-pattern index rather than assuming
+  // it is named `notifications_ttl`.
+  const indexes = await notifications.listIndexes().toArray();
+  const ttlIndex = indexes.find((index) => (index.key as Record<string, number>)?.createdAt === 1);
+  if (ttlIndex?.name) {
+    await (await getDb()).command({ collMod: "notifications", index: { name: ttlIndex.name, expireAfterSeconds: notificationTtlHours * 3600 } });
+  } else {
+    await notifications.createIndex({ createdAt: 1 }, { expireAfterSeconds: notificationTtlHours * 3600, name: "notifications_ttl" });
+  }
+}
+
 let indexesPromise: Promise<void> | null = null;
 
 /**
@@ -61,16 +81,7 @@ export function initializeIndexes(): Promise<void> {
     await doctors.createIndex({ hospitalId: 1 });
 
     const notifications = (await getDb()).collection("notifications");
-    const notificationTtlHours = Math.max(1, Number(process.env.NOTIFICATION_TTL_HOURS) || 24);
-    const notificationIndexes = await notifications.listIndexes().toArray();
-    const existingTtlIndex = notificationIndexes.find((index) => (index.key as Record<string, number>)?.createdAt === 1);
-    if (existingTtlIndex?.name) {
-      await (await getDb()).command({ collMod: "notifications", index: { name: existingTtlIndex.name, expireAfterSeconds: notificationTtlHours * 3600 } });
-    } else {
-      await notifications.createIndex({ createdAt: 1 }, { expireAfterSeconds: notificationTtlHours * 3600, name: "notifications_ttl" });
-    }
-    await notifications.createIndex({ recipientId: 1, createdAt: -1 });
-    await notifications.createIndex({ userId: 1, createdAt: -1 });
+    await ensureNotificationIndexes(notifications);
 
     const holds = await getHoldsCollection();
     await holds.createIndex({ hospitalId: 1, status: 1 });
