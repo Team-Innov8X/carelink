@@ -11,13 +11,36 @@ export const runtime = "nodejs";
 export async function GET() {
   const auth = await requireRole("patient");
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
-  const { requests, drivers } = await sosCollections();
+  const { requests, drivers, offers } = await sosCollections();
   const pendingSos = await requests.findOne({ patientId: auth.user.id, status: "searching", type: { $ne: "normal" } }, { sort: { createdAt: -1 }, projection: { _id: 1 } });
   if (pendingSos) await advanceDispatch(pendingSos._id);
-  const item = await requests.findOne({
+  let item = await requests.findOne({
     patientId: auth.user.id,
     status: { $in: ["searching", "accepted", "no_driver_found", "cancelled", "completed", "expired"] },
   }, { sort: { createdAt: -1 } });
+  if (item?.status === "no_driver_found" && item.type !== "normal" && validCoordinates(item.location) && Date.now() - new Date(item.createdAt).getTime() <= 10 * 60_000) {
+    const activeRequest = await requests.findOne({ patientId: auth.user.id, status: { $in: ["searching", "accepted"] }, type: { $ne: "normal" }, _id: { $ne: item._id } }, { projection: { _id: 1 } });
+    if (!activeRequest) {
+      const freshDrivers = await drivers.find({ available: true, activeRequestId: { $exists: false }, currentTripId: { $in: [null] }, location: { $exists: true }, locationUpdatedAt: { $gte: new Date(Date.now() - STALE_LOCATION_SECONDS * 1000) } }).project({ location: 1 }).toArray();
+      const hasEligibleDriver = freshDrivers.some((driver) => validCoordinates(driver.location) && distanceKm(item!.location, driver.location!) <= SOS_SEARCH_RADIUS_KM);
+      if (hasEligibleDriver) {
+        const now = new Date();
+        const previousOffers = await offers.find({ requestId: item._id }).project({ round: 1 }).toArray();
+        const lastRound = previousOffers.reduce((max, offer) => Math.max(max, offer.round ?? 0), 0);
+        try {
+          const reopened = await requests.updateOne({ _id: item._id, status: "no_driver_found" }, {
+            $set: { status: "searching", dispatchStatus: "created", dispatchRound: lastRound, dispatchRoundAt: now, dispatchReopenedAt: now, activePatientId: auth.user.id },
+            $unset: { noDriverFoundAt: "", assignedDriverId: "", assignmentExpiresAt: "" },
+            $push: { transitionLog: { from: "no_driver_found", to: "searching", at: now, actor: { type: "system", id: "dispatch" }, reason: "A nearby available driver came online" } },
+          });
+          if (reopened.modifiedCount) {
+            await advanceDispatch(item._id);
+            item = await requests.findOne({ _id: item._id });
+          }
+        } catch { /* A concurrent active request takes precedence over reopening this one. */ }
+      }
+    }
+  }
   if (!item) return Response.json({ request: null, serverTime: new Date().toISOString(), pollSeconds: POLL_SECONDS, staleLocationSeconds: STALE_LOCATION_SECONDS });
   const nearbyAvailableDriverCount = item.status === "searching" && validCoordinates(item.location)
     ? (await drivers.find({

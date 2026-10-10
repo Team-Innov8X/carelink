@@ -51,6 +51,7 @@ export type SosRequest = {
   completedAt?: Date;
   dispatchRound?: number;
   dispatchRoundAt?: Date;
+  dispatchReopenedAt?: Date;
   noDriverFoundAt?: Date;
   type?: "sos" | "normal";
   urgency?: string;
@@ -306,18 +307,20 @@ export async function advanceDispatch(requestId: string) {
   const now = new Date();
   const request = await requests.findOne({ _id: requestId, status: "searching" });
   if (!request) return;
+  const isRoutineTransport = request.type === 'normal' || request.requestType === 'routine';
 
   // Close an SOS 30 seconds after creation even if dispatch polling was delayed.
   // Clear activePatientId so the patient's next SOS is not blocked by the
   // unique active-request index.
-  const timedOutBefore = new Date(now.getTime() - SOS_REQUEST_TIMEOUT_MS);
+  const timeoutMs = isRoutineTransport ? NORMAL_REQUEST_EXPIRY_MIN * 60_000 : SOS_REQUEST_TIMEOUT_MS;
+  const timedOutBefore = new Date(now.getTime() - timeoutMs);
   if (new Date(request.createdAt).getTime() <= timedOutBefore.getTime()) {
     const timedOut = await requests.updateOne(
       { _id: requestId, status: "searching", createdAt: { $lte: timedOutBefore } },
       {
         $set: { status: "no_driver_found", dispatchStatus: "no_driver_found", noDriverFoundAt: now },
         $unset: { activePatientId: "", assignedDriverId: "", assignmentExpiresAt: "" },
-        $push: { transitionLog: { from: request.dispatchStatus ?? "offered", to: "no_driver_found", at: now, actor: { type: "system", id: "dispatch" }, reason: `No driver accepted within ${SOS_REQUEST_TIMEOUT_MS / 1000} seconds` } },
+        $push: { transitionLog: { from: request.dispatchStatus ?? "offered", to: "no_driver_found", at: now, actor: { type: "system", id: "dispatch" }, reason: `No driver accepted within ${timeoutMs / 1000} seconds` } },
       },
     );
     if (timedOut.modifiedCount) {
@@ -334,6 +337,7 @@ export async function advanceDispatch(requestId: string) {
     { $set: { status: "expired", respondedAt: now }, $push: { transitionLog: { from, to: "expired", at: now, actor: { type: "system", id: "dispatch" }, reason: "Offer expired" } } },
   )));
   const round = request.dispatchRound ?? 0;
+  const maximumRounds = request.dispatchReopenedAt ? DISPATCH_MAX_ROUNDS + 1 : DISPATCH_MAX_ROUNDS;
   const currentRoundFilter = round === 0 ? { $or: [{ dispatchRound: 0 }, { dispatchRound: { $exists: false } }] } : { dispatchRound: round };
   const stillOpen = await offers.countDocuments({ requestId, round, status: { $in: ["offered", "pending"] }, expiresAt: { $gt: now } });
   if (stillOpen) return;
@@ -341,7 +345,7 @@ export async function advanceDispatch(requestId: string) {
   const roundOfferCount = await offers.countDocuments({ requestId, round });
   if (round > 0 && complete === 0 && roundOfferCount > 0) return;
   const nextRound = round + 1;
-  if (nextRound > DISPATCH_MAX_ROUNDS) {
+  if (nextRound > maximumRounds) {
     await requests.updateOne({ _id: requestId, status: "searching", dispatchRound: round }, {
       $set: { status: "no_driver_found", dispatchStatus: "no_driver_found", noDriverFoundAt: now, dispatchRound: nextRound },
       $unset: { activePatientId: "" },
@@ -349,7 +353,7 @@ export async function advanceDispatch(requestId: string) {
     });
     return;
   }
-  const alreadyOffered = await offers.find({ requestId }).project({ driverId: 1 }).toArray();
+  const alreadyOffered = await offers.find({ requestId, ...(request.dispatchReopenedAt ? { createdAt: { $gte: request.dispatchReopenedAt } } : {}) }).project({ driverId: 1 }).toArray();
   const excluded = alreadyOffered.map((offer) => offer.driverId);
   const staleBefore = new Date(now.getTime() - STALE_LOCATION_SECONDS * 1000);
   const candidates = await drivers.find({ available: true, activeRequestId: { $exists: false }, currentTripId: { $in: [null] }, location: { $exists: true }, locationUpdatedAt: { $gte: staleBefore }, userId: { $nin: excluded } }).toArray();
@@ -370,6 +374,7 @@ export async function advanceDispatch(requestId: string) {
   // request searchable so a driver who comes online during this window can be
   // offered it on the next patient/driver poll.
   if (!nearest.length) {
+    if (isRoutineTransport) return;
     const roundStartedAt = request.dispatchRoundAt ?? request.createdAt;
     if (now.getTime() - new Date(roundStartedAt).getTime() < OFFER_DURATION_MS) return;
   }
@@ -383,7 +388,7 @@ export async function advanceDispatch(requestId: string) {
     });
   }
   if (!nearest.length) {
-    if (nextRound >= DISPATCH_MAX_ROUNDS) await requests.updateOne({ _id: requestId, status: "searching", dispatchRound: nextRound }, {
+    if (nextRound >= maximumRounds) await requests.updateOne({ _id: requestId, status: "searching", dispatchRound: nextRound }, {
       $set: { status: "no_driver_found", dispatchStatus: "no_driver_found", noDriverFoundAt: now },
       $unset: { activePatientId: "", assignedDriverId: "", assignmentExpiresAt: "" },
       $push: { transitionLog: { from: "offered", to: "no_driver_found", at: now, actor: { type: "system", id: "dispatch" }, reason: "No eligible drivers found" } },
@@ -418,7 +423,7 @@ async function runDispatchMaintenance() {
       { $set: { status: "expired", respondedAt: now }, $push: { transitionLog: { from, to: "expired", at: now, actor: { type: "system", id: "dispatch" }, reason: "Normal request expired" } } },
     )));
   }
-  const open = await requests.find({ status: "searching", type: { $ne: "normal" } }).project({ _id: 1 }).limit(100).toArray();
+  const open = await requests.find({ status: "searching" }).project({ _id: 1 }).limit(100).toArray();
   await Promise.all(open.map((request) => advanceDispatch(request._id)));
 }
 
