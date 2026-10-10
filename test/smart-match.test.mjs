@@ -6,6 +6,7 @@ import { rankRequestSchema } from "../lib/validation.ts";
 const current = {
   emergencyType: "urgent care",
   requiredResources: [],
+  preferredResources: [],
   bedCategory: "general",
   maxTravelMinutes: 60,
   priority: "balanced",
@@ -20,6 +21,15 @@ test("natural language fallback safely extracts criteria and clamps travel", () 
   assert.equal(parsed.bedCategory, "icu");
   assert.equal(parsed.maxTravelMinutes, 240);
   assert.equal(parsed.priority, "travel");
+});
+
+test("natural language keeps optional facilities out of mandatory eligibility", () => {
+  const parsed = parseSmartMatchRefinement("Need cardiac ICU, but preferably a ventilator if possible", current);
+  assert.ok(parsed.requiredResources.includes("icu"));
+  assert.ok(parsed.requiredResources.includes("cardiologist"));
+  assert.ok(parsed.preferredResources.includes("ventilator"));
+  assert.ok(!parsed.requiredResources.includes("ventilator"));
+  assert.equal(parsed.bedCategory, "icu");
 });
 
 test("invalid requests are rejected before calling the provider", async () => {
@@ -51,13 +61,14 @@ test("provider outage falls back to deterministic criteria", async () => {
 test("provider output is allowlisted and invalid structured output falls back", async () => {
   const handler = createSmartMatchAssistHandler({
     authorize: async () => ({ authorized: true, user: { id: "p1" } }), provider: "groq", apiKey: "secret", model: "test",
-    fetcher: async () => Response.json({ choices: [{ message: { content: JSON.stringify({ ...current, emergencyType: "cardiac", requiredResources: ["secret_database", "heart specialist"] }) } }] }),
+    fetcher: async () => Response.json({ choices: [{ message: { content: JSON.stringify({ ...current, emergencyType: "cardiac", requiredResources: ["secret_database"], preferredResources: ["heart specialist"] }) } }] }),
   });
   const response = await handler(request({ message: "Find heart care", current }));
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.source, "groq");
-  assert.deepEqual(body.criteria.requiredResources, ["cardiologist"]);
+  assert.deepEqual(body.criteria.requiredResources, []);
+  assert.deepEqual(body.criteria.preferredResources, ["cardiologist"]);
   assert.equal(JSON.stringify(body).includes("secret_database"), false);
 });
 
