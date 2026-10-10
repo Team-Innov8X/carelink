@@ -111,7 +111,6 @@ export interface Pharmacy {
     lng: number;
   };
   rating: number;
-  isDemo?: boolean;
 }
 
 export interface Medicine {
@@ -125,7 +124,6 @@ export interface Medicine {
   price: string;
   minimumStock?: number;
   updatedAt?: string;
-  isDemo?: boolean;
 }
 
 export interface Ambulance {

@@ -55,7 +55,6 @@ function createAuth(mongoClient: typeof client) {
       hospitalRegistrationNumber: { type: "string", required: false, input: true },
       hospitalSpecialties: { type: "string", required: false, input: true },
       pharmacyName: { type: "string", required: false, input: true },
-      pharmacyId: { type: "string", required: false, input: false },
       pharmacyAddress: { type: "string", required: false, input: true },
       pharmacyLicenseNumber: { type: "string", required: false, input: true },
       pharmacyType: { type: "string", required: false, input: true },

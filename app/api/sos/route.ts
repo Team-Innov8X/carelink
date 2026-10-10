@@ -18,7 +18,7 @@ export async function GET() {
   const query = role === "dispatcher" ? {} : { patientId: auth.user.id };
   const requestQueryStartedAt = performance.now();
   const patientProjection = role === "dispatcher" ? undefined : {
-    _id: 1, patientId: 1, patientName: 1, patientPhone: 1, location: 1, status: 1, incidentType: 1,
+    _id: 1, patientId: 1, patientName: 1, patientPhone: 1, status: 1, incidentType: 1,
     createdAt: 1, acceptedAt: 1, arrivedAt: 1, completedAt: 1, driverId: 1,
     requiredEquipment: 1, tripStage: 1, tripTimestamps: 1, vitalsUpdate: 1, issue: 1,
   };
