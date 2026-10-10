@@ -6,7 +6,7 @@ import { ProfileMenu } from '../../components/common/ProfileMenu';
 import { HospitalRequestInbox } from '../../components/hospitalStaff/HospitalRequestInbox';
 import { SearchField } from '../../components/common/SearchField';
 import { hospitalSpecialties } from '../../data/hospitalSpecialties';
-import { ClinicalDoctorsManager } from '@/components/hospitalAdmin/ClinicalDoctorsManager';
+import { readApiJson } from '@/lib/client-api';
 
 const tileColors = ['text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200'];
 type BedType = 'general' | 'icu' | 'trauma' | 'ventilators';
@@ -19,10 +19,6 @@ const demoDoctors: HospitalDoctor[] = [
   { id: 'demo-doctor-2', name: 'Dr. Kabir Rao', specialty: 'Trauma Care', available: true },
   { id: 'demo-doctor-3', name: 'Dr. Nisha Shah', specialty: 'ICU', available: false },
 ];
-const demoAdmissions: Admission[] = [
-  { _id: 'demo-admission-1', hospitalRequestId: 'demo-request-1', patientId: 'DEMO-1024', patientName: 'Demo Patient A', incidentType: 'Respiratory distress', bedCategory: 'icu', admittedAt: new Date(Date.now() - 45 * 60_000).toISOString() },
-  { _id: 'demo-admission-2', hospitalRequestId: 'demo-request-2', patientId: 'DEMO-1026', patientName: 'Demo Patient B', incidentType: 'Orthopedic injury', bedCategory: 'trauma', admittedAt: new Date(Date.now() - 2 * 60 * 60_000).toISOString() },
-];
 
 function PatientsAdmitted({ searchQuery }: { searchQuery: string }) {
   const [admissions, setAdmissions] = useState<Admission[]>([]);
@@ -30,8 +26,6 @@ function PatientsAdmitted({ searchQuery }: { searchQuery: string }) {
   const [message, setMessage] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [demoMode, setDemoMode] = useState(false);
-  const firstLoadRef = useRef(true);
   const query = searchQuery.trim().toLocaleLowerCase();
   const visibleAdmissions = admissions.filter((patient) => `${patient.patientName} ${patient.patientId} ${patient.patientPhone || ''} ${patient.incidentType} ${patient.bedCategory || ''}`.toLocaleLowerCase().includes(query));
   useEffect(() => {
@@ -39,9 +33,9 @@ function PatientsAdmitted({ searchQuery }: { searchQuery: string }) {
     const refresh = async () => {
       try {
         const response = await fetch('/api/hospital-admin/admissions', { cache: 'no-store' });
-        const result = await response.json();
+        const result = await readApiJson<{ admissions?: Admission[]; error?: string }>(response, 'Could not load admissions.');
         if (!response.ok) throw new Error(result.error || 'Could not load admissions.');
-        if (!cancelled) { const records = result.admissions ?? []; if (records.length) { setDemoMode(false); setAdmissions(records); } else if (firstLoadRef.current) { setDemoMode(true); setAdmissions(demoAdmissions); } firstLoadRef.current = false; setMessage(''); }
+        if (!cancelled) { setAdmissions(result.admissions ?? []); setMessage(''); }
       } catch (error) { if (!cancelled) setMessage(error instanceof Error ? error.message : 'Could not load admissions.'); }
       finally { if (!cancelled) setLoading(false); }
     };
@@ -52,17 +46,16 @@ function PatientsAdmitted({ searchQuery }: { searchQuery: string }) {
   const discharge = async (admissionId: string) => {
     if (!window.confirm('Discharge this patient and return the bed to available inventory?')) return;
     setBusyId(admissionId); setMessage('');
-    if (demoMode) { setAdmissions((current) => current.filter((item) => item._id !== admissionId)); setMessage('Demo discharge recorded locally. No real patient data was changed.'); setBusyId(null); return; }
     try {
       const response = await fetch('/api/hospital-admin/admissions', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admissionId }) });
-      const result = await response.json();
+      const result = await readApiJson<{ error?: string }>(response, 'Could not discharge patient.');
       if (!response.ok) throw new Error(result.error || 'Could not discharge patient.');
       setAdmissions((current) => current.filter((item) => item._id !== admissionId));
       setMessage('Patient discharged. The bed is back in available inventory.');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not discharge patient.'); }
     finally { setBusyId(null); }
   };
-  return <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6"><div className="flex flex-wrap items-end justify-between gap-3"><div><div className="flex items-center gap-2"><h2 className="font-bold text-slate-900">Patients admitted</h2>{demoMode && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800">Demo data</span>}</div><p className="mt-1 text-sm text-slate-500">Patients with an admission recorded for this hospital.</p></div><p className="rounded-lg bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800">Total currently admitted <span className="ml-1 text-lg">{admissions.length}</span></p></div>
+  return <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="font-bold text-slate-900">Patients admitted</h2><p className="mt-1 text-sm text-slate-500">Patients with an admission recorded for this hospital.</p></div><p className="rounded-lg bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800">Total currently admitted <span className="ml-1 text-lg">{admissions.length}</span></p></div>
     {message && <p role="status" className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{message}</p>}
     {loading ? <p className="mt-4 text-sm text-slate-500">Loading patient admissions…</p> : admissions.length ? visibleAdmissions.length ? <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-slate-200 text-xs uppercase text-slate-500"><tr><th className="px-3 py-2">Patient</th><th className="px-3 py-2">Patient ID</th><th className="px-3 py-2">Unit / attending</th><th className="px-3 py-2">Case</th><th className="px-3 py-2">Bed type</th><th className="px-3 py-2">Admitted</th><th className="px-3 py-2">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{visibleAdmissions.map((patient) => <tr key={patient._id} className="align-top"><td className="px-3 py-3 font-semibold text-slate-900"><button type="button" onClick={() => setSelected((current) => current === patient._id ? null : patient._id)} className="text-left hover:text-sky-800">{patient.patientName}</button>{selected === patient._id && <p className="mt-1 text-xs font-normal text-slate-600">Request ref {patient.hospitalRequestId.slice(0, 8)}</p>}</td><td className="px-3 py-3 text-xs text-slate-600">{patient.patientId}</td><td className="px-3 py-3 text-xs text-slate-600">{patient.bedCategory ? `${patient.bedCategory.toUpperCase()} unit` : 'Unit pending'}<p className="mt-1">Attending not assigned</p></td><td className="px-3 py-3 text-slate-600">{patient.incidentType}</td><td className="px-3 py-3 text-slate-600">{patient.bedCategory?.toUpperCase() || 'Not specified'}</td><td className="px-3 py-3 text-xs text-slate-600">{new Date(patient.admittedAt).toLocaleString()}</td><td className="px-3 py-3"><button type="button" disabled={busyId === patient._id} onClick={() => void discharge(patient._id)} className="rounded-md border border-slate-200 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">{busyId === patient._id ? 'Saving…' : 'Discharge'}</button></td></tr>)}</tbody></table></div> : <p className="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-600">No admitted patients match this search.</p> : <p className="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-600">No patients have been recorded as admitted yet. Use “Mark patient admitted” on an accepted incoming request after arrival.</p>}
   </section>;
@@ -175,7 +168,7 @@ function DoctorRoster({ searchQuery }: { searchQuery: string }) {
   const [specialty, setSpecialty] = useState('');
   const [shiftStart, setShiftStart] = useState('08:00');
   const [shiftEnd, setShiftEnd] = useState('16:00');
-  const [onCall, setOnCall] = useState(false);
+  const [dutyStatus, setDutyStatus] = useState<'available' | 'on_call' | 'off_duty'>('available');
   const [loading, setLoading] = useState(true);
   const [demoMode, setDemoMode] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -184,9 +177,10 @@ function DoctorRoster({ searchQuery }: { searchQuery: string }) {
   useEffect(() => {
     let cancelled = false;
     fetch('/api/hospital-admin', { cache: 'no-store' }).then(async (response) => {
-      const result = await response.json();
+      const result = await readApiJson<{ hospital?: AdminHospital; error?: string }>(response, 'Could not load the doctor roster.');
       if (response.status === 404) { if (!cancelled) { setDoctors(demoDoctors); setSpecialties(demoHospital.specialties ?? []); setDemoMode(true); } return; }
       if (!response.ok) throw new Error(result.error || 'Could not load the doctor roster.');
+      if (!result.hospital) throw new Error('The hospital record did not include a doctor roster.');
       if (!cancelled) { setDoctors(result.hospital.doctors ?? []); setSpecialties(result.hospital.specialties ?? []); }
     }).catch((error: unknown) => { if (!cancelled) setMessage(error instanceof Error ? error.message : 'Could not load the doctor roster.'); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -196,8 +190,9 @@ function DoctorRoster({ searchQuery }: { searchQuery: string }) {
     const refreshDemand = async () => {
       try {
         const response = await fetch('/api/hospital-requests', { cache: 'no-store' });
-        const result = await response.json();
-        const pending = (result.requests ?? []).filter((item: { status: string }) => item.status === 'pending') as Array<{ incidentType: string; requiredEquipment: string[] }>;
+        const result = await readApiJson<{ requests?: Array<{ status: string; incidentType: string; requiredEquipment: string[] }> }>(response, 'Could not refresh incoming cases.');
+        if (!response.ok) throw new Error('Could not refresh incoming cases.');
+        const pending = (result.requests ?? []).filter((item) => item.status === 'pending');
         const match = doctors.filter((doctor) => doctor.available).flatMap((doctor) => pending.filter((item) => `${item.incidentType} ${item.requiredEquipment.join(' ')}`.toLocaleLowerCase().includes(doctor.specialty.toLocaleLowerCase())).map((item) => `${item.incidentType}: ${doctor.name} available`))[0];
         if (!cancelled) setPendingDemand(match || (pending.length ? `${pending.length} pending case${pending.length === 1 ? '' : 's'} · check specialty coverage` : ''));
       } catch { if (!cancelled) setPendingDemand(''); }
@@ -211,16 +206,16 @@ function DoctorRoster({ searchQuery }: { searchQuery: string }) {
     if (!cleanName || !cleanSpecialty) return;
     setBusyId('add'); setMessage('');
     if (demoMode) {
-      setDoctors((current) => [...current, { id: `demo-doctor-${Date.now()}`, name: cleanName, specialty: cleanSpecialty, available: true, shiftStart, shiftEnd, onCall }]);
+      setDoctors((current) => [...current, { id: `demo-doctor-${Date.now()}`, name: cleanName, specialty: cleanSpecialty, available: dutyStatus !== 'off_duty', shiftStart, shiftEnd, onCall: dutyStatus === 'on_call' }]);
       setSpecialties((current) => current.some((item) => item.toLocaleLowerCase() === cleanSpecialty.toLocaleLowerCase()) ? current : [...current, cleanSpecialty]);
-      setName(''); setSpecialty(''); setMessage('Demo doctor added locally. No live hospital roster was changed.'); setBusyId(null); return;
+      setName(''); setSpecialty(''); setDutyStatus('available'); setMessage('Demo doctor added locally. No live hospital roster was changed.'); setBusyId(null); return;
     }
     try {
-      const response = await fetch('/api/hospital-admin/doctors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: cleanName, specialty: cleanSpecialty, available: true, shiftStart, shiftEnd, onCall }) });
-      const result = await response.json();
+      const response = await fetch('/api/hospital-admin/doctors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: cleanName, specialty: cleanSpecialty, available: dutyStatus !== 'off_duty', shiftStart, shiftEnd, onCall: dutyStatus === 'on_call' }) });
+      const result = await readApiJson<{ doctor: HospitalDoctor; error?: string }>(response, 'Could not add doctor.');
       if (!response.ok) throw new Error(result.error || 'Could not add doctor.');
       setDoctors((current) => [...current, result.doctor]); setSpecialties((current) => current.some((item) => item.toLocaleLowerCase() === cleanSpecialty.toLocaleLowerCase()) ? current : [...current, cleanSpecialty]);
-      setName(''); setSpecialty(''); setMessage('Doctor added to the hospital roster.');
+      setName(''); setSpecialty(''); setDutyStatus('available'); setMessage('Doctor added to the hospital roster.');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not add doctor.'); }
     finally { setBusyId(null); }
   };
@@ -229,8 +224,8 @@ function DoctorRoster({ searchQuery }: { searchQuery: string }) {
     if (demoMode) { setDoctors((current) => current.map((item) => item.id === doctor.id ? { ...item, available } : item)); setMessage('Demo doctor availability changed locally.'); setBusyId(null); return; }
     try {
       const response = await fetch('/api/hospital-admin/doctors', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doctorId: doctor.id, available }) });
-      const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Could not update doctor availability.');
-      setDoctors((current) => current.map((item) => item.id === doctor.id ? { ...item, available } : item));
+      const result = await readApiJson<{ error?: string }>(response, 'Could not update doctor availability.'); if (!response.ok) throw new Error(result.error || 'Could not update doctor availability.');
+      setDoctors((current) => current.map((item) => item.id === doctor.id ? { ...item, available, onCall: available ? item.onCall : false } : item));
       setMessage(`${doctor.name} is marked ${available ? 'available' : 'unavailable'}.`);
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not update doctor availability.'); }
     finally { setBusyId(null); }
@@ -240,7 +235,7 @@ function DoctorRoster({ searchQuery }: { searchQuery: string }) {
     if (demoMode) { setDoctors((current) => current.filter((item) => item.id !== doctor.id)); setMessage('Demo doctor removed locally.'); setBusyId(null); return; }
     try {
       const response = await fetch('/api/hospital-admin/doctors', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ doctorId: doctor.id }) });
-      const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Could not remove doctor.');
+      const result = await readApiJson<{ error?: string }>(response, 'Could not remove doctor.'); if (!response.ok) throw new Error(result.error || 'Could not remove doctor.');
       setDoctors((current) => current.filter((item) => item.id !== doctor.id)); setMessage(`${doctor.name} removed from the roster.`);
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not remove doctor.'); }
     finally { setBusyId(null); }
@@ -251,15 +246,15 @@ function DoctorRoster({ searchQuery }: { searchQuery: string }) {
     {message && <p role="status" className="mb-4 rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-900">{message}</p>}
     {pendingDemand && <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">Pending demand: {pendingDemand}</p>}
     <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"><p className="text-2xl font-extrabold text-emerald-800">{doctors.filter((doctor) => doctor.available).length}</p><p className="text-xs font-semibold text-emerald-800">Available now</p></div><div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><p className="text-2xl font-extrabold text-slate-800">{doctors.length}</p><p className="text-xs font-semibold text-slate-600">Doctors on roster</p></div><div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3 sm:col-span-1"><p className="text-2xl font-extrabold text-sky-800">{specialties.length || new Set(doctors.map((doctor) => doctor.specialty)).size}</p><p className="text-xs font-semibold text-slate-600">Specialties covered</p></div></div>
-    <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Doctor</th><th className="px-4 py-3">Specialty</th><th className="px-4 py-3">Shift / on call</th><th className="px-4 py-3">Availability</th><th className="px-4 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{visibleDoctors.map((doctor) => <tr key={doctor.id}><td className="px-4 py-3 font-semibold text-slate-900">{doctor.name}</td><td className="px-4 py-3 text-slate-600">{doctor.specialty}</td><td className="px-4 py-3 text-xs text-slate-600">{doctor.shiftStart && doctor.shiftEnd ? `${doctor.shiftStart}–${doctor.shiftEnd}` : 'Shift not set'}{doctor.onCall && <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-800">On call</span>}</td><td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${doctor.available ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{doctor.available ? 'Available' : 'Unavailable'}</span></td><td className="px-4 py-3"><div className="flex justify-end gap-2"><button type="button" disabled={busyId !== null} onClick={() => void toggleAvailability(doctor)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50">{busyId === doctor.id ? 'Saving…' : doctor.available ? 'Set unavailable' : 'Set available'}</button><button type="button" disabled={busyId !== null} onClick={() => void removeDoctor(doctor)} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 disabled:opacity-50">Remove</button></div></td></tr>)}{!visibleDoctors.length && <tr><td colSpan={5} className="px-4 py-7 text-center text-sm text-slate-500">{doctors.length ? 'No doctors match your search.' : 'No doctors on the roster yet. Add one below.'}</td></tr>}</tbody></table></div>
-    <div className="mt-6 border-t border-slate-100 pt-5"><h3 className="mb-3 font-bold text-slate-900">Add a doctor</h3><form onSubmit={(event) => void addDoctor(event)} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><label className="text-xs font-semibold text-slate-600">Doctor name<input required maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Dr. Asha Mehta" className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900" /></label><label className="text-xs font-semibold text-slate-600">Specialty<select required value={specialty} onChange={(event) => setSpecialty(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900"><option value="">Choose a specialty</option>{hospitalSpecialties.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label className="text-xs font-semibold text-slate-600">Shift starts<input type="time" value={shiftStart} onChange={(event) => setShiftStart(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900" /></label><label className="text-xs font-semibold text-slate-600">Shift ends<input type="time" value={shiftEnd} onChange={(event) => setShiftEnd(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900" /></label><label className="flex items-center gap-2 text-sm font-medium text-slate-700"><input type="checkbox" checked={onCall} onChange={(event) => setOnCall(event.target.checked)} />On call</label><button type="submit" disabled={busyId !== null || !name.trim() || !specialty.trim()} className="rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-50">{busyId === 'add' ? 'Adding…' : 'Add doctor'}</button></form><p className="mt-2 text-xs text-slate-500">The specialty list is shared with hospital matching. New doctors start available.</p></div>
+    <div className="overflow-x-auto rounded-xl border border-slate-200"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Doctor</th><th className="px-4 py-3">Specialty</th><th className="px-4 py-3">Shift</th><th className="px-4 py-3">Duty status</th><th className="px-4 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{visibleDoctors.map((doctor) => <tr key={doctor.id}><td className="px-4 py-3 font-semibold text-slate-900">{doctor.name}</td><td className="px-4 py-3 text-slate-600">{doctor.specialty}</td><td className="px-4 py-3 text-xs text-slate-600">{doctor.shiftStart && doctor.shiftEnd ? `${doctor.shiftStart}–${doctor.shiftEnd}` : 'Shift not set'}</td><td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${doctor.onCall ? 'bg-sky-100 text-sky-800' : doctor.available ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{doctor.onCall ? 'On call' : doctor.available ? 'Available' : 'Off duty'}</span></td><td className="px-4 py-3"><div className="flex justify-end gap-2"><button type="button" disabled={busyId !== null} onClick={() => void toggleAvailability(doctor)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50">{busyId === doctor.id ? 'Saving…' : doctor.available ? 'Set off duty' : 'Set available'}</button><button type="button" disabled={busyId !== null} onClick={() => void removeDoctor(doctor)} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 disabled:opacity-50">Remove</button></div></td></tr>)}{!visibleDoctors.length && <tr><td colSpan={5} className="px-4 py-7 text-center text-sm text-slate-500">{doctors.length ? 'No doctors match your search.' : 'No doctors on the roster yet. Add one below.'}</td></tr>}</tbody></table></div>
+    <div className="mt-6 border-t border-slate-100 pt-5"><h3 className="mb-3 font-bold text-slate-900">Add a doctor</h3><form onSubmit={(event) => void addDoctor(event)} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><label className="text-xs font-semibold text-slate-600">Doctor name<input required maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Dr. Asha Mehta" className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900" /></label><label className="text-xs font-semibold text-slate-600">Specialty<select required value={specialty} onChange={(event) => setSpecialty(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900"><option value="">Choose a specialty</option>{hospitalSpecialties.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label className="text-xs font-semibold text-slate-600">Shift starts<input type="time" value={shiftStart} onChange={(event) => setShiftStart(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900" /></label><label className="text-xs font-semibold text-slate-600">Shift ends<input type="time" value={shiftEnd} onChange={(event) => setShiftEnd(event.target.value)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900" /></label><label className="text-xs font-semibold text-slate-600">Duty status<select value={dutyStatus} onChange={(event) => setDutyStatus(event.target.value as typeof dutyStatus)} className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900"><option value="available">Available</option><option value="on_call">On call</option><option value="off_duty">Off duty</option></select></label><button type="submit" disabled={busyId !== null || !name.trim() || !specialty.trim()} className="rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-50">{busyId === 'add' ? 'Adding…' : 'Add doctor'}</button></form><p className="mt-2 text-xs text-slate-500">The specialty list is shared with hospital matching. New doctors start available.</p></div>
   </section>;
 }
 
 function ActivityLog() {
   const [entries, setEntries] = useState<Array<{ _id: string; action: string; actorName?: string; details: Record<string, unknown>; createdAt: string }>>([]);
   const [message, setMessage] = useState('Loading activity…');
-  useEffect(() => { fetch('/api/hospital-admin/activity', { cache: 'no-store' }).then(async (response) => { const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Could not load the activity log.'); setEntries(result.entries ?? []); setMessage(''); }).catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'Could not load activity.')); }, []);
+  useEffect(() => { fetch('/api/hospital-admin/activity', { cache: 'no-store' }).then(async (response) => { const result = await readApiJson<{ entries?: typeof entries; error?: string }>(response, 'Could not load the activity log.'); if (!response.ok) throw new Error(result.error || 'Could not load the activity log.'); setEntries(result.entries ?? []); setMessage(''); }).catch((error: unknown) => setMessage(error instanceof Error ? error.message : 'Could not load activity.')); }, []);
   return <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Audit / activity log</h2><p className="mt-1 text-sm text-slate-500">Recent changes made by hospital staff.</p>{message && <p className="mt-4 text-sm text-slate-500">{message}</p>}<ul className="mt-4 divide-y divide-slate-100">{entries.map((entry) => <li key={entry._id} className="py-3"><p className="font-semibold">{entry.action}</p><p className="mt-1 text-xs text-slate-500">{entry.actorName || 'Hospital staff'} · {new Date(entry.createdAt).toLocaleString()}</p>{Object.keys(entry.details || {}).length > 0 && <p className="mt-1 text-xs text-slate-600">{JSON.stringify(entry.details)}</p>}</li>)}{!message && !entries.length && <li className="py-4 text-sm text-slate-500">No activity has been recorded yet.</li>}</ul></section>;
 }
 
@@ -268,7 +263,7 @@ function HospitalAdminContent({ hospitalName }: { hospitalName: string }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [pendingCount, setPendingCount] = useState(0);
   const [simulationMessage, setSimulationMessage] = useState('');
-  useEffect(() => { const refresh = () => fetch('/api/hospital-requests', { cache: 'no-store' }).then((response) => response.json()).then((result) => setPendingCount((result.requests ?? []).filter((item: { status: string }) => item.status === 'pending').length)).catch(() => undefined); void refresh(); const timer = window.setInterval(() => void refresh(), 10000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => { const refresh = async () => { try { const response = await fetch('/api/hospital-requests', { cache: 'no-store' }); const result = await readApiJson<{ requests?: Array<{ status: string }> }>(response, 'Could not refresh pending cases.'); if (response.ok) setPendingCount((result.requests ?? []).filter((item) => item.status === 'pending').length); } catch { /* The inbox shows its own actionable loading error. */ } }; void refresh(); const timer = window.setInterval(() => void refresh(), 10000); return () => window.clearInterval(timer); }, []);
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 sm:px-8">
@@ -292,11 +287,11 @@ function HospitalAdminContent({ hospitalName }: { hospitalName: string }) {
           </nav>
           <div className="min-w-0">
             {section === 'beds' && <BedCapacityCard hospitalName={hospitalName} searchQuery={searchQuery} />}
-            {section === 'doctors' && <><ClinicalDoctorsManager /><DoctorRoster searchQuery={searchQuery} /></>}
+    {section === 'doctors' && <DoctorRoster searchQuery={searchQuery} />}
             {section === 'patients' && <PatientsAdmitted searchQuery={searchQuery} />}
             {section === 'cases' && <HospitalRequestInbox searchQuery={searchQuery} />}
             {section === 'activity' && <ActivityLog />}
-            {section === 'simulation' && <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Demo simulation panel</h2><p className="mt-1 text-sm text-slate-500">Exercise stale data, last-bed races, and hospital diversion. The race simulation uses an isolated test counter.</p>{simulationMessage && <p role="status" className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">{simulationMessage}</p>}<div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={async () => { const response = await fetch('/api/hospital-admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'simulate-stale' }) }); const result = await response.json(); setSimulationMessage(response.ok ? 'Capacity data is now marked stale. Re-confirm it from Bed Management to restore staff-confirmed freshness.' : result.error || 'Could not simulate stale data.'); }} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">Simulate stale data</button><button type="button" onClick={async () => { const response = await fetch('/api/hospital-admin/simulate-concurrency', { method: 'POST' }); const result = await response.json(); setSimulationMessage(response.ok ? result.message : result.error || 'Could not run the concurrency simulation.'); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Fire two simultaneous requests</button><button type="button" onClick={async () => { const response = await fetch('/api/hospital-admin', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'accepting', acceptingRequests: false }) }); const result = await response.json(); setSimulationMessage(response.ok ? 'Hospital is now diverted. The accept endpoint rejects new requests until staff resume intake from Bed Management.' : result.error || 'Could not simulate offline mode.'); }} className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-900">Hospital goes offline</button></div></section>}
+            {section === 'simulation' && <section className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-bold">Demo simulation panel</h2><p className="mt-1 text-sm text-slate-500">Preview stale-data and diversion states locally. The last-bed race uses an isolated test counter.</p>{simulationMessage && <p role="status" className="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-900">{simulationMessage}</p>}<div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => setSimulationMessage('Preview only: capacity would be marked stale. Live hospital data was not changed.')} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">Preview stale data</button><button type="button" onClick={async () => { try { const response = await fetch('/api/hospital-admin/simulate-concurrency', { method: 'POST' }); const result = await readApiJson<{ message?: string; error?: string }>(response, 'Could not run the concurrency simulation.'); setSimulationMessage(response.ok ? result.message || 'The concurrency simulation completed.' : result.error || 'Could not run the concurrency simulation.'); } catch (error) { setSimulationMessage(error instanceof Error ? error.message : 'Could not run the concurrency simulation.'); } }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold">Fire two simultaneous requests</button><button type="button" onClick={() => setSimulationMessage('Preview only: new requests would be diverted. Live hospital intake was not changed.')} className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-900">Preview hospital offline</button></div></section>}
           </div>
         </div>
       </div>

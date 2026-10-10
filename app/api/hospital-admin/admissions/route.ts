@@ -46,7 +46,10 @@ async function returnReservedBed(admission: { hospitalId: string; bedCategory?: 
 function hospitalScope(user: { id: string } & Record<string, unknown>) {
   const hospitalId = typeof user.hospitalId === 'string' ? user.hospitalId : '';
   const hospitalName = typeof user.hospitalName === 'string' ? user.hospitalName : '';
-  return hospitalId ? { hospitalId } : hospitalName ? { hospitalName } : null;
+  const scope: Record<string, string>[] = [];
+  if (hospitalId) scope.push({ hospitalId });
+  if (hospitalName) scope.push({ hospitalName });
+  return scope.length ? { $or: scope } : null;
 }
 
 export async function GET() {
@@ -54,11 +57,16 @@ export async function GET() {
   if (!authorization.authorized || !authorization.user) {
     return Response.json({ error: authorization.reason }, { status: authorization.reason === 'UNAUTHENTICATED' ? 401 : 403 });
   }
+  try {
   const scope = hospitalScope(authorization.user as typeof authorization.user & Record<string, unknown>);
   if (!scope) return Response.json({ error: 'Your account is not linked to a hospital.' }, { status: 403 });
   const { hospitalAdmissions } = await workflowCollections();
   const admissions = await hospitalAdmissions.find({ ...scope, dischargedAt: { $exists: false } }).sort({ admittedAt: -1 }).limit(200).toArray();
   return Response.json({ admissions });
+  } catch (error) {
+    console.error('Could not load hospital admissions:', error);
+    return Response.json({ error: 'Could not load admitted patients. Please refresh and try again.' }, { status: 500 });
+  }
 }
 
 export async function PATCH(request: Request) {

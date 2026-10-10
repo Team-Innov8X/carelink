@@ -11,13 +11,14 @@ export async function GET() {
   if (!auth.authorized || !auth.user) {
     return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
   }
-
+  try {
   const profile = auth.user as typeof auth.user & { hospitalId?: string; hospitalName?: string };
   await expireHospitalReservations({ hospitalId: profile.hospitalId, hospitalName: profile.hospitalName });
-  const query: Record<string, unknown> = { status: { $in: ["pending", "accepting", "accepted", "rejected"] } };
-  if (profile.hospitalId) query.hospitalId = profile.hospitalId;
-  else if (profile.hospitalName) query.hospitalName = profile.hospitalName;
-  else return Response.json({ error: "Your account is not linked to a hospital." }, { status: 403 });
+  const hospitalScope: Record<string, string>[] = [];
+  if (profile.hospitalId) hospitalScope.push({ hospitalId: profile.hospitalId });
+  if (profile.hospitalName) hospitalScope.push({ hospitalName: profile.hospitalName });
+  if (!hospitalScope.length) return Response.json({ error: "Your account is not linked to a hospital." }, { status: 403 });
+  const query: Record<string, unknown> = { status: { $in: ["pending", "accepting", "accepted", "rejected"] }, $or: hospitalScope };
 
   const { hospitalRequests } = await workflowCollections();
   // Older SOS requests may have been saved before the hospital inbox integration.
@@ -53,6 +54,10 @@ export async function GET() {
     const etaMinutes = driverLocation && destination ? Math.max(1, Math.ceil(distanceKm(driverLocation, destination) * 2.5)) : undefined;
     return { ...item, etaMinutes, admitted: admittedIds.has(item._id), admittedAt: admittedAtById.get(item._id), sosStatus: sos?.status, driverAssigned: Boolean(sos?.driverId), driverAcceptedAt: sos?.acceptedAt, driverTripStage: sos?.tripStage ?? item.driverTripStage, driverTripTimestamps: sos?.tripTimestamps, driverVitalsUpdate: sos?.vitalsUpdate ?? item.driverVitalsUpdate, driverIssue: sos?.issue ?? item.driverIssue, location: sos?.location ?? item.location };
   }) });
+  } catch (error) {
+    console.error('Could not load hospital requests:', error);
+    return Response.json({ error: 'Could not load incoming cases. Please refresh and try again.' }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {

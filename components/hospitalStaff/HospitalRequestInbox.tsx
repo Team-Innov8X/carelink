@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Clock, RefreshCw } from '@/components/icons';
 import { DelayedSkeleton, HospitalRequestListSkeleton } from '@/components/common/Skeletons';
 import { classifyEmergencyLevel, EmergencyLevelTag } from '../common/EmergencyLevelTag';
+import { readApiJson } from '@/lib/client-api';
 
 type HospitalRequest = {
   _id: string;
@@ -46,7 +47,7 @@ export function HospitalRequestInbox({ searchQuery = '' }: { searchQuery?: strin
   const refresh = useCallback(async () => {
     try {
       const response = await fetch('/api/hospital-requests', { cache: 'no-store' });
-      const result = await response.json();
+      const result = await readApiJson<{ requests?: HospitalRequest[]; error?: string }>(response, 'Could not load patient requests.');
       if (!response.ok) throw new Error(result.error || 'Could not load patient requests.');
       const liveRequests = result.requests ?? [];
       setRequests(liveRequests);
@@ -73,7 +74,7 @@ export function HospitalRequestInbox({ searchQuery = '' }: { searchQuery?: strin
     setMessage('');
     try {
       const response = await fetch(`/api/hospital-requests/${encodeURIComponent(request._id)}/accept`, { method: 'POST' });
-      const result = await response.json();
+      const result = await readApiJson<{ error?: string }>(response, 'Could not accept this patient request.');
       if (!response.ok) throw new Error(result.error || 'Could not accept this patient request.');
       setMessage(`${request.patientName}'s request was accepted and one bed was reserved.`);
       window.dispatchEvent(new Event('carelink-data-refresh'));
@@ -91,7 +92,7 @@ export function HospitalRequestInbox({ searchQuery = '' }: { searchQuery?: strin
     setMessage('');
     try {
       const response = await fetch('/api/hospital-admin/admissions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hospitalRequestId: request._id }) });
-      const result = await response.json();
+      const result = await readApiJson<{ error?: string }>(response, 'Could not record patient admission.');
       if (!response.ok) throw new Error(result.error || 'Could not record patient admission.');
       setMessage(`${request.patientName} was recorded as admitted.`);
       await refresh();
@@ -106,7 +107,7 @@ export function HospitalRequestInbox({ searchQuery = '' }: { searchQuery?: strin
     setBusyId(request._id); setMessage('');
     try {
       const response = await fetch(`/api/hospital-requests/${encodeURIComponent(request._id)}/reject`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }) });
-      const result = await response.json();
+      const result = await readApiJson<{ error?: string }>(response, 'Could not reject this patient request.');
       if (!response.ok) throw new Error(result.error || 'Could not reject this patient request.');
       setMessage(`${request.patientName}'s request was rejected.`);
       await refresh();
