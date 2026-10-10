@@ -29,10 +29,12 @@ export async function POST(request: Request, context: RouteContext<"/api/sos/[id
     await drivers.updateOne({ userId: auth.user.id, activeRequestId: id }, { $set: { available: true }, $unset: { activeRequestId: "", pendingOfferRequestId: '', pendingOfferExpiresAt: '' } });
     return Response.json({ error: "SOS request is no longer available" }, { status: 409 });
   }
-  await requests.updateMany(
-    { patientId: sos.patientId, _id: { $ne: id }, status: "searching" },
-    { $set: { status: "cancelled", cancelledAt: new Date(), cancellationReason: "Another active SOS for this patient was accepted" } },
-  );
+  if (sos.requestType !== 'routine') {
+    await requests.updateMany(
+      { patientId: sos.patientId, _id: { $ne: id }, status: "searching", requestType: { $ne: 'routine' } },
+      { $set: { status: "cancelled", cancelledAt: new Date(), cancellationReason: "Another active SOS for this patient was accepted" } },
+    );
+  }
   const driverLocation = validCoordinates(body.location) ? body.location : validCoordinates(driver.location) ? driver.location : undefined;
   return Response.json({ request: { id: sos._id, status: "accepted" }, patient: { name: sos.patientName, phone: sos.patientPhone, location: sos.location }, driverLocation, directionsUrl: mapsUrl(sos.location, driverLocation) });
 }

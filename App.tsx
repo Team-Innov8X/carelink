@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Role } from './types';
 import { CareLinkProvider, useCareLink } from './context/CareLinkContext';
 import { Navbar } from './components/common/Navbar';
@@ -19,27 +19,37 @@ import { MobileNav } from './components/mobile/MobileNav';
 import { PatientSOSStatus } from './components/sos/PatientSOSStatus';
 import { LoaderCircle, Siren, CheckCircle2, X } from './components/icons';
 import { PatientEmergencyRequestsView } from './components/patient/PatientEmergencyRequestsView';
+import { PatientSmartMatch } from './components/patient/PatientSmartMatch';
+import { PatientHospitalBooking } from './components/patient/PatientHospitalBooking';
 import { RoutineDriverBookingView } from './components/patient/RoutineDriverBookingView';
 import { TriageChatView } from './components/patient/TriageChatView';
 import { HospitalStaffView } from './components/hospitalStaff/HospitalStaffView';
 
 const MainAppContent: React.FC = () => {
-  const { activeTab, role } = useCareLink();
+  const { activeTab, role, setActiveTab } = useCareLink();
   const [isNewEmergencyOpen, setIsNewEmergencyOpen] = useState(false);
   const [sosSubmitting, setSosSubmitting] = useState(false);
   const sosSubmittingRef = useRef(false);
   const [sosMessage, setSosMessage] = useState('');
+  const [sosRequestId, setSosRequestId] = useState<string | null>(null);
   const sosToastTimer = useRef<number | null>(null);
 
-  const showSosToast = (message: string) => {
+  const showSosToast = (message: string, requestId: string | null = null) => {
     setSosMessage(message);
+    setSosRequestId(requestId);
     if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current);
     if (message) {
       sosToastTimer.current = window.setTimeout(() => {
         setSosMessage('');
-      }, 30000);
+        setSosRequestId(null);
+        sosToastTimer.current = null;
+      }, 6500);
     }
   };
+
+  useEffect(() => () => {
+    if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current);
+  }, []);
 
   const handleSOS = (incidentType = 'Emergency assistance requested') => {
     if (role !== 'patient') {
@@ -63,7 +73,7 @@ const MainAppContent: React.FC = () => {
           : result.request.status === 'completed'
             ? 'This recent SOS was already handled'
             : 'Your SOS request has already been created');
-        showSosToast(`${statusMessage.replace(/[.\s]+$/, '')}. Reference: ${result.request.id}`);
+        showSosToast(`${statusMessage.replace(/[.\s]+$/, '')}. Reference: ${result.request.id}`, result.request.id);
         window.dispatchEvent(new Event('carelink-sos-updated'));
       } catch (error) {
         showSosToast(error instanceof Error ? error.message : 'Could not send your emergency request.');
@@ -72,13 +82,6 @@ const MainAppContent: React.FC = () => {
         setSosSubmitting(false);
       }
     };
-
-    if (process.env.NODE_ENV === 'development') {
-      setSosSubmitting(true);
-      showSosToast('Creating your demo emergency request near Connaught Place…');
-      void sendRequest({ latitude: 28.6328, longitude: 77.2195 });
-      return;
-    }
 
     if (!navigator.geolocation) {
       showSosToast('This browser cannot access GPS. Enable location services or use a GPS-enabled device.');
@@ -125,10 +128,10 @@ const MainAppContent: React.FC = () => {
           {activeTab === 'triage' && <TriageChatView />}
           {activeTab === 'driver-request' && <RoutineDriverBookingView />}
           {activeTab === 'notifications' && <NotificationCenter />}
-          {activeTab === 'hospitals' && <HospitalDirectory />}
+          {activeTab === 'hospitals' && (role === 'patient' ? <PatientHospitalBooking /> : <HospitalDirectory />)}
           {activeTab === 'hospital-view' && <HospitalDetailsView />}
           {activeTab === 'hospital-portal' && <HospitalStaffView />}
-          {activeTab === 'recommendations' && (role === 'patient' ? <section className="mx-auto mt-10 max-w-xl rounded-3xl border border-sky-100 bg-white p-10 text-center shadow-sm"><div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-50 text-sky-700"><Siren className="h-7 w-7" /></div><h1 className="text-2xl font-black text-slate-900">Feature coming soon</h1><p className="mt-2 text-sm text-slate-500">Smart Match is being prepared and will be available here soon.</p></section> : <SmartRecommendations />)}
+          {activeTab === 'recommendations' && (role === 'patient' ? <PatientSmartMatch /> : <SmartRecommendations />)}
           {activeTab === 'handoff' && <PatientHandoffView />}
           {activeTab === 'pharmacy' && <MedicineSearch mode="patient" />}
           {activeTab === 'reports' && <ReportsView />}
@@ -164,16 +167,17 @@ const MainAppContent: React.FC = () => {
               <div>
                 <p className="font-bold text-slate-900 text-sm">Emergency SOS Transmitted</p>
                 <p className="mt-1 text-xs text-slate-600 leading-relaxed">{sosMessage}</p>
-                <p className="mt-2 text-[11px] font-medium text-slate-400">Track live driver status under &quot;Your Emergency Requests&quot; · Closes in 30s</p>
+                <p className="mt-2 text-[11px] font-medium text-slate-400">Track live driver status under &quot;Your Emergency Requests&quot; · Closes in 6.5s</p>
+                {sosRequestId && <button type="button" onClick={() => { setActiveTab('requests'); if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); setSosMessage(''); setSosRequestId(null); }} className="mt-2 text-xs font-bold text-sky-800 underline underline-offset-2">View emergency request details</button>}
               </div>
             </div>
-            <button type="button" onClick={() => { if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); setSosMessage(''); }} aria-label="Close notification" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
+            <button type="button" onClick={() => { if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); setSosMessage(''); setSosRequestId(null); }} aria-label="Dismiss emergency notification" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
               <X className="h-4 w-4" />
             </button>
           </div>
         </aside>
       )}
-      {role === 'patient' && <PatientSOSStatus />}
+      {role === 'patient' && <PatientSOSStatus transientNoticeVisible={Boolean(sosMessage)} />}
 
       {/* Modals */}
       <NewEmergencyModal

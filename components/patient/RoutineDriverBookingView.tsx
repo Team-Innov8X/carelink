@@ -7,16 +7,12 @@ import {
   MapPin,
   Clock,
   User,
-  Phone,
   FileText,
   Accessibility,
   CheckCircle2,
   AlertCircle,
   LocateFixed,
-  Calendar,
-  Building,
   ArrowRight,
-  ShieldAlert,
 } from '../icons';
 
 export const RoutineDriverBookingView: React.FC = () => {
@@ -49,10 +45,8 @@ export const RoutineDriverBookingView: React.FC = () => {
   const handleGetCurrentLocation = () => {
     setIsLocating(true);
     if (!navigator.geolocation) {
-      // Default to demo Connaught place coordinates
-      setCoordinates({ latitude: 28.6328, longitude: 77.2195 });
-      setPickupAddress('Connaught Place, New Delhi (GPS Demo)');
       setIsLocating(false);
+      setFeedback({ type: 'error', message: 'This browser cannot provide GPS coordinates. Enable location services to request a driver.' });
       return;
     }
 
@@ -63,10 +57,9 @@ export const RoutineDriverBookingView: React.FC = () => {
         setIsLocating(false);
       },
       (err) => {
-        // Fallback demo coordinates
-        setCoordinates({ latitude: 28.6328, longitude: 77.2195 });
-        setPickupAddress('Connaught Place, New Delhi (Fallback)');
+        setCoordinates(null);
         setIsLocating(false);
+        setFeedback({ type: 'error', message: err.code === err.PERMISSION_DENIED ? 'Allow location access to request a driver.' : 'Your current location is unavailable. Please try again.' });
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -82,11 +75,15 @@ export const RoutineDriverBookingView: React.FC = () => {
       setFeedback({ type: 'error', message: 'Please provide a pickup address or use GPS location.' });
       return;
     }
+    if (!coordinates) {
+      setFeedback({ type: 'error', message: 'Use GPS to set the pickup coordinates before submitting your request.' });
+      return;
+    }
 
     setIsSubmitting(true);
     setFeedback(null);
 
-    const targetCoords = coordinates || { latitude: 28.6328, longitude: 77.2195 };
+    const targetCoords = coordinates;
     const preferredTimeDisplay = timingType === 'asap'
       ? 'Immediate (Next Available Driver)'
       : scheduledDateTime || 'Scheduled';
@@ -107,6 +104,7 @@ export const RoutineDriverBookingView: React.FC = () => {
           location: targetCoords,
           incidentType: `Routine Transport: ${reason}`,
           requestType: 'routine',
+          patientName: patientName.trim() || undefined,
           patientPhone: patientPhone.trim(),
           preferredTime: preferredTimeDisplay,
           requiredEquipment: mobilityNeeds,
@@ -378,7 +376,7 @@ export const RoutineDriverBookingView: React.FC = () => {
                 <select
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  className="w-full text-xs px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200"
+                  className="w-full appearance-none text-xs px-3.5 py-2.5 pr-10 leading-5 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200"
                 >
                   <option value="Routine Checkup">Routine Doctor Checkup / OPD</option>
                   <option value="Dialysis Treatment">Scheduled Dialysis Treatment</option>

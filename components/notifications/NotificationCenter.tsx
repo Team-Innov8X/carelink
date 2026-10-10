@@ -14,6 +14,26 @@ type CareNotification = {
   createdAt: string;
 };
 
+async function readApiJson(response: Response): Promise<{ notifications?: CareNotification[] }> {
+  const contentType = response.headers.get('content-type') ?? '';
+  const body = await response.text();
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Your session has expired. Sign in again to view notifications.');
+    let errorMessage = 'Could not load notifications.';
+    if (contentType.includes('application/json') && body) {
+      try {
+        const payload = JSON.parse(body) as { error?: unknown };
+        if (typeof payload.error === 'string') errorMessage = payload.error;
+      } catch { /* Keep the safe fallback for malformed error responses. */ }
+    }
+    throw new Error(errorMessage);
+  }
+  if (!body.trim()) return {};
+  if (!contentType.includes('application/json')) throw new Error('The notifications service returned an unexpected response. Please try again.');
+  try { return JSON.parse(body) as { notifications?: CareNotification[] }; }
+  catch { throw new Error('The notifications service returned invalid data. Please try again.'); }
+}
+
 export function NotificationCenter() {
   const { emergencies, setSelectedEmergencyId, setActiveTab } = useCareLink();
   const [notifications, setNotifications] = useState<CareNotification[]>([]);
@@ -25,8 +45,7 @@ export function NotificationCenter() {
   const refresh = useCallback(async () => {
     try {
       const response = await fetch('/api/notifications', { cache: 'no-store' });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Could not load notifications.');
+      const result = await readApiJson(response);
       setNotifications(result.notifications ?? []);
       setMessage('');
     } catch (error) {

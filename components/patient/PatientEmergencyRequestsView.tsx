@@ -1,24 +1,18 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import {
   Siren,
   Search,
-  Filter,
   Car,
   CheckCircle2,
   Clock,
   BedDouble,
   Stethoscope,
-  ChevronRight,
   ShieldAlert,
-  Calendar,
-  Phone,
   RefreshCw,
-  Plus,
   AlertCircle,
-  XCircle,
 } from '../icons';
 
 export type PatientRequest = {
@@ -30,8 +24,10 @@ export type PatientRequest = {
   arrivedAt?: string | null;
   completedAt?: string;
   driverAssigned?: boolean;
+  driver?: { name: string; vehicleNumber?: string | null; ambulanceType?: string | null } | null;
   requestType?: 'emergency' | 'routine';
   patientPhone?: string;
+  passengerName?: string;
   preferredTime?: string;
   notes?: string;
   rejectionReason?: string;
@@ -52,27 +48,31 @@ export const PatientEmergencyRequestsView: React.FC = () => {
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const requestInFlight = useRef(false);
 
   const fetchRequests = useCallback(async () => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     try {
-      setLoading(true);
       const res = await fetch('/api/sos', { cache: 'no-store' });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to load requests');
-      setRequests(data.requests ?? []);
+      setRequests(Array.isArray(data.requests) ? data.requests : []);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not fetch requests');
     } finally {
+      requestInFlight.current = false;
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void fetchRequests();
+    const initial = window.setTimeout(() => void fetchRequests(), 0);
     const interval = window.setInterval(fetchRequests, 6000);
     window.addEventListener('carelink-sos-updated', fetchRequests);
     return () => {
+      window.clearTimeout(initial);
       window.clearInterval(interval);
       window.removeEventListener('carelink-sos-updated', fetchRequests);
     };
@@ -291,6 +291,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
                       <h3 className="text-base font-bold text-slate-900 mt-0.5">
                         {request.incidentType}
                       </h3>
+                      {request.requestType === 'routine' && <p className="mt-1 text-xs text-slate-600">Passenger: {request.passengerName || 'Patient'}{request.patientPhone ? ` · ${request.patientPhone}` : ''}</p>}
                       <p className="text-xs text-slate-400 mt-0.5">
                         Created on {new Date(request.createdAt).toLocaleString()}
                       </p>
@@ -325,6 +326,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
                         ? 'This request was closed.'
                         : 'Dispatched into CareLink network. Awaiting pickup confirmation.'}
                     </p>
+                    {request.driverAssigned && <p className="mt-2 text-xs font-semibold text-emerald-800">{request.driver?.name ?? 'Driver assigned'}{request.driver?.vehicleNumber ? ` · ${request.driver.vehicleNumber}` : ' · Vehicle details pending'}{request.driver?.ambulanceType ? ` · ${request.driver.ambulanceType}` : ''}</p>}
                     {request.preferredTime && (
                       <p className="mt-2 text-[11px] font-medium text-slate-500 flex items-center gap-1">
                         <Clock className="h-3 w-3 text-slate-400" />

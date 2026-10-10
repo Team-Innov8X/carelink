@@ -16,6 +16,22 @@
     overflow-x: hidden;
     background-color: #f8fafc;
   }
+
+  button,
+  a[href] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  button,
+  a[href] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
 }
 
 /* Custom scrollbar */

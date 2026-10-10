@@ -4,23 +4,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   PhoneCall,
   Send,
-  AlertTriangle,
   ShieldAlert,
   LoaderCircle,
-  Building2,
   Clock,
   Sparkles,
   RefreshCw,
   CheckCircle2,
   Lock,
-  HeartPulse,
-  Flame,
-  Activity,
-  ChevronRight,
   Info,
-  Car,
 } from '../icons';
-import { useCareLink } from '../../context/CareLinkContext';
 
 export interface ChatMessage {
   id: string;
@@ -55,8 +47,31 @@ const QUICK_PROMPTS = [
   { label: 'Mild fever & sore throat', icon: '🌡️', query: 'I have had a mild fever (100°F) and a scratchy sore throat for 2 days.' },
 ];
 
+type TriageApiResponse = {
+  error?: string;
+  reply?: string;
+  urgency?: ChatMessage['urgency'];
+  category?: string | null;
+  shouldEscalate?: boolean;
+  ranked?: RankedHospitalResult[];
+  request?: { id?: string };
+  [key: string]: unknown;
+};
+
+async function readJsonResponse(response: Response): Promise<TriageApiResponse> {
+  const body = await response.text();
+  if (!body.trim()) return {};
+  if (!response.headers.get('content-type')?.includes('application/json')) {
+    throw new Error(response.ok ? 'The service returned an unexpected response. Please try again.' : `The service could not complete the request (HTTP ${response.status}). Please try again.`);
+  }
+  try { return JSON.parse(body) as TriageApiResponse; }
+  catch { throw new Error('The service returned invalid data. Please try again.'); }
+}
+
+const localId = (prefix: string) => `${prefix}-${globalThis.crypto.randomUUID()}`;
+const timeLabel = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
 export const TriageChatView: React.FC = () => {
-  const { setActiveTab } = useCareLink();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [conversationId, setConversationId] = useState<string>('');
@@ -69,24 +84,17 @@ export const TriageChatView: React.FC = () => {
   const [sosStatus, setSosStatus] = useState<string | null>(null);
   const [sosSubmitting, setSosSubmitting] = useState(false);
   const [showAuditLogs, setShowAuditLogs] = useState(false);
-  const [auditLog, setAuditLog] = useState<any>(null);
+  const [auditLog, setAuditLog] = useState<Record<string, unknown> | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Initialize conversation ID on mount
   useEffect(() => {
-    const id = 'triage-' + Math.random().toString(36).substring(2, 11) + '-' + Date.now();
-    setConversationId(id);
-    setMessages([
-      {
-        id: 'welcome',
-        role: 'assistant',
-        content:
-          'Hello. I am the CareLink Emergency Triage Assistant. Please describe your symptoms or what happened. I will assess the urgency and connect you to the best equipped hospital immediately.\n\n⚠️ IMPORTANT: If you are experiencing a life-threatening emergency, call emergency services (911 / 112 / 108) immediately.',
-        urgency: 'assessing',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      },
-    ]);
+    const initial = window.setTimeout(() => {
+      setConversationId(localId('triage'));
+      setMessages([{ id: 'welcome', role: 'assistant', content: 'Describe your symptoms or what happened. Symptom guidance is informational and is not a diagnosis. If you may be in immediate danger, call your local emergency service now (for example, 112 or 108 in India).', urgency: 'assessing', timestamp: timeLabel() }]);
+    }, 0);
+    return () => window.clearTimeout(initial);
   }, []);
 
   // Auto scroll to bottom
@@ -99,22 +107,9 @@ export const TriageChatView: React.FC = () => {
     setRankingLoading(true);
     setRankingError(null);
     try {
-      // Default to Delhi Connaught Place coordinates if geolocation is unavailable in browser
-      let ambulanceLocation = { latitude: 28.6328, longitude: 77.2195 };
-
-      if (typeof navigator !== 'undefined' && navigator.geolocation) {
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 3000 });
-          });
-          ambulanceLocation = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          };
-        } catch {
-          // Fall back gracefully to default coordinates
-        }
-      }
+      if (!navigator.geolocation) throw new Error('Location access is unavailable. Allow GPS to match hospitals near you.');
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000, maximumAge: 0 }));
+      const ambulanceLocation = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
 
       // Existing Phase 1 ranking API call: category becomes emergencyType
       const rankResponse = await fetch('/api/rank', {
@@ -126,15 +121,14 @@ export const TriageChatView: React.FC = () => {
         }),
       });
 
-      const data = await rankResponse.json();
+      const data = await readJsonResponse(rankResponse);
       if (!rankResponse.ok) {
         throw new Error(data.error || 'Failed to retrieve hospital ranking.');
       }
 
-      setRankedHospitals(data.ranked ?? []);
-    } catch (err: any) {
-      console.warn('Hospital ranking error:', err);
-      setRankingError(err.message || 'Could not fetch ranked hospitals.');
+      setRankedHospitals(Array.isArray(data.ranked) ? data.ranked : []);
+    } catch (error: unknown) {
+      setRankingError(error instanceof Error ? error.message : 'Could not fetch ranked hospitals.');
     } finally {
       setRankingLoading(false);
     }
@@ -147,10 +141,10 @@ export const TriageChatView: React.FC = () => {
     setInputText('');
 
     const userMsg: ChatMessage = {
-      id: 'msg-' + Date.now(),
+      id: localId('msg'),
       role: 'user',
       content: text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: timeLabel(),
     };
 
     setMessages((prev) => [...prev, userMsg]);
@@ -166,19 +160,20 @@ export const TriageChatView: React.FC = () => {
         }),
       });
 
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       if (!response.ok) {
         throw new Error(data.error || 'Failed to get triage response');
       }
+      if (typeof data.reply !== 'string' || !data.reply.trim()) throw new Error('The symptom service returned no guidance. Please try again.');
 
       const botMsg: ChatMessage = {
-        id: 'bot-' + Date.now(),
+        id: localId('bot'),
         role: 'assistant',
         content: data.reply,
         urgency: data.urgency,
         category: data.category,
         shouldEscalate: data.shouldEscalate,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: timeLabel(),
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -191,14 +186,13 @@ export const TriageChatView: React.FC = () => {
         setEscalatedCategory(cat);
         void triggerHospitalRanking(cat);
       }
-    } catch (err: any) {
+    } catch (error: unknown) {
       const errorMsg: ChatMessage = {
-        id: 'err-' + Date.now(),
+        id: localId('err'),
         role: 'assistant',
-        content:
-          'Error processing request. If you are experiencing an emergency, please CALL 911 / 112 / 108 IMMEDIATELY.',
-        urgency: 'critical',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        content: error instanceof Error ? error.message : 'Could not process the symptom request. If this may be an emergency, contact local emergency services now.',
+        urgency: 'assessing',
+        timestamp: timeLabel(),
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
@@ -211,7 +205,9 @@ export const TriageChatView: React.FC = () => {
     setSosSubmitting(true);
     setSosStatus(null);
     try {
-      const location = { latitude: 28.6328, longitude: 77.2195 };
+      if (!navigator.geolocation) throw new Error('This browser cannot provide your location. Use the Emergency SOS control on the dashboard from a GPS-enabled device.');
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }));
+      const location = { latitude: position.coords.latitude, longitude: position.coords.longitude };
       const incident = escalatedCategory ? `Triage Escalation: ${escalatedCategory.replace(/_/g, ' ')}` : 'Emergency Triage Escalation';
 
       const res = await fetch('/api/sos', {
@@ -224,20 +220,20 @@ export const TriageChatView: React.FC = () => {
         }),
       });
 
-      const data = await res.json();
+      const data = await readJsonResponse(res);
       if (!res.ok) throw new Error(data.error || 'Failed to submit SOS');
 
       setSosStatus(`Ambulance & Hospital request dispatched! Ref: ${data.request?.id || 'Active'}`);
       window.dispatchEvent(new Event('carelink-sos-updated'));
-    } catch (err: any) {
-      setSosStatus(`SOS Request failed: ${err.message}`);
+    } catch (error: unknown) {
+      setSosStatus(`SOS request failed: ${error instanceof Error ? error.message : 'Could not submit the request.'}`);
     } finally {
       setSosSubmitting(false);
     }
   };
 
   const handleResetChat = () => {
-    const id = 'triage-' + Math.random().toString(36).substring(2, 11) + '-' + Date.now();
+    const id = localId('triage');
     setConversationId(id);
     setIsEscalated(false);
     setEscalatedCategory(null);

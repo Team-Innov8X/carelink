@@ -99,7 +99,7 @@ export const Sidebar: React.FC = () => {
   ];
 
   return (
-    <aside className="w-64 bg-white text-slate-600 hidden md:flex flex-col shrink-0 min-h-[calc(100vh-64px)] border-r border-slate-200">
+    <aside className="sticky top-16 h-[calc(100vh-4rem)] w-64 overflow-y-auto bg-white text-slate-600 hidden md:flex flex-col shrink-0 border-r border-slate-200">
       <div className="p-4 flex-1 space-y-1.5">
         <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
           Navigation
