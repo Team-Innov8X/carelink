@@ -115,6 +115,18 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient: [numbe
   }, [refresh]);
 
   useEffect(() => {
+    if (!available) return;
+    const heartbeat = async () => {
+      try {
+        const location = await getDriverLocation();
+        await fetch('/api/sos/available', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location }) });
+      } catch { /* A missed GPS update naturally makes this driver stale. */ }
+    };
+    const timer = window.setInterval(() => void heartbeat(), 10_000);
+    return () => window.clearInterval(timer);
+  }, [available]);
+
+  useEffect(() => {
     const initial = window.setTimeout(() => setClockNow(Date.now()), 0);
     const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
     return () => { window.clearTimeout(initial); window.clearInterval(timer); };
@@ -193,7 +205,9 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient: [numbe
       setAlertRequest(null);
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not accept this request.');
+      const reason = error instanceof Error ? error.message : 'Could not accept this request.';
+      setMessage(reason);
+      if (reason.toLowerCase().includes('already been taken') || reason.toLowerCase().includes('expired')) setAlertRequest(null);
     } finally {
       setBusy(false);
     }

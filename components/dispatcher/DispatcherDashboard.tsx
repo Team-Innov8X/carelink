@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { MapView } from '../common/MapView';
 import { PatientHomeRequestBox } from '../patient/PatientHomeRequestBox';
@@ -19,6 +19,7 @@ import {
 
 type NearbyDriver = { id: string; name?: string; location: { latitude: number; longitude: number }; distanceKm: number };
 type PatientProfile = { name: string; email?: string | null; phone?: string | null };
+type OverviewStats = { hospitals: { registered: number; demo: number }; drivers: { total: number; active: number } };
 
 export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; requestPending?: boolean }> = () => {
   const {
@@ -43,6 +44,14 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
   const [nearbyDrivers, setNearbyDrivers] = useState<NearbyDriver[]>([]);
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationMessage, setLocationMessage] = useState('');
+  const [overview, setOverview] = useState<OverviewStats | null>(null);
+  useEffect(() => {
+    if (role === 'patient') return;
+    const load = async () => { try { const response = await fetch('/api/stats/overview', { cache: 'no-store' }); if (response.ok) setOverview(await response.json()); } catch { /* Keep the last good dashboard snapshot. */ } };
+    void load();
+    const timer = window.setInterval(() => void load(), 5000);
+    return () => window.clearInterval(timer);
+  }, [role]);
   const driverMapLocations = useMemo(() => nearbyDrivers.map((driver) => ({
     id: driver.id,
     name: driver.name,
@@ -161,7 +170,7 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Available Hospitals
+              Registered Hospitals
             </span>
             <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
               <Building2 className="w-4 h-4" />
@@ -169,10 +178,10 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-3xl font-extrabold text-emerald-600 tracking-tight">
-              {availableHospitals.length}
+              {overview?.hospitals.registered ?? availableHospitals.length}
             </span>
             <span className="text-xs font-semibold text-emerald-600/80 bg-emerald-50 px-2 py-0.5 rounded-full">
-              Of {hospitals.length} Total
+              Of {overview?.hospitals.registered ?? hospitals.length} Registered{overview?.hospitals.demo ? ` · ${overview.hospitals.demo} demo` : ''}
             </span>
           </div>
         </div>
@@ -189,10 +198,10 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-3xl font-extrabold text-sky-600 tracking-tight">
-              {onDutyAmbulances.length}
+              {overview?.drivers.active ?? onDutyAmbulances.length}
             </span>
             <span className="text-xs font-semibold text-sky-600/80 bg-sky-50 px-2 py-0.5 rounded-full">
-              GPS Linked
+              Active · {overview?.drivers.total ?? ambulances.length} total
             </span>
           </div>
         </div>

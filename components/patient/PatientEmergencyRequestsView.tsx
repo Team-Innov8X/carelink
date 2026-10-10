@@ -39,6 +39,7 @@ export type PatientRequest = {
   notes?: string;
   rejectionReason?: string;
   requiredEquipment?: string[];
+  driver?: { name?: string; vehicleNumber?: string; location?: { latitude: number; longitude: number } | null } | null;
   hospitalRequest: null | {
     status: string;
     hospitalName: string;
@@ -99,7 +100,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
 
   useEffect(() => {
     void fetchRequests();
-    const interval = window.setInterval(fetchRequests, 6000);
+    const interval = window.setInterval(fetchRequests, 2500);
     window.addEventListener('carelink-sos-updated', fetchRequests);
     return () => {
       window.clearInterval(interval);
@@ -265,7 +266,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
             const driverAccepted = request.status === 'accepted' && request.driverAssigned !== false;
             const driverCompleted = request.status === 'completed';
             const requestCancelled = request.status === 'cancelled';
-            const requestRejected = request.status === 'rejected';
+            const requestRejected = request.status === 'rejected' || request.status === 'no_driver_found';
             const driverArrived = Boolean(request.arrivedAt);
             const pickupStarted = ['patient_on_board', 'en_route_hospital', 'arrived_hospital', 'handover_complete'].includes(request.tripStage || '');
             const canCancel = !isRoutine && ['searching', 'accepted'].includes(request.status.toLowerCase()) && !pickupStarted;
@@ -348,7 +349,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
                     </div>
                     <p className="text-xs text-slate-700 leading-relaxed">
                       {requestRejected
-                        ? request.rejectionReason || 'Request rejected: Any driver did not accept the request within 1 minute.'
+              ? request.status === 'no_driver_found' ? 'No nearby driver accepted this request.' : request.rejectionReason || 'No driver accepted the request.'
                         : driverAccepted
                         ? `An emergency driver accepted your request${request.acceptedAt ? ` at ${new Date(request.acceptedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}.`
                         : driverCompleted
@@ -357,6 +358,8 @@ export const PatientEmergencyRequestsView: React.FC = () => {
                         ? 'This request was closed.'
                         : 'Dispatched into CareLink network. Awaiting pickup confirmation.'}
                     </p>
+                    {request.status === 'no_driver_found' && <a href="tel:108" className="mt-3 inline-flex min-h-10 items-center rounded-lg bg-rose-700 px-4 text-sm font-bold text-white">Call 108</a>}
+                    {request.driver && <p className="mt-2 text-xs text-slate-700">{request.driver.name || 'Driver assigned'}{request.driver.vehicleNumber ? ` · ${request.driver.vehicleNumber}` : ''}{request.driver.location ? ` · Live position ${request.driver.location.latitude.toFixed(4)}, ${request.driver.location.longitude.toFixed(4)}` : ''}</p>}
                     {request.preferredTime && (
                       <p className="mt-2 text-[11px] font-medium text-slate-500 flex items-center gap-1">
                         <Clock className="h-3 w-3 text-slate-400" />
