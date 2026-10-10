@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Driver / dispatcher hold request
-    const parsed = createHoldSchema.safeParse(bodyJson);
+    const parsed = createHoldSchema.safeParse({ ...(bodyJson as Record<string, unknown>), requestedByUserId: auth.user.id });
     if (!parsed.success) return validationError(parsed.error);
 
     const resources = await getResourcesCollection();
@@ -162,7 +162,7 @@ export async function GET(req: NextRequest) {
       count: holds.length,
       holds,
     });
-  } catch (error: any) {
-    return errorResponse(error?.message || "Failed to fetch holds", 500);
+  } catch (error: unknown) {
+    return errorResponse(error instanceof Error ? error.message : "Failed to fetch holds", 500);
   }
 }

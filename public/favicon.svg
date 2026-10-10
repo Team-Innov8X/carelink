@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="CareLink">
+  <defs>
+    <linearGradient id="carelink" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e11d48" />
+      <stop offset="1" stop-color="#f43f5e" />
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" rx="13" fill="url(#carelink)" />
+  <path fill="#fff" d="M24 39.2 8.2 24.3C-.1 15.9 11.7 4.1 20 12.4l4 4 4-4c8.3-8.3 20.1 3.5 11.8 11.9L24 39.2Z" transform="translate(0 1) scale(.9) translate(2.7 2.7)" />
+</svg>

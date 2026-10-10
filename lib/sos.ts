@@ -17,10 +17,14 @@ export type SosRequest = {
   _id: string;
   patientId: string;
   patientName: string;
+  passengerName?: string;
   patientEmail?: string;
   patientPhone?: string;
   location: Coordinates;
   incidentType: string;
+  requestType?: 'emergency' | 'routine';
+  preferredTime?: string;
+  notes?: string;
   requiredEquipment: string[];
   status: "searching" | "accepted" | "completed" | "cancelled" | "no_driver_found" | "expired";
   driverId: string | null;
@@ -37,7 +41,6 @@ export type SosRequest = {
   assignmentExpiresAt?: Date;
   assignmentOfferedAt?: Date;
   completedAt?: Date;
-  requestType?: "emergency" | "routine";
   dispatchRound?: number;
   dispatchRoundAt?: Date;
   noDriverFoundAt?: Date;
@@ -80,7 +83,7 @@ export type HospitalAdmissionRequest = {
   updatedAt: Date;
   acceptedAt?: Date;
   reservationExpiresAt?: Date;
-  rejectionReason?: 'no_icu_bed' | 'specialist_unavailable' | 'diverted' | 'other' | 'reservation_timeout';
+  rejectionReason?: 'no_bed' | 'no_icu_bed' | 'specialist_unavailable' | 'diverted' | 'other' | 'reservation_timeout';
   reroutedHospitalIds?: string[];
   reroutedToRequestId?: string;
   reroutedHospitalName?: string;

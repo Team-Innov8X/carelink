@@ -1,34 +1,29 @@
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
-import { username } from "better-auth/plugins";
 import { client } from "./mongodb";
+import { isSelfServiceRole } from "./roles";
 
-export type UserRole =
-  | "admin"
-  | "hospital"
-  | "patient"
-  | "hospital_staff"
-  | "ambulance_driver"
-  | "driver"
-  | "dispatcher"
-  | "pharmacy";
+export type { UserRole } from "./roles";
 
-export const auth = betterAuth({
-  database: mongodbAdapter(client.db(), { client }),
+function createAuth(mongoClient: typeof client) {
+  return betterAuth({
+  database: mongodbAdapter(mongoClient.db(), { client: mongoClient }),
   secret: process.env.BETTER_AUTH_SECRET || "carelink_default_secret_key_change_in_production",
   baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
   emailAndPassword: {
     enabled: true,
     sendResetPassword: async ({ user, url }) => {
-      const host = process.env.SMTP_HOST;
-      if (!host) {
-        if (process.env.NODE_ENV === 'production') throw new Error('Password reset email is not configured.');
-        console.info(`[dev password reset] ${user.email}: ${url}`);
+      if (process.env.RESEND_API_KEY && process.env.RESEND_FROM) {
+        const response = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ from: process.env.RESEND_FROM, to: [user.email], subject: "Reset your CareLink password", text: `Use this link to reset your CareLink password (valid for one hour): ${url}` }),
+        });
+        if (!response.ok) throw new Error("Password reset email could not be sent.");
         return;
       }
-      const nodemailer = await import('nodemailer');
-      const transport = nodemailer.createTransport({ host, port: Number(process.env.SMTP_PORT || 587), secure: Number(process.env.SMTP_PORT) === 465, auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } : undefined });
-      await transport.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to: user.email, subject: 'Reset your CareLink password', text: `Reset your password: ${url}` });
+      if (process.env.NODE_ENV !== "production") console.info(`[password-reset] ${user.email}: ${url}`);
+      else throw new Error("Password reset email is not configured.");
     },
   },
   session: { cookieCache: { enabled: true, maxAge: 300 } },
@@ -38,14 +33,13 @@ export const auth = betterAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
     },
   },
-  plugins: [username()],
   user: {
     additionalFields: {
       role: {
         type: "string",
         defaultValue: "patient",
         required: false,
-        input: true,
+        input: false,
       },
       phone: {
         type: "string",
@@ -70,4 +64,35 @@ export const auth = betterAuth({
       onboardingCompleted: { type: "boolean", required: false, defaultValue: false, input: false },
     },
   },
-});
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) => {
+          const requestedRole = (user as typeof user & { role?: unknown }).role ?? "patient";
+          if (!isSelfServiceRole(requestedRole)) return false;
+          return { data: { ...user, role: requestedRole } };
+        },
+      },
+      update: {
+        before: async (user, context) => {
+          if (!("role" in user)) return;
+          const editorRole = (context as unknown as { context?: { session?: { user?: { role?: string } } } } | undefined)?.context?.session?.user?.role;
+          if (editorRole !== "admin") return false;
+        },
+      },
+    },
+  },
+  });
+}
+
+let boundMongoClient = client;
+export let auth = createAuth(boundMongoClient);
+
+/** Rebuild Better Auth if MongoDB replaced a client after a failed handshake. */
+export function getAuth() {
+  if (boundMongoClient !== client) {
+    boundMongoClient = client;
+    auth = createAuth(boundMongoClient);
+  }
+  return auth;
+}

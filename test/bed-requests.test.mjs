@@ -7,13 +7,13 @@ if (process.loadEnvFile) {
     process.loadEnvFile(".env");
   } catch {}
 }
+process.env.HOLD_DURATION_MS ||= "3000";
 
 const {
   requestBedHold,
   cancelPatientBedHold,
   confirmPatientBedHold,
   rejectPatientBedHold,
-  expirePendingHolds,
 } = await import("../lib/services/hold-service.ts");
 
 const {
@@ -100,7 +100,7 @@ test("Rule B: First patient rejected -> second becomes pending automatically", a
   assert.ok(p2Hold?.expiresAt && p2Hold.expiresAt > new Date(), "Promoted hold has fresh expiresAt");
 });
 
-test("Rule B: First patient hold passes expiresAt -> second promoted", async () => {
+test("Rule B: First patient hold expires within seconds -> second promoted", { timeout: 10000 }, async () => {
   const hospitalId = await createTestHospital(1);
   const p1 = `patient-1-${randomUUID().slice(0, 6)}`;
   const p2 = `patient-2-${randomUUID().slice(0, 6)}`;
@@ -110,16 +110,11 @@ test("Rule B: First patient hold passes expiresAt -> second promoted", async () 
   assert.equal(res1.status, "pending");
   assert.equal(res2.status, "queued");
 
-  // Artificially age the first hold's expiresAt into the past
+  await new Promise((resolve) => setTimeout(resolve, 3200));
   const holdsCol = await getHoldsCollection();
-  const past = new Date(Date.now() - 5000);
-  await holdsCol.updateOne({ _id: res1.hold._id }, { $set: { expiresAt: past } });
-
-  // Expire pending holds and promote next
-  const expiredResults = await expirePendingHolds(hospitalId);
-  assert.ok(expiredResults.length > 0, "Expired hold should be processed");
-
+  const expiredHold = await holdsCol.findOne({ _id: res1.hold._id });
   const p2Hold = await holdsCol.findOne({ hospitalId, patientId: p2 });
+  assert.equal(expiredHold?.status, "expired");
   assert.equal(p2Hold?.status, "pending", "Queued hold must be promoted to pending on expiry");
 });
 
@@ -235,6 +230,45 @@ test("Rule B: Three patients, one bed -> FIFO order preserved by monotonic seque
   // Reject p2 -> p3 gets promoted
   const rejectRes2 = await rejectPatientBedHold({ holdId: String(rejectRes1.promotedHold._id), hospitalId });
   assert.equal(rejectRes2.promotedHold?.patientId, p3);
+});
+
+test("Rule C: Confirming the last bed closes queued requests with no_beds and notifies patients", async () => {
+  const hospitalId = await createTestHospital(1);
+  const p1 = `last-bed-${randomUUID().slice(0, 6)}`;
+  const p2 = `queued-last-bed-${randomUUID().slice(0, 6)}`;
+  const first = await requestBedHold({ patientId: p1, hospitalId });
+  const queued = await requestBedHold({ patientId: p2, hospitalId });
+  assert.equal(first.status, "pending");
+  assert.equal(queued.status, "queued");
+
+  const result = await confirmPatientBedHold({ holdId: String(first.hold._id), hospitalId });
+  assert.equal(result.success, true);
+
+  const holdsCol = await getHoldsCollection();
+  const queuedInDb = await holdsCol.findOne({ _id: queued.hold._id });
+  assert.equal(queuedInDb?.status, "rejected");
+  assert.equal(queuedInDb?.reason, "no_beds");
+
+  const { getDb } = await import("../lib/models/db.ts");
+  const notifications = (await getDb()).collection("notifications");
+  const notification = await notifications.findOne({ recipientId: p2, relatedRequestId: String(queued.hold._id) });
+  assert.ok(notification, "Patient must receive a no-beds notification");
+});
+
+test("Rule C: Concurrent confirmations at different hospitals allow only one per patient", async () => {
+  const hospA = await createTestHospital(1);
+  const hospB = await createTestHospital(1);
+  const patientId = `confirm-race-${randomUUID().slice(0, 6)}`;
+  const [reqA, reqB] = await Promise.all([
+    requestBedHold({ patientId, hospitalId: hospA }),
+    requestBedHold({ patientId, hospitalId: hospB }),
+  ]);
+  const [confirmA, confirmB] = await Promise.all([
+    confirmPatientBedHold({ holdId: String(reqA.hold._id), hospitalId: hospA }),
+    confirmPatientBedHold({ holdId: String(reqB.hold._id), hospitalId: hospB }),
+  ]);
+  assert.equal([confirmA, confirmB].filter((result) => result.success).length, 1);
+  assert.equal([confirmA, confirmB].filter((result) => !result.success && result.status === 409).length, 1);
 });
 
 test("Task 5: Places caching and facility registered vs unregistered separation", async () => {

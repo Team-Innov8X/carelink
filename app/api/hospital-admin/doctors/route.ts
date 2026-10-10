@@ -59,7 +59,7 @@ export async function PATCH(request: Request) {
   }
   const result = await account.collection.updateOne(
     { _id: 'carelink', 'state.hospitals': { $elemMatch: { id: account.hospital.id, name: account.hospital.name, 'doctors.id': body.doctorId } } },
-    { $set: { 'state.hospitals.$[hospital].doctors.$[doctor].available': body.available, updatedAt: new Date() } },
+    { $set: { 'state.hospitals.$[hospital].doctors.$[doctor].available': body.available, ...(body.available ? {} : { 'state.hospitals.$[hospital].doctors.$[doctor].onCall': false }), updatedAt: new Date() } },
     { arrayFilters: [{ 'hospital.id': account.hospital.id }, { 'doctor.id': body.doctorId }] },
   );
   if (!result.matchedCount) return Response.json({ error: 'Doctor not found for this hospital.' }, { status: 404 });

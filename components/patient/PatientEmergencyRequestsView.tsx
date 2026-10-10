@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { DelayedSkeleton, RequestListSkeleton } from '../common/Skeletons';
 import { fetchPatientSosRequests } from '../../lib/client-sos';
@@ -29,12 +29,13 @@ export type PatientRequest = {
   tripStage?: string;
   requestType?: 'emergency' | 'routine';
   patientPhone?: string;
+  passengerName?: string;
   preferredTime?: string;
   notes?: string;
   rejectionReason?: string;
   fallbackInstruction?: string | null;
   requiredEquipment?: string[];
-  driver?: { name?: string; vehicleNumber?: string; location?: { latitude: number; longitude: number } | null } | null;
+  driver?: { name?: string; vehicleNumber?: string; ambulanceType?: string | null; location?: { latitude: number; longitude: number } | null } | null;
   hospitalRequest: null | {
     status: string;
     hospitalName: string;
@@ -51,26 +52,23 @@ export const PatientEmergencyRequestsView: React.FC = () => {
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const requestInFlight = useRef(false);
   const [cancellingId, setCancellingId] = useState('');
   const [cancelMessage, setCancelMessage] = useState('');
 
   const fetchRequests = useCallback(async () => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     try {
-      setLoading(true);
-      const result = await fetchPatientSosRequests();
-      setRequests(result.map((item) => ({
-        ...item,
-        hospitalRequest: item.destination ? {
-          status: item.destination.status,
-          hospitalName: item.destination.name,
-          bedCategory: item.destination.bedCategory,
-          requiredSpecialty: undefined,
-        } : null,
-      })));
+      const res = await fetch('/api/sos', { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to load requests');
+      setRequests(Array.isArray(data.requests) ? data.requests : []);
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not fetch requests');
     } finally {
+      requestInFlight.current = false;
       setLoading(false);
     }
   }, []);
@@ -97,7 +95,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
 
   useEffect(() => {
     const initial = window.setTimeout(() => void fetchRequests(), 0);
-    const interval = window.setInterval(fetchRequests, 2500);
+    const interval = window.setInterval(fetchRequests, 6000);
     window.addEventListener('carelink-sos-updated', fetchRequests);
     return () => {
       window.clearTimeout(initial);
@@ -322,6 +320,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
                       <h3 className="text-base font-bold text-slate-900 mt-0.5">
                         {request.incidentType}
                       </h3>
+                      {request.requestType === 'routine' && <p className="mt-1 text-xs text-slate-600">Passenger: {request.passengerName || 'Patient'}{request.patientPhone ? ` · ${request.patientPhone}` : ''}</p>}
                       <p className="text-xs text-slate-400 mt-0.5">
                         Created on {new Date(request.createdAt).toLocaleString()}
                       </p>
@@ -356,8 +355,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
                         ? 'This request was closed.'
                         : 'Dispatched into CareLink network. Awaiting pickup confirmation.'}
                     </p>
-                    {request.status === 'no_driver_found' && <p role="alert" className="mt-3 text-sm font-medium text-rose-800">{request.fallbackInstruction || 'No driver was found. Contact your local emergency services.'}</p>}
-                    {request.driver && <p className="mt-2 text-xs text-slate-700">{request.driver.name || 'Driver assigned'}{request.driver.vehicleNumber ? ` · ${request.driver.vehicleNumber}` : ''}{request.driver.location ? ` · Live position ${request.driver.location.latitude.toFixed(4)}, ${request.driver.location.longitude.toFixed(4)}` : ''}</p>}
+                    {request.driverAssigned && <p className="mt-2 text-xs font-semibold text-emerald-800">{request.driver?.name ?? 'Driver assigned'}{request.driver?.vehicleNumber ? ` · ${request.driver.vehicleNumber}` : ' · Vehicle details pending'}{request.driver?.ambulanceType ? ` · ${request.driver.ambulanceType}` : ''}</p>}
                     {request.preferredTime && (
                       <p className="mt-2 text-[11px] font-medium text-slate-500 flex items-center gap-1">
                         <Clock className="h-3 w-3 text-slate-400" />

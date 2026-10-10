@@ -37,6 +37,7 @@ export interface IHold {
   escalationCheckedAt?: Date;
   escalationAttempts?: number;
   releaseReason?: "cancelled" | "expired" | "rejected";
+  reason?: "no_beds" | "cancelled" | "rejected" | "expired";
   requestedByUserId?: string; // User ID of dispatcher, driver, or patient placing the hold
   patientDetails?: IPatientDetails;
   quantity: number;

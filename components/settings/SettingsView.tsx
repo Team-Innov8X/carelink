@@ -4,9 +4,10 @@ import { useCareLink } from '../../context/CareLinkContext';
 import { LogOut } from '@/components/icons';
 import { authClient } from '../../lib/auth-client';
 import { AccountPreferences } from './AccountPreferences';
+import { resetHospitalAdminDemoData } from '@/lib/hospital-admin-demo';
 
 export const SettingsView: React.FC = () => {
-  const { resetAllData } = useCareLink();
+  const { resetAllData, role } = useCareLink();
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [settings, setSettings] = useState({ staleThresholdMinutes: 10, weights: { resource: 50, travel: 30, freshness: 20 } });
@@ -57,31 +58,32 @@ export const SettingsView: React.FC = () => {
             <p className="text-xs text-slate-500">Drives hospital stale warnings and Smart Match freshness scoring.</p>
           </div>
           <span className="font-mono font-bold text-xs bg-slate-100 px-3 py-1.5 rounded-lg text-slate-800">
-            <input aria-label="Stale data threshold in minutes" type="number" min={1} max={120} value={settings.staleThresholdMinutes} onChange={(event) => setSettings((current) => ({ ...current, staleThresholdMinutes: Number(event.target.value) }))} className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right font-mono text-xs text-slate-800" /> min
+            {role === 'dispatcher' ? <><input aria-label="Stale data threshold in minutes" type="number" min={1} max={120} value={settings.staleThresholdMinutes} onChange={(event) => setSettings((current) => ({ ...current, staleThresholdMinutes: Number(event.target.value) }))} className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right font-mono text-xs text-slate-800" /> min</> : <span>{settings.staleThresholdMinutes} min</span>}
           </span>
         </div>
 
         <div className="flex items-center justify-between pt-2">
           <div>
-            <h3 className="font-bold text-sm text-rose-700">Restore Demo Data</h3>
+            <h3 className="font-bold text-sm text-rose-700">Reset demo data</h3>
             <p className="text-xs text-slate-500">
-              Replace current local data with the built-in sample records
+              Restore this browser’s sample records, including hospital-admin demo cases and activity.
             </p>
           </div>
           <button
             onClick={() => {
-              if (confirm('Replace current local data with the built-in sample records?')) {
+              if (confirm('Reset this browser’s demo records and restore the built-in samples? Live hospital records will not be changed.')) {
                 resetAllData();
+                resetHospitalAdminDemoData();
               }
             }}
             className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 transition-colors"
-          >
-            Restore Samples
+            >
+            Reset demo data
           </button>
         </div>
       </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs"><h2 className="font-bold text-slate-900">Smart Match score weights</h2><p className="mt-1 text-xs text-slate-500">Adjust the transparent ranking balance. The weights must total 100%.</p><div className="mt-4 grid gap-4 sm:grid-cols-3">{(['resource', 'travel', 'freshness'] as const).map((key) => <label key={key} className="text-xs font-semibold capitalize text-slate-600">{key} match (%)<input type="number" min={0} max={100} value={settings.weights[key]} onChange={(event) => setSettings((current) => ({ ...current, weights: { ...current.weights, [key]: Number(event.target.value) } }))} className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>)}</div><div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={() => void saveSettings()} className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white">Save settings</button><span className="text-xs text-slate-500">Total: {settings.weights.resource + settings.weights.travel + settings.weights.freshness}%</span></div>{settingsMessage && <p role="status" className="mt-3 text-sm text-sky-800">{settingsMessage}</p>}</section>
+      {role === 'dispatcher' && <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs"><h2 className="font-bold text-slate-900">Smart Match score weights</h2><p className="mt-1 text-xs text-slate-500">Adjust the transparent ranking balance. The weights must total 100%.</p><div className="mt-4 grid gap-4 sm:grid-cols-3">{(['resource', 'travel', 'freshness'] as const).map((key) => <label key={key} className="text-xs font-semibold capitalize text-slate-600">{key} match (%)<input type="number" min={0} max={100} value={settings.weights[key]} onChange={(event) => setSettings((current) => ({ ...current, weights: { ...current.weights, [key]: Number(event.target.value) } }))} className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" /></label>)}</div><div className="mt-4 flex flex-wrap items-center gap-3"><button type="button" onClick={() => void saveSettings()} className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white">Save settings</button><span className="text-xs text-slate-500">Total: {settings.weights.resource + settings.weights.travel + settings.weights.freshness}%</span></div>{settingsMessage && <p role="status" className="mt-3 text-sm text-sky-800">{settingsMessage}</p>}</section>}
 
       <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
         <div>
