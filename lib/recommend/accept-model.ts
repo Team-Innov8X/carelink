@@ -1,5 +1,6 @@
 import { logisticProbability } from "../allocation/forecaster.ts";
-import { ACCEPTANCE_FEATURE_ORDER, type AcceptanceVector } from "../../sim/acceptance-world.ts";
+import { ACCEPTANCE_FEATURE_ORDER } from "./accept-features.ts";
+export type AcceptanceVector = number[];
 
 export interface AcceptanceModelArtifact {
   modelType: "custom_l2_logistic_regression";

@@ -1,12 +1,9 @@
 import conditions from "../data/conditions.json";
 import profiles from "../data/hospital-profiles.json";
 import { createRng, HOSPITALS, type ResourceType, type SimDay } from "./world.ts";
+import { ACCEPTANCE_FEATURE_ORDER } from "../lib/recommend/accept-features.ts";
 
-export const ACCEPTANCE_FEATURE_ORDER = [
-  "free_now", "occupancy_ratio", "recent_rejection_rate", "walk_ins_last_30_min", "urgency",
-  ...conditions.map((condition) => `condition_${condition.id}`), "capability_match", "eta_min", "capacity",
-  "hour_sin", "hour_cos", "weekend",
-] as const;
+export { ACCEPTANCE_FEATURE_ORDER };
 export type AcceptanceVector = number[];
 export type AcceptanceSample = {
   id: string; day: number; minute: number; hospitalId: string; conditionId: string; label: 0 | 1;

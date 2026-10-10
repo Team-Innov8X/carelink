@@ -21,6 +21,13 @@
 | 0 | `7acb8fdffaf406952e055ff5bbf05a3956b904f1` | Audit and setup; tag `rec-start` |
 | 1 | `f94ba5a3fb723c1ec1c3854a6c5fe43b4716a94f` | Placeholder condition config, synthetic profiles, acceptance simulator/data and assumptions |
 | 2 | `951d2b29527ab320eed6994b2dc8fff13177a91a` | Custom L2 logistic model frozen as `rec-pre-test`; one-shot test report: `evidence/rec/accept-test-evaluated.json` |
+| 2 evidence | `e99dd9f14c71a76f31d69c5acc6297849e778166` | Acceptance holdout metrics and prediction evidence recorded |
+| 3 | `3aecfc4f4977d2c32cd56fab460e38776fa39f8a` | Feasibility-first ranking, model fallbacks, override validation and seeded engine checks |
+| 4 | `1f89c03b793347eecf946c9ee9f604b6d56f9d27` | Recommendation, response, timeout and patient/driver APIs connected to holds |
+| 5 | `e765a9ef3693ec1f906e5ba51f960264df1a91ad` | Driver, patient and hospital recommendation workflow views |
+
+The final implementation and evidence package is committed after phases 6–7. The working branch is `rec-feature`; the product spec supplied by the user is intentionally untracked and excluded from commits.
 
 
 | 3 | pending | Feasibility-first ranking, override validation, fallback flags and seeded engine checks |
+| 6 | pending | One-shot 300-episode frozen-test recommendation replay and H1-H7 simulation page |
