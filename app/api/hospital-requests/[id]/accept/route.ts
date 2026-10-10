@@ -39,6 +39,23 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
     return Response.json({ error: "This request is already being handled or is no longer pending." }, { status: 409 });
   }
 
+  const rejectForNoBeds = async (bedCategory: string) => {
+    const rejectedAt = new Date();
+    const rejected = await hospitalRequests.updateOne(
+      { _id: id, status: "accepting" },
+      { $set: { status: "rejected", rejectionReason: "no_bed", updatedAt: rejectedAt } },
+    );
+    if (rejected.modifiedCount) {
+      await writeHospitalAudit({ hospitalId: hospitalRequest.hospitalId, hospitalName: hospitalRequest.hospitalName, actorId: auth.user!.id, actorName: auth.user!.name, action: 'Request rejected · no beds available', entityType: 'request', entityId: id, details: { bedCategory, reason: 'no_bed' }, createdAt: rejectedAt }).catch((error) => console.error('Could not write no-bed rejection audit:', error));
+      await notifications.updateOne(
+        { _id: `hospital-rejected-${id}` },
+        { $setOnInsert: { _id: `hospital-rejected-${id}`, recipientId: hospitalRequest.patientId, type: 'hospital_request_rejected', title: 'Hospital has no suitable bed available', message: `${hospitalRequest.hospitalName} could not accept this request because no ${bedCategory} bed is available. Please continue through the emergency support flow.`, relatedRequestId: hospitalRequest.sosRequestId, createdAt: rejectedAt } },
+        { upsert: true },
+      ).catch((error) => console.error('Could not notify patient about no-bed rejection:', error));
+    }
+    return Response.json({ error: `Request rejected: no ${bedCategory} bed is available for this emergency.`, rejectionReason: 'no_bed' }, { status: 409 });
+  };
+
   let holdId: string | undefined;
   try {
     if (hospitalRequest.inventorySource === "app-state" && hospitalRequest.bedCategory) {
@@ -57,11 +74,10 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
         { arrayFilters: [{ "hospital.id": hospitalRequest.hospitalId, [`hospital.beds.${category}.available`]: { $gt: 0 } }] },
       );
       if (result.modifiedCount !== 1) {
-        await hospitalRequests.updateOne({ _id: id, status: "accepting" }, { $set: { status: "pending", updatedAt: new Date() }, $unset: { acceptedByUserId: "" } });
         const occurredAt = new Date();
         const winner = await hospitalRequests.findOne({ hospitalId: hospitalRequest.hospitalId, bedCategory: category, status: 'accepted', acceptedAt: { $gte: new Date(occurredAt.getTime() - 60_000) } }, { sort: { acceptedAt: -1 } });
         await appStateDb.collection<{ _id: string; hospitalId: string; hospitalName: string; bedCategory: string; winnerRequestId: string; loserRequestId: string; occurredAt: Date }>('hospitalReservationCollisions').insertOne({ _id: randomUUID(), hospitalId: hospitalRequest.hospitalId, hospitalName: hospitalRequest.hospitalName, bedCategory: category, winnerRequestId: winner?._id ?? 'unknown', loserRequestId: id, occurredAt });
-        return Response.json({ error: "No bed of the required type is currently available. The request remains pending." }, { status: 409 });
+        return rejectForNoBeds(category);
       }
 
       const acceptedAt = new Date();
@@ -119,8 +135,7 @@ export async function POST(_request: Request, context: RouteContext<"/api/hospit
     }
 
     if (!holdResult || !holdId) {
-      await hospitalRequests.updateOne({ _id: id, status: "accepting" }, { $set: { status: "pending", updatedAt: new Date() }, $unset: { acceptedByUserId: "" } });
-      return Response.json({ error: "No bed is currently available at this hospital. The request remains pending." }, { status: 409 });
+      return rejectForNoBeds(hospitalRequest.bedCategory || 'suitable');
     }
 
     const confirmation = await confirmHold(holdId, auth.user.id);

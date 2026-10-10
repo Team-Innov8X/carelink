@@ -48,7 +48,7 @@ export function HospitalRequestInbox({ searchQuery = '' }: { searchQuery?: strin
   const [acceptingRequests, setAcceptingRequests] = useState(true);
   const query = searchQuery.trim().toLocaleLowerCase();
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (preserveOnError = false) => {
     try {
       const response = await fetch('/api/hospital-requests', { cache: 'no-store' });
       const result = await readApiJson<{ requests?: HospitalRequest[]; acceptingRequests?: boolean; error?: string }>(response, 'Could not load patient requests.');
@@ -58,9 +58,11 @@ export function HospitalRequestInbox({ searchQuery = '' }: { searchQuery?: strin
       setRequests([...getHospitalAdminDemoCases().filter((item) => item.status !== 'discharged').map((item) => ({ ...item, admitted: item.status === 'accepted' && Boolean(item.admittedAt) })), ...liveRequests]);
       setMessage('');
     } catch (error) {
-      setRequests(getHospitalAdminDemoCases().filter((item) => item.status !== 'discharged').map((item) => ({ ...item, admitted: item.status === 'accepted' && Boolean(item.admittedAt) })));
-      setAcceptingRequests(getHospitalAdminDemoAcceptingRequests());
-      setMessage(error instanceof Error ? error.message : 'Could not load patient requests.');
+      if (!preserveOnError) {
+        setRequests(getHospitalAdminDemoCases().filter((item) => item.status !== 'discharged').map((item) => ({ ...item, admitted: item.status === 'accepted' && Boolean(item.admittedAt) })));
+        setAcceptingRequests(getHospitalAdminDemoAcceptingRequests());
+        setMessage(error instanceof Error ? error.message : 'Could not load patient requests.');
+      }
     } finally {
       setLoading(false);
     }
@@ -69,11 +71,12 @@ export function HospitalRequestInbox({ searchQuery = '' }: { searchQuery?: strin
   useEffect(() => {
     const initialTimer = window.setTimeout(() => void refresh(), 0);
     const timer = window.setInterval(() => void refresh(), 5000);
-    window.addEventListener('hospital-admin-demo-updated', refresh);
+    const onDemoUpdated = () => void refresh();
+    window.addEventListener('hospital-admin-demo-updated', onDemoUpdated);
     return () => {
       window.clearTimeout(initialTimer);
       window.clearInterval(timer);
-      window.removeEventListener('hospital-admin-demo-updated', refresh);
+      window.removeEventListener('hospital-admin-demo-updated', onDemoUpdated);
     };
   }, [refresh]);
   useEffect(() => { const timer = window.setTimeout(() => setClockNow(Date.now()), 0); const interval = window.setInterval(() => setClockNow(Date.now()), 30_000); return () => { window.clearTimeout(timer); window.clearInterval(interval); }; }, []);
@@ -99,8 +102,9 @@ export function HospitalRequestInbox({ searchQuery = '' }: { searchQuery?: strin
       setMessage(`${request.patientName}'s request was accepted. Recording admission…`);
       await admit(request);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not accept this patient request.');
-      await refresh();
+      const actionMessage = error instanceof Error ? error.message : 'Could not accept this patient request.';
+      await refresh(true);
+      setMessage(actionMessage);
     } finally {
       setBusyId(null);
     }

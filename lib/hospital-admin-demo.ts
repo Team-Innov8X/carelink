@@ -12,6 +12,7 @@ export type HospitalAdminDemoCase = {
   bedCategory: 'general' | 'icu' | 'trauma' | 'ventilators';
   requestType: 'sos';
   status: 'pending' | 'accepted' | 'rejected' | 'discharged';
+  rejectionReason?: string;
   createdAt: string;
   admittedAt?: string;
   isDemo: true;
@@ -164,7 +165,13 @@ export function acceptHospitalAdminDemoCase(id: string) {
   if (state.acceptingRequests === false) return { success: false, message: 'This hospital is diverted and cannot accept incoming requests.' };
   const item = state.cases.find((candidate) => candidate._id === id && candidate.status === 'pending');
   if (!item) return { success: false, message: 'This demo case is no longer waiting.' };
-  if (state.beds[item.bedCategory] < 1) return { success: false, message: `No demo ${item.bedCategory} bed is available.` };
+  if (state.beds[item.bedCategory] < 1) {
+    item.status = 'rejected';
+    item.rejectionReason = 'no_bed';
+    appendDemoActivity(state, `${item.patientName} request rejected · no ${item.bedCategory} beds available`, { bedCategory: item.bedCategory, patientName: item.patientName, reason: 'no_bed' });
+    saveState(state);
+    return { success: false, message: `Request rejected: no ${item.bedCategory} bed is available for this emergency.` };
+  }
   state.beds[item.bedCategory] -= 1;
   item.status = 'accepted';
   item.admittedAt = new Date().toISOString();
