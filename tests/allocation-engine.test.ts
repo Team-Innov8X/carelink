@@ -39,6 +39,18 @@ describe("allocation engine", () => {
     expect(result.unserved[0].reason).toBe("no_capability_match");
   });
 
+  it("returns no_compatible_resource when no hospital supports the requested bed type", () => {
+    const unsupported: AllocationHospital[] = [{ ...hospitals[0], confirmedFree: { icu_bed: 0, emergency_bed: 0 }, supportedTypes: [] }];
+    const result = allocateBatch([patient("no-resource")], unsupported, certain);
+    expect(result.unserved).toEqual([{ patientId: "no-resource", reason: "no_compatible_resource" }]);
+  });
+
+  it("returns travel_time_limit when all compatible hospitals exceed the patient's limit", () => {
+    const tooFar: AllocationPatient = { ...patient("too-far"), travelTimeLimitMin: 4 };
+    const result = allocateBatch([tooFar], threeHospitals, certain);
+    expect(result.unserved).toEqual([{ patientId: "too-far", reason: "travel_time_limit" }]);
+  });
+
   it("chooses the lower travel-plus-forecast cost and falls back on invalid forecasts", () => {
     const ledger = new ReservationLedger(hospitals);
     const result = allocateBatch([patient("p")], hospitals, ({ hospital }) => hospital.id === "a" ? Number.NaN : 0.5, ledger);

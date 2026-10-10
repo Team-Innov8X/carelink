@@ -41,6 +41,15 @@ function unservedReason(patient: AllocationPatient, hospitals: AllocationHospita
   return "capacity_exhausted";
 }
 
+function allCompatibleHospitalsBeyondLimit(patient: AllocationPatient, hospitals: AllocationHospital[]): boolean {
+  if (patient.travelTimeLimitMin === undefined) return false;
+  const compatible = hospitals.filter((hospital) =>
+    (hospital.supportedTypes?.includes(patient.resourceType) || hospital.confirmedFree[patient.resourceType] > 0)
+    && (!patient.capability || hospital.capabilities.includes(patient.capability)),
+  );
+  return compatible.length > 0 && compatible.every((hospital) => hospital.travelTimeMinutes > patient.travelTimeLimitMin!);
+}
+
 export function createReplanState(patients: AllocationPatient[] = []): ReplanState {
   return { patients: new Map(patients.map((patient) => [patient.id, { ...patient }])), reroutes: new Map(), arrivalFailures: new Map(), rejectedHospitals: new Map() };
 }
@@ -50,8 +59,11 @@ export function allocateBatch(patients: AllocationPatient[], hospitals: Allocati
   const unserved: AllocationResult["unserved"] = [];
   for (const patient of patients) state?.patients.set(patient.id, { ...patient });
   const allocatedByType = new Map<SimResourceType, Array<{ hospitalId: string; urgency: 1 | 2 | 3 }>>();
+  const processedPatients = new Set<string>();
   const sorted = [...patients].sort((a, b) => URGENCY_WEIGHT[b.urgency] - URGENCY_WEIGHT[a.urgency] || b.waitingMinutes - a.waitingMinutes || a.id.localeCompare(b.id));
   for (const patient of sorted) {
+    if (processedPatients.has(patient.id)) continue;
+    processedPatients.add(patient.id);
     const feasible = feasibleByExistingRanking(patient, hospitals, ledger);
     const candidates = hospitals.filter((hospital) => feasible.has(hospital.id) && !hospital.closedTypes.includes(patient.resourceType) && ledger.freeUnits(hospital.id, patient.resourceType) > 0)
       .map((hospital) => {
@@ -78,7 +90,8 @@ export function allocateBatch(patients: AllocationPatient[], hospitals: Allocati
       break;
     }
     if (!created) {
-      let reason: UnservedReason = patient.travelTimeLimitMin !== undefined && hospitals.some((hospital) => hospital.travelTimeMinutes > patient.travelTimeLimitMin!) ? "travel_time_limit" : unservedReason(patient, hospitals, ledger);
+      let reason: UnservedReason = unservedReason(patient, hospitals, ledger);
+      if (reason === "capacity_exhausted" && allCompatibleHospitalsBeyondLimit(patient, hospitals)) reason = "travel_time_limit";
       if (reason === "capacity_exhausted" && (allocatedByType.get(patient.resourceType) ?? []).some(({ hospitalId, urgency }) => {
         const hospital = hospitals.find((item) => item.id === hospitalId);
         return urgency < patient.urgency && Boolean(hospital) && (!patient.capability || hospital!.capabilities.includes(patient.capability)) && !hospital!.closedTypes.includes(patient.resourceType);
