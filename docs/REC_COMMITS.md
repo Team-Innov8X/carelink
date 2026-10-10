@@ -22,3 +22,5 @@
 | 1 | `f94ba5a3fb723c1ec1c3854a6c5fe43b4716a94f` | Placeholder condition config, synthetic profiles, acceptance simulator/data and assumptions |
 | 2 | `951d2b29527ab320eed6994b2dc8fff13177a91a` | Custom L2 logistic model frozen as `rec-pre-test`; one-shot test report: `evidence/rec/accept-test-evaluated.json` |
 
+
+| 3 | pending | Feasibility-first ranking, override validation, fallback flags and seeded engine checks |
