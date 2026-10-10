@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import type * as Leaflet from 'leaflet';
+import { MAX_ROUTE_ACCURACY_M, ROUTE_DEVIATION_M, ROUTE_REFRESH_SECONDS } from '../../lib/dispatch/constants';
 
 export type MapFacility = {
   id: string;
@@ -27,6 +28,8 @@ interface MapViewProps {
   patientLocation?: [number, number];
   patientName?: string;
   driverLocation?: [number, number];
+  driverAccuracyM?: number | null;
+  fitBoundsKey?: string;
   hospitalLocation?: [number, number];
   showNetworkMarkers?: boolean;
   driverLocations?: { id: string; name?: string; location: [number, number]; distanceKm?: number }[];
@@ -47,6 +50,8 @@ export const MapView: React.FC<MapViewProps> = ({
   patientLocation,
   patientName,
   driverLocation,
+  driverAccuracyM,
+  fitBoundsKey,
   hospitalLocation,
   showNetworkMarkers = true,
   driverLocations = [],
@@ -57,9 +62,14 @@ export const MapView: React.FC<MapViewProps> = ({
   const leafletRef = useRef<typeof Leaflet | null>(null);
   const layersRef = useRef<Leaflet.LayerGroup | null>(null);
   const routeRef = useRef<Leaflet.Polyline | null>(null);
+  const driverMarkerRef = useRef<Leaflet.Marker | null>(null);
+  const accuracyCircleRef = useRef<Leaflet.Circle | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState('');
+  const [hasPanned, setHasPanned] = useState(false);
+  const fittedBoundsKeyRef = useRef<string | null>(null);
   const [routedPath, setRoutedPath] = useState<{ key: string; path: [number, number][] } | null>(null);
+  const lastRouteRequestRef = useRef<{ at: number; driver: [number, number] } | null>(null);
   const [fetchedFacilities, setFetchedFacilities] = useState<MapFacility[]>([]);
   const { ambulances, hospitals, emergencies, selectedEmergencyId, setSelectedEmergencyId } = useCareLink();
 
@@ -82,6 +92,13 @@ export const MapView: React.FC<MapViewProps> = ({
 
   useEffect(() => {
     if (!routeKey) return;
+    if (typeof driverAccuracyM === 'number' && driverAccuracyM > MAX_ROUTE_ACCURACY_M) return;
+    const routePoints = routeKey.split('|').map((point) => point.split(',').map(Number) as [number, number]);
+    const latestDriver = routePoints[0];
+    const lastRoute = lastRouteRequestRef.current;
+    const movedMeters = lastRoute ? Math.hypot((latestDriver[0] - lastRoute.driver[0]) * 111_000, (latestDriver[1] - lastRoute.driver[1]) * 111_000 * Math.cos(latestDriver[0] * Math.PI / 180)) : Infinity;
+    if (lastRoute && Date.now() - lastRoute.at < ROUTE_REFRESH_SECONDS * 1000 && movedMeters <= ROUTE_DEVIATION_M) return;
+    lastRouteRequestRef.current = { at: Date.now(), driver: latestDriver };
 
     const controller = new AbortController();
     const coordinates = routeKey.split('|').map((point) => point.split(',').map(Number));
@@ -103,8 +120,9 @@ export const MapView: React.FC<MapViewProps> = ({
         }
       });
 
-    return () => controller.abort();
-  }, [routeKey]);
+    // Do not abort a valid route lookup on the next GPS poll. Route requests are
+    // already throttled below; old results are ignored unless their key matches.
+  }, [routeKey, driverAccuracyM]);
   const currentRoutedPath = routeKey && routedPath?.key === routeKey ? routedPath.path : null;
 
   useEffect(() => {
@@ -170,6 +188,8 @@ export const MapView: React.FC<MapViewProps> = ({
       map?.stop();
       map?.remove();
       mapRef.current = null;
+      driverMarkerRef.current = null;
+      accuracyCircleRef.current = null;
       layersRef.current = null;
       routeRef.current = null;
       leafletRef.current = null;
@@ -180,14 +200,46 @@ export const MapView: React.FC<MapViewProps> = ({
   }, [hasMapCenter, zoom]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    const markPanned = () => setHasPanned(true);
+    map.on('dragstart', markPanned);
+    return () => { map.off('dragstart', markPanned); };
+  }, [mapReady]);
+
+  const driverLatitude = driverLocation?.[0];
+  const driverLongitude = driverLocation?.[1];
+  useEffect(() => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!mapReady || !L || !map) return;
+    if (driverLatitude === undefined || driverLongitude === undefined) {
+      driverMarkerRef.current?.remove(); driverMarkerRef.current = null;
+      accuracyCircleRef.current?.remove(); accuracyCircleRef.current = null;
+      return;
+    }
+    const point: [number, number] = [driverLatitude, driverLongitude];
+    if (!driverMarkerRef.current) {
+      const icon = L.divIcon({ className: 'carelink-driver-marker', html: '<div style="width:34px;height:34px;border-radius:50%;background:#0284c7;border:3px solid white;box-shadow:0 2px 8px #0f172a66;color:white;font:bold 12px Arial;display:grid;place-items:center">D</div>', iconSize: [34, 34], iconAnchor: [17, 17] });
+      driverMarkerRef.current = L.marker(point, { icon, title: 'Driver GPS location', pane: 'markerPane' }).bindPopup('<strong>Driver GPS location</strong>').addTo(map);
+      const element = driverMarkerRef.current.getElement();
+      if (element) element.style.transition = 'transform 450ms linear';
+    } else {
+      driverMarkerRef.current.setLatLng(point);
+    }
+    if (typeof driverAccuracyM === 'number' && driverAccuracyM > 0) {
+      if (!accuracyCircleRef.current) accuracyCircleRef.current = L.circle(point, { radius: driverAccuracyM, color: '#1E5A8E', weight: 1, fillColor: '#1E5A8E', fillOpacity: 0.12 }).addTo(map);
+      else accuracyCircleRef.current.setLatLng(point).setRadius(driverAccuracyM);
+    } else { accuracyCircleRef.current?.remove(); accuracyCircleRef.current = null; }
+  }, [mapReady, driverLatitude, driverLongitude, driverAccuracyM]);
+
+  useEffect(() => {
     const L = leafletRef.current;
     const map = mapRef.current;
     const layers = layersRef.current;
     if (!mapReady || !L || !map || !layers || !mapCenter) return;
 
-    // Requests can refresh while Leaflet is panning; cancel any pending movement
-    // before replacing marker layers or changing the visible bounds.
-    map.stop();
+    // Keep overlays below application dialogs and avoid re-fitting on every poll.
     layers.clearLayers();
     routeRef.current?.removeFrom(map);
     routeRef.current = null;
@@ -273,11 +325,6 @@ export const MapView: React.FC<MapViewProps> = ({
       const label = patientName ? `${escapeHtml(patientName)} · Patient` : 'Patient';
       L.marker(patientLocation, { icon, title: `${label} location` }).bindPopup(`<strong>${label}</strong><br/>Pickup location`).addTo(layers);
     }
-    if (driverLocation) {
-      const sharesPatientLocation = patientLocation && L.latLng(patientLocation).distanceTo(L.latLng(driverLocation)) < 30;
-      const icon = L.divIcon({ className: '', html: '<div style="width:34px;height:34px;border-radius:50%;background:#0284c7;border:3px solid white;box-shadow:0 2px 8px #0f172a66;color:white;font:bold 12px Arial;display:grid;place-items:center">D</div>', iconSize: [34, 34], iconAnchor: sharesPatientLocation ? [5, 17] : [17, 17] });
-      L.marker(driverLocation, { icon, title: 'Driver GPS location' }).bindPopup('<strong>Driver GPS location</strong>').addTo(layers);
-    }
     if (hospitalLocation) {
       addMarker(hospitalLocation, 'H', '#0369a1', 'Assigned hospital', '<strong>Assigned hospital</strong><br/>Destination');
     }
@@ -290,7 +337,7 @@ export const MapView: React.FC<MapViewProps> = ({
     });
 
     const sosRoute = patientLocation && driverLocation ? [driverLocation, patientLocation, ...(hospitalLocation ? [hospitalLocation] : [])] as [number, number][] : null;
-    if (sosRoute) {
+    if (sosRoute && !(typeof driverAccuracyM === 'number' && driverAccuracyM > MAX_ROUTE_ACCURACY_M)) {
       routeRef.current = L.polyline(currentRoutedPath ?? sosRoute, {
         color: '#e11d48',
         weight: currentRoutedPath ? 5 : 4,
@@ -313,9 +360,14 @@ export const MapView: React.FC<MapViewProps> = ({
     const focusedPoint = (currentRoutedPath ?? sosRoute) ?? (nearbyLocations.length > 1 ? nearbyLocations : showRouteLine && ambulance && hospital
       ? [[ambulance.location.lat, ambulance.location.lng], [hospital.location.lat, hospital.location.lng]] as [number, number][]
       : null);
-    if (focusedPoint) map.fitBounds(focusedPoint, { padding: [40, 40], maxZoom: 14, animate: false });
-    else map.setView(mapCenter, zoom, { animate: false });
-  }, [mapReady, mapCenter, zoom, ambulances, hospitals, emergencies, hospital, showNetworkMarkers, showRouteLine, ambulance, patientLocation, patientName, driverLocation, hospitalLocation, driverLocations, currentRoutedPath, setSelectedEmergencyId, activeFacilities]);
+    const boundsKey = fitBoundsKey ?? routeKey;
+    if ((focusedPoint || mapCenter) && fittedBoundsKeyRef.current !== boundsKey) {
+      if (focusedPoint) map.fitBounds(focusedPoint, { padding: [40, 40], maxZoom: 14, animate: false });
+      else map.setView(mapCenter, zoom, { animate: false });
+      fittedBoundsKeyRef.current = boundsKey;
+      setHasPanned(false);
+    }
+  }, [mapReady, mapCenter, zoom, ambulances, hospitals, emergencies, hospital, showNetworkMarkers, showRouteLine, ambulance, patientLocation, patientName, driverLocation, driverAccuracyM, hospitalLocation, driverLocations, currentRoutedPath, setSelectedEmergencyId, activeFacilities, fitBoundsKey, routeKey]);
 
   if (!mapCenter) {
     return <div className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-500" style={{ height }}>No location records to show.</div>;
@@ -324,6 +376,10 @@ export const MapView: React.FC<MapViewProps> = ({
   return (
     <div className="relative isolate w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm" style={{ height }}>
       <div ref={containerRef} className="h-full w-full" aria-label="Map showing ambulances, hospitals, and emergency requests" />
+      {hasPanned && <button type="button" onClick={() => { const L = leafletRef.current; const map = mapRef.current; if (!L || !map) return; const points = [driverLocation, patientLocation, hospitalLocation].filter((point): point is [number, number] => Boolean(point)); if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 14 }); setHasPanned(false); }} className="absolute right-3 top-3 z-[1000] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow">Recenter</button>}
+      {showRouteLine && patientLocation && driverLocation && (typeof driverAccuracyM === 'number' && driverAccuracyM > MAX_ROUTE_ACCURACY_M
+        ? <div className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-amber-800 shadow">Driver GPS accuracy is low; route is hidden until a better fix arrives.</div>
+        : <div className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-slate-700 shadow">{currentRoutedPath ? 'Road route' : 'Route approximate while directions load'}</div>)}
       {mapError && <div role="status" className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-rose-700 shadow">{mapError}</div>}
       <div className="absolute bottom-3 left-3 z-[1000] flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white/95 px-3.5 py-2 text-xs font-medium text-slate-700 shadow-md backdrop-blur-sm">
         {patientLocation ? <span><b className="text-rose-600">P</b> You / patient</span> : <span>🚑 Ambulance</span>}

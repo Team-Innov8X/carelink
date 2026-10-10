@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Activity, Check, MapPin, Phone, Radio, RefreshCw, Siren, Clock, AlertTriangle } from '@/components/icons';
 
-type Coordinates = { latitude: number; longitude: number };
+type Coordinates = { latitude: number; longitude: number; accuracy?: number; heading?: number | null; speed?: number | null };
 type LiveSOS = {
   id: string;
   type?: 'sos' | 'normal';
@@ -20,7 +20,7 @@ type LiveSOS = {
   notes?: string;
   destination?: string;
 };
-type ActiveSOS = Omit<LiveSOS, 'createdAt' | 'distanceKm'> & { distanceKm?: number | null; estimatedEtaMinutes?: number; acceptedAt?: string; arrivedAt?: string | null; directionsUrl: string; driverLocation?: Coordinates; tripStage: string; tripTimestamps?: Record<string, string>; destination?: { id: string; name: string; bedCategory?: string; status: string; rejectionReason?: string; location?: Coordinates } | null; vitalsUpdate?: { bp: string; heartRate: number; spO2: number; updatedAt: string } | null; issue?: { message: string; updatedAt: string; etaDelayMinutes?: number } | null };
+type ActiveSOS = Omit<LiveSOS, 'createdAt' | 'distanceKm'> & { distanceKm?: number | null; estimatedEtaMinutes?: number; acceptedAt?: string; arrivedAt?: string | null; directionsUrl: string; driverLocation?: Coordinates; driverAccuracyM?: number | null; tripStage: string; tripTimestamps?: Record<string, string>; destination?: { id: string; name: string; bedCategory?: string; status: string; rejectionReason?: string; location?: Coordinates } | null; vitalsUpdate?: { bp: string; heartRate: number; spO2: number; updatedAt: string } | null; issue?: { message: string; updatedAt: string; etaDelayMinutes?: number } | null };
 type DriverInfo = { name?: string; ambulanceId?: string | null };
 type PastTrip = { id: string; patientName: string; incidentType: string; createdAt: string; acceptedAt?: string; completedAt?: string; cancelledAt?: string; handoverAt?: string; missedAt?: string; tripStage?: string; status?: string };
 type DriverTab = 'overview' | 'requests' | 'current-trip' | 'history';
@@ -31,7 +31,7 @@ const getDriverLocation = () => new Promise<Coordinates>((resolve, reject) => {
     return;
   }
   navigator.geolocation.getCurrentPosition(
-    ({ coords }) => resolve({ latitude: coords.latitude, longitude: coords.longitude }),
+    ({ coords }) => resolve({ latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy, heading: coords.heading, speed: coords.speed }),
     reject,
     { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
   );
@@ -43,7 +43,7 @@ function readError(result: { error?: string; message?: string }, fallback: strin
   return result.error || result.message || fallback;
 }
 
-export function LiveSOSRequests({ onShowOnMap, onActiveSectionChange }: { onShowOnMap: (patient: [number, number], driver?: [number, number], hospital?: [number, number]) => void; onActiveSectionChange?: (section: DriverTab) => void }) {
+export function LiveSOSRequests({ onShowOnMap, onActiveSectionChange }: { onShowOnMap: (patient: [number, number], driver?: [number, number], hospital?: [number, number], accuracyM?: number, requestId?: string) => void; onActiveSectionChange?: (section: DriverTab) => void }) {
   const [requests, setRequests] = useState<LiveSOS[]>([]);
   const [activeRequest, setActiveRequest] = useState<ActiveSOS | null>(null);
   const [alertRequest, setAlertRequest] = useState<LiveSOS | null>(null);
@@ -64,7 +64,7 @@ export function LiveSOSRequests({ onShowOnMap, onActiveSectionChange }: { onShow
   const [historyError, setHistoryError] = useState('');
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const [pollSeconds, setPollSeconds] = useState(3);
-  const [locationState, setLocationState] = useState<'off' | 'sharing' | 'unavailable'>('off');
+  const [locationState, setLocationState] = useState<'off' | 'sharing' | 'blocked' | 'unavailable'>('off');
   const [demoTripStep, setDemoTripStep] = useState(0);
   const [demoUpdatedAt, setDemoUpdatedAt] = useState<string | null>(null);
   const rerouteAttempted = useRef<string | null>(null);
@@ -73,6 +73,8 @@ export function LiveSOSRequests({ onShowOnMap, onActiveSectionChange }: { onShow
   const mappedActiveRequestId = useRef<string | null>(null);
   const previousActiveRequestId = useRef<string | null>(null);
   const alertIdRef = useRef<string | null>(null);
+  const activeRequestRef = useRef<ActiveSOS | null>(null);
+  const pingSecondsRef = useRef(5);
   const priorityOf = (request: LiveSOS) => request.priority || (/cardiac|respir|stroke|unconscious|trauma|critical/i.test(`${request.incidentType} ${request.requiredEquipment.join(' ')}`) ? 'Critical' : 'Urgent');
   const visibleRequests = [...requests].filter((request) => request.type === 'normal').sort((a, b) => (a.urgency === 'critical' ? 0 : 1) - (b.urgency === 'critical' ? 0 : 1) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   const visibleSosRequests = [...requests].filter((request) => request.type !== 'normal').sort((a, b) => (priorityOf(a) === 'Critical' ? 0 : 1) - (priorityOf(b) === 'Critical' ? 0 : 1) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -86,11 +88,13 @@ export function LiveSOSRequests({ onShowOnMap, onActiveSectionChange }: { onShow
       if (!response.ok) throw new Error(readError(result, 'Could not load live SOS requests.'));
       if (result.serverTime) setServerOffsetMs(new Date(result.serverTime).getTime() - Date.now());
       if (Number.isFinite(result.pollSeconds) && result.pollSeconds > 0) setPollSeconds(result.pollSeconds);
+      if (Number.isFinite(result.locationPingSeconds) && result.locationPingSeconds > 0) pingSecondsRef.current = result.locationPingSeconds;
       setLoadError(false);
       const freshRequests = (result.requests ?? []) as LiveSOS[];
       setRequests(freshRequests);
       const nextActive = result.activeRequest ?? null;
       setActiveRequest(nextActive);
+      activeRequestRef.current = nextActive;
       if (nextActive?.id && !previousActiveRequestId.current) changeView('current-trip');
       previousActiveRequestId.current = nextActive?.id ?? null;
       setAvailable(Boolean(result.available));
@@ -101,13 +105,13 @@ export function LiveSOSRequests({ onShowOnMap, onActiveSectionChange }: { onShow
         const patient = result.activeRequest.location as Coordinates;
         const driver = result.activeRequest.driverLocation as Coordinates | null;
         const hospital = result.activeRequest.destination?.location as Coordinates | undefined;
-        onShowOnMap([patient.latitude, patient.longitude], driver ? [driver.latitude, driver.longitude] : undefined, hospital ? [hospital.latitude, hospital.longitude] : undefined);
+        onShowOnMap([patient.latitude, patient.longitude], driver ? [driver.latitude, driver.longitude] : undefined, hospital ? [hospital.latitude, hospital.longitude] : undefined, result.activeRequest.driverAccuracyM, result.activeRequest.id);
         mappedActiveRequestId.current = result.activeRequest.id;
       } else if (result.activeRequest?.id && result.activeRequest.destination?.location) {
         const patient = result.activeRequest.location as Coordinates;
         const currentDriver = result.activeRequest.driverLocation as Coordinates | null;
         const hospital = result.activeRequest.destination.location as Coordinates;
-        onShowOnMap([patient.latitude, patient.longitude], currentDriver ? [currentDriver.latitude, currentDriver.longitude] : undefined, [hospital.latitude, hospital.longitude]);
+        onShowOnMap([patient.latitude, patient.longitude], currentDriver ? [currentDriver.latitude, currentDriver.longitude] : undefined, [hospital.latitude, hospital.longitude], result.activeRequest.driverAccuracyM, result.activeRequest.id);
       } else if (!result.activeRequest) {
         mappedActiveRequestId.current = null;
       }
@@ -149,17 +153,24 @@ export function LiveSOSRequests({ onShowOnMap, onActiveSectionChange }: { onShow
   }, [refresh, pollSeconds]);
 
   useEffect(() => {
-    if (!available) return;
-    const heartbeat = async () => {
+    if (!available && !activeRequestRef.current) return;
+    if (!navigator.geolocation) { window.setTimeout(() => setLocationState('unavailable'), 0); return; }
+    let lastSentAt = 0;
+    const watchId = navigator.geolocation.watchPosition(async ({ coords }) => {
+      const now = Date.now();
+      if (now - lastSentAt < pingSecondsRef.current * 1000) return;
+      lastSentAt = now;
+      const location = { latitude: coords.latitude, longitude: coords.longitude };
       try {
-        const location = await getDriverLocation();
-        const response = await fetch('/api/sos/available', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location }) });
-        if (response.ok) setLocationState('sharing');
+        const response = await fetch('/api/sos/available', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location, accuracyM: coords.accuracy, heading: coords.heading, speed: coords.speed }) });
+        if (!response.ok) throw new Error('Location update was rejected');
+        setLocationState('sharing');
       } catch { setLocationState('unavailable'); }
-    };
-    const timer = window.setInterval(() => void heartbeat(), 10_000);
-    return () => window.clearInterval(timer);
-  }, [available]);
+    }, (error) => {
+      const locationError = error as GeolocationPositionError; setLocationState(locationError.code === locationError.PERMISSION_DENIED ? 'blocked' : 'unavailable');
+    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [available, activeRequest?.id]);
 
   useEffect(() => {
     const initial = window.setTimeout(() => setClockNow(Date.now()), 0);
@@ -177,7 +188,7 @@ export function LiveSOSRequests({ onShowOnMap, onActiveSectionChange }: { onShow
       const response = await fetch('/api/sos/available', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ available: nextAvailable, ...(location ? { location } : {}) }),
+      body: JSON.stringify({ available: nextAvailable, ...(location ? { location, accuracyM: location.accuracy, heading: location.heading, speed: location.speed } : {}) }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(readError(result, 'Could not update your availability.'));
@@ -199,7 +210,6 @@ export function LiveSOSRequests({ onShowOnMap, onActiveSectionChange }: { onShow
         : 'You are available and will receive new SOS requests.');
     } catch (error) {
       if (typeof error === 'object' && error !== null && 'code' in error) {
-        setLocationState('unavailable');
         const locationError = error as GeolocationPositionError;
         setMessage(locationError.code === locationError.PERMISSION_DENIED ? 'Allow location access to go available for SOS calls.' : 'Could not get your location. Please try again.');
       } else {
@@ -377,7 +387,7 @@ export function LiveSOSRequests({ onShowOnMap, onActiveSectionChange }: { onShow
       <div><h2 className="font-bold text-slate-900">Driver status</h2><p className="text-xs text-slate-500">Availability and location sharing</p></div>
       <div className="flex items-center gap-2"><span className={`rounded-full px-3 py-1 text-xs font-bold ${activeRequest ? 'bg-amber-100 text-amber-800' : available ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{activeRequest ? 'On trip / Busy' : available ? 'Available' : 'Offline'}</span><button type="button" disabled={busy || loading || Boolean(activeRequest)} onClick={() => available ? void goOffline() : void goAvailable()} className="min-h-11 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-700 disabled:opacity-60">{busy ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Radio className="h-3.5 w-3.5" />}{available ? 'Go offline' : 'Go available'}</button></div>
     </div>
-    <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500"><span>{driver.name || 'Driver'} · {driver.ambulanceId || 'Ambulance not linked'}</span><span className={locationState === 'sharing' ? 'text-emerald-700' : locationState === 'unavailable' ? 'text-amber-700' : ''}>Location {locationState === 'sharing' ? 'sharing' : locationState === 'unavailable' ? 'unavailable' : 'not shared'}</span>{availableSince && available && <span>Available since {new Date(availableSince).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}</div>
+    <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500"><span>{driver.name || 'Driver'} · {driver.ambulanceId || 'Ambulance not linked'}</span><span className={locationState === 'sharing' ? 'text-emerald-700' : locationState === 'blocked' || locationState === 'unavailable' ? 'text-amber-700' : ''}>Location {locationState === 'sharing' ? 'sharing' : locationState === 'blocked' ? 'blocked' : locationState === 'unavailable' ? 'unavailable' : 'not shared'}</span>{availableSince && available && <span>Available since {new Date(availableSince).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}</div>
     {view === 'history' ? <section className="rounded-xl border border-slate-200 bg-white p-4"><h2 className="font-bold">Task history</h2>{historyLoading ? <p className="py-8 text-center text-sm text-slate-500">Loading task history…</p> : historyError ? <div role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{historyError}<button type="button" onClick={() => void showHistory()} className="ml-3 font-bold underline">Retry</button></div> : tripHistory.length ? <div className="mt-3 divide-y divide-slate-100">{tripHistory.map((trip) => <article key={trip.id} className="flex flex-wrap justify-between gap-3 py-3"><div><p className="font-semibold">{trip.patientName} · {trip.incidentType}</p><p className="mt-1 text-xs text-slate-500">Case {trip.id.slice(0, 8)} · Requested {new Date(trip.createdAt).toLocaleString()}</p></div><div className="text-right text-xs text-slate-500"><p className="font-bold capitalize">{trip.status || 'completed'}</p>{trip.status === 'missed' ? <p>Missed {trip.missedAt ? new Date(trip.missedAt).toLocaleString() : '—'}</p> : trip.status === 'cancelled' ? <p>Cancelled {trip.cancelledAt ? new Date(trip.cancelledAt).toLocaleString() : '—'}</p> : <><p>Accepted {trip.acceptedAt ? new Date(trip.acceptedAt).toLocaleTimeString() : '—'}</p><p>Handover {trip.handoverAt ? new Date(trip.handoverAt).toLocaleTimeString() : '—'} · Completed {trip.completedAt ? new Date(trip.completedAt).toLocaleTimeString() : '—'}</p></>}</div></article>)}</div> : <p className="py-8 text-center text-sm text-slate-500">No completed, cancelled, or missed tasks yet.</p>}</section> : <>
     {message && <div role={loadError ? 'alert' : 'status'} className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-sky-50 px-3 py-2 text-sm font-medium text-sky-900"><span>{message}</span>{loadError && <button type="button" onClick={() => void refresh()} className="min-h-10 rounded-lg bg-sky-700 px-4 font-bold text-white">Retry</button>}</div>}
     {view === 'overview' && process.env.NODE_ENV === 'development' && !activeRequest && <article className="mb-4 rounded-xl border border-sky-200 bg-sky-50/70 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-wide text-sky-800">Simulated active assignment · Demo only</p><p className="mt-1 text-lg font-bold text-slate-900">Priya Mehra · 29 · Female</p><p className="mt-1 text-sm text-slate-700">Case P-1024 · Severe respiratory distress · <b className="text-rose-700">Critical</b></p><p className="mt-1 text-xs text-slate-600">Pickup: 12A Connaught Place, New Delhi · Landmark: near Central Park gate</p><p className="mt-1 text-xs text-slate-600">Patient: <a className="font-semibold text-sky-800" href="tel:+919876500124">+91 98765 00124</a> · Emergency contact: <a className="font-semibold text-sky-800" href="tel:+919876500129">+91 98765 00129</a></p></div><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">{demoSteps[demoTripStep]}</span></div><div className="mt-3 grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-slate-200 bg-white p-3"><h3 className="text-sm font-bold">Emergency details</h3><p className="mt-1 text-xs text-slate-600">Raised 2:14 PM · Accepted 2:16 PM · Dispatch note: administer oxygen, prepare for rapid transfer.</p><p className="mt-1 text-xs text-slate-600">Needs: ICU bed · oxygen · ventilator ready · respiratory specialist</p><p className="mt-1 text-xs text-slate-600">Known allergy: penicillin · Condition: asthma · Medication: salbutamol inhaler</p></div><div className="rounded-lg border border-slate-200 bg-white p-3"><h3 className="text-sm font-bold">Destination and pre-brief</h3><p className="mt-1 text-sm font-semibold">City Care Hospital · 4.8 km · Estimated 12 min</p><p className="mt-1 text-xs font-bold text-amber-800">Hospital confirmation pending · ICU bed requested</p><p className="mt-1 text-xs text-slate-600">Bed hold expires in 12:40 after confirmation. Pre-brief: severe wheezing, oxygen started, monitor SpO₂.</p></div><div className="rounded-lg border border-slate-200 bg-white p-3"><h3 className="text-sm font-bold">Latest vitals</h3><p className="mt-1 text-xs text-slate-700">BP 125/85 mmHg · HR 124 bpm · SpO₂ 88% · GCS 15 · Conscious, distressed</p><p className="mt-1 text-xs text-slate-500">Recorded 2:18 PM · SpO₂ down from 91% at 2:16 PM</p></div><div className="rounded-lg border border-slate-200 bg-white p-3"><h3 className="text-sm font-bold">Handover checklist</h3><p className="mt-1 text-xs text-slate-600">Arrival at hospital · Details shared · Vitals sent · Bed confirmed</p>{demoUpdatedAt && <p className="mt-1 text-xs text-emerald-700">Demo trip updated at {demoUpdatedAt}</p>}</div></div><button type="button" onClick={() => { setDemoTripStep((step) => Math.min(step + 1, demoSteps.length - 1)); setDemoUpdatedAt(new Date().toLocaleTimeString()); }} disabled={demoTripStep >= demoSteps.length - 1} className="mt-3 min-h-11 w-full rounded-lg bg-sky-700 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">{demoTripStep >= demoSteps.length - 1 ? 'Demo handover complete' : `Demo: ${demoSteps[demoTripStep + 1]} · Update step`}</button><p className="mt-2 text-center text-[11px] text-slate-500">This sample demonstrates the assignment layout; advancing it does not change a real patient record.</p></article>}

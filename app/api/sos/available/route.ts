@@ -3,9 +3,10 @@ import { distanceKm, expireAndReofferDriverOffers, mapsUrl, sosCollections, vali
 import clientPromise from "@/lib/mongodb";
 import { expireHospitalReservations } from '@/lib/hospital-reservations';
 import { ObjectId } from 'mongodb';
-import { POLL_SECONDS } from '@/lib/dispatch/constants';
+import { LOCATION_CHANGE_THRESHOLD_M, LOCATION_PING_SECONDS, LOCATION_RETENTION_SECONDS, POLL_SECONDS, ROUTE_DEVIATION_M, ROUTE_REFRESH_SECONDS } from '@/lib/dispatch/constants';
 
 export const runtime = "nodejs";
+let pingRetentionIndex: Promise<string> | null = null;
 
 async function getOpenRequests(requests: Awaited<ReturnType<typeof sosCollections>>["requests"], driverId?: string) {
   const all = await requests.find({ status: "searching", ...(driverId ? { rejectedDriverIds: { $ne: driverId } } : {}) }).sort({ createdAt: -1 }).toArray();
@@ -56,6 +57,9 @@ export async function GET() {
       message: "Go available to accept an SOS request",
       serverTime: now.toISOString(),
       pollSeconds: POLL_SECONDS,
+      locationPingSeconds: LOCATION_PING_SECONDS,
+      routeRefreshSeconds: ROUTE_REFRESH_SECONDS,
+      routeDeviationM: ROUTE_DEVIATION_M,
     });
   }
   const activeSos = driver.activeRequestId ? await requests.findOne({ _id: driver.activeRequestId, driverId: auth.user.id, status: "accepted" }) : null;
@@ -90,33 +94,50 @@ export async function GET() {
     availableSince: driver.availableSince ?? driver.updatedAt ?? null,
     driver: driverSummary,
     driverLocation: validCoordinates(driver.location) ? driver.location : null,
-    activeRequest: activeSos ? { id: activeSos._id, type: activeSos.type ?? (activeSos.requestType === "routine" ? "normal" : "sos"), incidentType: activeSos.incidentType, patientName: activeSos.patientName, patientPhone: activeSos.patientPhone, location: activeSos.location, destinationRequest: activeSos.type === "normal" ? activeSos.destination ?? null : null, notes: activeSos.type === "normal" ? activeSos.notes ?? "" : undefined, driverLocation: driverPoint ?? null, distanceKm: driverPoint ? Number(distanceKm(driverPoint, activeSos.location).toFixed(1)) : null, estimatedEtaMinutes, requiredEquipment: activeSos.requiredEquipment, acceptedAt: activeSos.acceptedAt, arrivedAt: activeSos.arrivedAt ?? null, tripStage, tripTimestamps: activeSos.tripTimestamps ?? {}, vitalsUpdate: activeSos.vitalsUpdate ?? null, issue: activeSos.issue ?? null, destination: hospitalRequest ? { id: hospitalRequest.hospitalId, name: hospitalRequest.hospitalName, bedCategory: hospitalRequest.bedCategory, status: hospitalRequest.status, rejectionReason: hospitalRequest.rejectionReason, location: destination ? { latitude: destination.lat, longitude: destination.lng } : undefined } : null, directionsUrl: mapsUrl((tripStage === 'patient_on_board' || tripStage === 'en_route_hospital' || tripStage === 'arrived_hospital') && destination ? { latitude: destination.lat, longitude: destination.lng } : activeSos.location, driverPoint) } : null,
+    driverLocationAccuracyM: (driver as typeof driver & { locationAccuracyM?: number | null }).locationAccuracyM ?? null,
+    activeRequest: activeSos ? { id: activeSos._id, type: activeSos.type ?? (activeSos.requestType === "routine" ? "normal" : "sos"), incidentType: activeSos.incidentType, patientName: activeSos.patientName, patientPhone: activeSos.patientPhone, location: activeSos.location, destinationRequest: activeSos.type === "normal" ? activeSos.destination ?? null : null, notes: activeSos.type === "normal" ? activeSos.notes ?? "" : undefined, driverLocation: driverPoint ?? null, driverAccuracyM: (driver as typeof driver & { locationAccuracyM?: number | null }).locationAccuracyM ?? null, distanceKm: driverPoint ? Number(distanceKm(driverPoint, activeSos.location).toFixed(1)) : null, estimatedEtaMinutes, requiredEquipment: activeSos.requiredEquipment, acceptedAt: activeSos.acceptedAt, arrivedAt: activeSos.arrivedAt ?? null, tripStage, tripTimestamps: activeSos.tripTimestamps ?? {}, vitalsUpdate: activeSos.vitalsUpdate ?? null, issue: activeSos.issue ?? null, destination: hospitalRequest ? { id: hospitalRequest.hospitalId, name: hospitalRequest.hospitalName, bedCategory: hospitalRequest.bedCategory, status: hospitalRequest.status, rejectionReason: hospitalRequest.rejectionReason, location: destination ? { latitude: destination.lat, longitude: destination.lng } : undefined } : null, directionsUrl: mapsUrl((tripStage === 'patient_on_board' || tripStage === 'en_route_hospital' || tripStage === 'arrived_hospital') && destination ? { latitude: destination.lat, longitude: destination.lng } : activeSos.location, driverPoint) } : null,
     requests: sosRequests.map(({ sos, offer }) => privateOfferCard(sos, offer.expiresAt, validCoordinates(driver.location) ? driver.location : null)),
     serverTime: now.toISOString(),
     pollSeconds: POLL_SECONDS,
+    locationPingSeconds: LOCATION_PING_SECONDS,
+    routeRefreshSeconds: ROUTE_REFRESH_SECONDS,
+    routeDeviationM: ROUTE_DEVIATION_M,
   });
 }
 
 export async function PATCH(request: Request) {
   const auth = await requireRole(["ambulance_driver", "driver"]);
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
-  let body: { available?: unknown; location?: unknown };
+  let body: { available?: unknown; location?: unknown; accuracyM?: unknown; heading?: unknown; speed?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "Invalid JSON body" }, { status: 400 }); }
-  if ((body.available !== undefined && typeof body.available !== "boolean") || (body.location !== undefined && !validCoordinates(body.location)) || (body.available === undefined && !body.location)) return Response.json({ error: "Provide availability or a valid location heartbeat" }, { status: 400 });
-  const { drivers, offers } = await sosCollections();
+  if ((body.available !== undefined && typeof body.available !== "boolean") || (body.location !== undefined && !validCoordinates(body.location)) || (body.available === undefined && !body.location) || (body.accuracyM !== undefined && (typeof body.accuracyM !== 'number' || !Number.isFinite(body.accuracyM) || body.accuracyM < 0))) return Response.json({ error: "Provide availability or a valid location heartbeat" }, { status: 400 });
+  const { drivers, offers, requests } = await sosCollections();
   if (body.available === undefined) {
     const driver = await drivers.findOne({ userId: auth.user.id });
-    if (!driver?.available) return Response.json({ available: false, location: body.location });
+    const trip = driver?.activeRequestId ? await requests.findOne({ _id: driver.activeRequestId, driverId: auth.user.id, status: 'accepted' }) : null;
+    if (!driver?.available && !trip) return Response.json({ error: 'Go available before sharing driver location.' }, { status: 409 });
     const at = new Date();
-    await drivers.updateOne({ userId: auth.user.id, available: true }, { $set: { location: body.location, locationUpdatedAt: at, updatedAt: at } });
-    return Response.json({ available: true, location: body.location, locationUpdatedAt: at });
+    const location = body.location as { latitude: number; longitude: number };
+    await drivers.updateOne({ userId: auth.user.id }, { $set: { location, locationAccuracyM: body.accuracyM ?? null, locationHeading: body.heading ?? null, locationSpeed: body.speed ?? null, locationUpdatedAt: at, updatedAt: at } });
+    if (trip) {
+      const db = (await clientPromise).db();
+      const pings = db.collection<{ tripId: unknown; driverId: string; lat: number; lng: number; accuracyM: number | null; at: Date }>('driver_location_pings');
+      pingRetentionIndex ??= pings.createIndex({ at: 1 }, { expireAfterSeconds: LOCATION_RETENTION_SECONDS, name: 'driver_location_pings_ttl' });
+      await pingRetentionIndex;
+      const previous = await pings.findOne({ tripId: trip._id, driverId: auth.user.id }, { sort: { at: -1 } });
+      const distance = previous ? distanceKm({ latitude: previous.lat, longitude: previous.lng }, location) * 1000 : Infinity;
+      if (!previous || (at.getTime() - previous.at.getTime() >= LOCATION_PING_SECONDS * 1000 && distance >= LOCATION_CHANGE_THRESHOLD_M)) {
+        await pings.insertOne({ tripId: trip._id, driverId: auth.user.id, lat: location.latitude, lng: location.longitude, accuracyM: typeof body.accuracyM === 'number' ? body.accuracyM : null, at });
+      }
+    }
+    return Response.json({ available: Boolean(driver?.available), location, locationUpdatedAt: at });
   }
   if (body.available) {
     const currentDriver = await drivers.findOne({ userId: auth.user.id });
     if (currentDriver?.activeRequestId) return Response.json({ error: "Complete your active SOS request before going back on duty" }, { status: 409 });
   }
   const changedAt = new Date();
-  await drivers.updateOne({ userId: auth.user.id }, { $set: { userId: auth.user.id, available: body.available, ...(body.available ? { availableSince: changedAt } : {}), ...(body.location ? { location: body.location, locationUpdatedAt: changedAt } : {}), updatedAt: changedAt } }, { upsert: true });
+  await drivers.updateOne({ userId: auth.user.id }, { $set: { userId: auth.user.id, available: body.available, ...(body.available ? { availableSince: changedAt } : {}), ...(body.location ? { location: body.location, locationAccuracyM: body.accuracyM ?? null, locationUpdatedAt: changedAt } : {}), updatedAt: changedAt } }, { upsert: true });
   if (!body.available) {
     const pending = await offers.find({ driverId: auth.user.id, status: { $in: ["pending", "offered"] } }).project({ _id: 1, status: 1 }).toArray();
     await Promise.all(pending.map((offer) => offers.updateOne(

@@ -11,9 +11,9 @@ import { authClient } from '../../lib/auth-client';
 
 function DriverHome() {
   const { data: session, isPending } = authClient.useSession();
-  const [locations, setLocations] = useState<{ patient: [number, number]; driver?: [number, number]; hospital?: [number, number] }>();
+  const [locations, setLocations] = useState<{ patient: [number, number]; driver?: [number, number]; hospital?: [number, number]; accuracyM?: number | null; requestId?: string }>();
   const [showTripMap, setShowTripMap] = useState(false);
-  const showMap = useCallback((patient: [number, number], driver?: [number, number], hospital?: [number, number]) => setLocations({ patient, driver, hospital }), []);
+  const showMap = useCallback((patient: [number, number], driver?: [number, number], hospital?: [number, number], accuracyM?: number, requestId?: string) => setLocations({ patient, driver, hospital, accuracyM, requestId }), []);
   const selectSection = useCallback((section: 'overview' | 'requests' | 'current-trip' | 'history') => setShowTripMap(section === 'current-trip'), []);
   const role = (session?.user as ({ role?: string } | undefined))?.role;
   if (isPending) return <main className="grid min-h-screen place-items-center bg-slate-50 text-sm text-slate-500">Loading driver workspace…</main>;
@@ -26,7 +26,7 @@ function DriverHome() {
     <div className="mx-auto max-w-4xl space-y-5 px-3 py-5 sm:px-5 sm:py-7">
       <div className="flex items-center gap-3"><span className="rounded-xl bg-sky-100 p-3 text-sky-700"><Ambulance /></span><div><h1 className="text-2xl font-bold">Driver dashboard</h1><p className="text-sm text-slate-500">Calls, trip updates, and hospital handover in one place.</p></div></div>
       <LiveSOSRequests onShowOnMap={showMap} onActiveSectionChange={selectSection} />
-      {showTripMap && <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4"><div className="mb-3"><h2 className="font-bold">Trip map</h2><p className="text-xs text-slate-500">Driver, pickup, and hospital destination</p></div>{locations ? <MapView center={locations.patient} patientLocation={locations.patient} driverLocation={locations.driver} hospitalLocation={locations.hospital} showNetworkMarkers={false} height="min(52vh, 420px)" /> : <div className="grid min-h-56 place-items-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">Trip map becomes available when an assignment is active.</div>}</section>}
+      {showTripMap && <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4"><div className="mb-3"><h2 className="font-bold">Trip map</h2><p className="text-xs text-slate-500">Driver, pickup, and hospital destination</p></div>{locations ? <MapView center={locations.patient} patientLocation={locations.patient} driverLocation={locations.driver} driverAccuracyM={locations.accuracyM} hospitalLocation={locations.hospital} fitBoundsKey={locations.requestId} showRouteLine showNetworkMarkers={false} height="min(52vh, 420px)" /> : <div className="grid min-h-56 place-items-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">Trip map becomes available when an assignment is active.</div>}</section>}
     </div>
   </main>;
 }

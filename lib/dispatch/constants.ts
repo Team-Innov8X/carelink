@@ -18,10 +18,13 @@ export const NORMAL_REQUEST_EXPIRY_MIN = readNumber("NORMAL_REQUEST_EXPIRY_MIN",
 export const SOS_UNDO_SECONDS = readNumber("SOS_UNDO_SECONDS", 5, 1);
 export const POLL_SECONDS = readNumber("POLL_SECONDS", 3, 1);
 export const LOCATION_PING_SECONDS = readNumber("LOCATION_PING_SECONDS", 5, 1);
+export const LOCATION_CHANGE_THRESHOLD_M = readNumber("LOCATION_CHANGE_THRESHOLD_M", 20, 1);
 export const STALE_LOCATION_SECONDS = readNumber("STALE_LOCATION_SECONDS", 30, 1);
 export const ROUTE_REFRESH_SECONDS = readNumber("ROUTE_REFRESH_SECONDS", 30, 1);
 export const ROUTE_DEVIATION_M = readNumber("ROUTE_DEVIATION_M", 200, 1);
+export const MAX_ROUTE_ACCURACY_M = readNumber("MAX_ROUTE_ACCURACY_M", 100, 1);
 export const LOCATION_RETENTION_DAYS = readNumber("LOCATION_RETENTION_DAYS", 30, 1);
+export const LOCATION_RETENTION_SECONDS = LOCATION_RETENTION_DAYS * 24 * 60 * 60;
 export const EMERGENCY_FALLBACK_TEXT = process.env.EMERGENCY_FALLBACK_TEXT?.trim()
   || "If no driver is found, contact your local emergency services immediately.";
 

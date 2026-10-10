@@ -65,6 +65,15 @@
 - Normal transport booking returns patients to the dashboard current-request panel after submit; assigned normal requests can also be cancelled from the history view. Removed the hardcoded emergency phone number and use the server-configured fallback text.
 - Verification: targeted ESLint, `npx tsc --noEmit`, `npx vitest run` (38 tests), `npm run build`, and `git diff --check` pass. Live geocoding and authenticated visual checks need a running app/session and were not available here.
 
+## Phase 5 implementation notes
+
+- Replaced timer-based one-shot driver GPS reads with `watchPosition` at high accuracy. The watch runs while online and remains active during an accepted trip; it is cleared when offline or when the trip ends. Driver location status distinguishes sharing, blocked permission, unavailable, and off.
+- Driver heartbeats now include accuracy, heading, and speed. The server updates the latest driver fix during an owned active trip even though the driver is no longer available for new requests. Trip pings are inserted only after both the configured interval and movement threshold, while every accepted GPS heartbeat updates freshness.
+- Added the `driver_location_pings` collection with an `at` TTL index driven by `LOCATION_RETENTION_DAYS`; records include trip, driver, coordinates, accuracy, and timestamp. Tunable movement and maximum route-accuracy thresholds are centralized in `lib/dispatch/constants.ts`.
+- MapView now keeps the driver marker and GPS accuracy circle across polling updates, animates marker transitions, fits bounds per trip instead of per poll, and exposes Recenter after pan. Route lookup is limited by `ROUTE_REFRESH_SECONDS` except when movement exceeds `ROUTE_DEVIATION_M`; poor GPS accuracy suppresses route drawing and displays a clear notice. A direct line is labeled approximate while road directions are unavailable.
+- Both patient and driver trip maps receive the same server GPS data and trip identity. Patient ETA-change notice (>10 minutes) was already implemented in Phase 4 and remains active.
+- Verification: targeted ESLint, `npx tsc --noEmit`, and `git diff --check` pass. Browser geolocation, routing service availability, Mongo TTL deletion, and two-account live-map checks need a running authenticated development environment and remain manual QA items.
+
 ## Functional gaps found for later phases
 
 - Routine transport currently posts `requestType`, destination, schedule, and notes to `POST /api/sos`, but that handler only validates and persists the SOS fields (`location`, `incidentType`, and `requiredEquipment`). There is no distinct normal-request endpoint or driver Requests feed yet.
