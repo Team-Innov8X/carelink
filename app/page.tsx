@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Activity, ArrowRight, Heart, ShieldCheck } from '@/components/icons';
 import FeatureCarousel from './feature-carousel';
+import NetworkStatistics from '@/components/marketing/NetworkStatistics';
 
 export default function HomePage() {
   return (
@@ -28,13 +29,7 @@ export default function HomePage() {
           <FeatureCarousel />
         </section>
 
-        <section aria-label="CareLink network" className="rounded-3xl border border-slate-200 bg-white px-6 py-9 shadow-sm sm:px-10">
-          <p className="text-center text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Care that connects, when it matters</p>
-          <div className="mt-7 grid gap-7 text-center sm:grid-cols-2 lg:grid-cols-4">
-            {['Patients supported in emergencies', 'Hospitals in the network', 'Pharmacies connected', 'Drivers ready to respond'].map((label) => <div key={label}><p className="text-3xl font-black text-rose-600">CareLink</p><p className="mt-1 text-sm font-medium text-slate-600">{label}</p></div>)}
-          </div>
-          <p className="mt-6 text-center text-xs text-slate-400">Network totals will appear here as verified public reporting becomes available.</p>
-        </section>
+        <NetworkStatistics />
 
         <footer className="mt-10 flex flex-col items-start justify-between gap-4 border-t border-slate-200 py-7 text-sm text-slate-500 sm:flex-row sm:items-center"><p>CareLink · Faster Care, Healthier Tomorrow</p><div className="flex gap-5"><Link className="hover:text-rose-700" href="/signin">Sign in</Link><Link className="hover:text-rose-700" href="/signup">Create account</Link></div></footer>
       </div>

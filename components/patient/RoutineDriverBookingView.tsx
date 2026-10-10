@@ -107,13 +107,14 @@ export const RoutineDriverBookingView: React.FC = () => {
         if (geocoded.displayName) setPickupAddress(geocoded.displayName);
       }
       idempotencyKey.current ??= window.crypto.randomUUID();
-      const response = await fetch('/api/requests', {
+      const response = await fetch('/api/sos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey.current },
         body: JSON.stringify({
           location: targetCoords,
           incidentType: `Routine Transport: ${reason}`,
           requestType: 'routine',
+          destination: destination.trim() || 'Destination to be confirmed',
           patientName: patientName.trim() || undefined,
           patientPhone: patientPhone.trim(),
           preferredTime: preferredTimeDisplay,

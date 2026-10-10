@@ -1,7 +1,7 @@
 import { requireRole } from "@/lib/auth-utils";
 import { advanceDispatch, createRequestId, ensureHospitalRequestForSos, getHospitalRequestsCollection, sosCollections, validCoordinates } from "@/lib/sos";
 import { getUsersCollection } from "@/lib/models/db";
-import { EMERGENCY_FALLBACK_TEXT, SOS_UNDO_SECONDS } from "@/lib/dispatch/constants";
+import { EMERGENCY_FALLBACK_TEXT, NORMAL_REQUEST_EXPIRY_MIN, SOS_UNDO_SECONDS } from "@/lib/dispatch/constants";
 
 export const runtime = "nodejs";
 
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
   const auth = await requireRole("patient");
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
 
-  let body: { location?: unknown; pickupAddress?: unknown; incidentType?: unknown; requiredEquipment?: unknown; requestType?: unknown; patientPhone?: unknown; patientName?: unknown; preferredTime?: unknown; notes?: unknown };
+  let body: { location?: unknown; pickupAddress?: unknown; incidentType?: unknown; requiredEquipment?: unknown; requestType?: unknown; patientPhone?: unknown; patientName?: unknown; preferredTime?: unknown; notes?: unknown; destination?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "Invalid JSON body" }, { status: 400 }); }
   const patientLocation = body.location;
   if (!validCoordinates(patientLocation)) return Response.json({ error: "location must include valid latitude and longitude" }, { status: 400 });
@@ -90,6 +90,7 @@ export async function POST(request: Request) {
   if (body.patientName !== undefined && (typeof body.patientName !== 'string' || body.patientName.trim().length < 1 || body.patientName.length > 120)) return Response.json({ error: 'patientName must be a valid name' }, { status: 400 });
   if (body.preferredTime !== undefined && (typeof body.preferredTime !== 'string' || body.preferredTime.length > 120)) return Response.json({ error: 'preferredTime is too long' }, { status: 400 });
   if (body.notes !== undefined && (typeof body.notes !== 'string' || body.notes.length > 2000)) return Response.json({ error: 'notes must be 2000 characters or fewer' }, { status: 400 });
+  if (body.destination !== undefined && (typeof body.destination !== 'string' || body.destination.trim().length > 240)) return Response.json({ error: 'destination must be a string of at most 240 characters' }, { status: 400 });
 
   const idempotencyKey = request.headers.get("idempotency-key")?.trim() ?? "";
   if (!idempotencyKey || idempotencyKey.length > 160) return Response.json({ error: "An Idempotency-Key header is required (maximum 160 characters)." }, { status: 400 });
@@ -124,12 +125,14 @@ export async function POST(request: Request) {
     passengerName: requestType === 'routine' && typeof body.patientName === 'string' ? body.patientName.trim() : auth.user.name,
     patientEmail: profile.email, patientPhone: requestType === 'routine' && typeof body.patientPhone === 'string' ? body.patientPhone.trim() : profile.phone,
     location: pickupLocation, incidentType: incidentType.trim(),
+    ...(requestType === 'routine' && typeof body.destination === 'string' ? { destination: { name: body.destination.trim() } } : {}),
     requestType,
     preferredTime: typeof body.preferredTime === 'string' ? body.preferredTime.trim() : undefined,
     notes: typeof body.notes === 'string' ? body.notes.trim() : undefined,
     requiredEquipment: [...new Set(((body.requiredEquipment ?? []) as string[]).map((item) => item.trim()).filter(Boolean))],
     type: requestType === 'routine' ? "normal" as const : "sos" as const, idempotencyKey,
     status: "searching" as const, driverId: null, dispatchRound: 0, createdAt,
+    ...(requestType === 'routine' ? { expiresAt: new Date(createdAt.getTime() + NORMAL_REQUEST_EXPIRY_MIN * 60_000) } : {}),
     activePatientId: auth.user.id,
     dispatchStatus: "created" as const,
     transitionLog: [{ from: null, to: "created", at: createdAt, actor: { type: "patient", id: auth.user.id }, reason: "SOS created" }],
