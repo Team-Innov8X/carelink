@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { requireRole } from '@/lib/auth-utils';
 import HospitalAdminDashboard from './dashboard';
+import HospitalAdminProvider from './provider';
 import { getHospitalsCollection, getUsersCollection } from '@/lib/models';
 
 export default async function HospitalAdminPage() {
@@ -26,5 +27,5 @@ export default async function HospitalAdminPage() {
       { $set: { onboardingCompleted: true, updatedAt: new Date() } },
     );
   }
-  return <HospitalAdminDashboard hospitalName={profile.hospitalName || ''} />;
+  return <HospitalAdminProvider><HospitalAdminDashboard hospitalName={profile.hospitalName || ''} /></HospitalAdminProvider>;
 }
