@@ -13,6 +13,7 @@ import {
   UserCheck,
   MapPin,
   AlertCircle,
+  X,
 } from '../icons';
 import { useCareLink } from '../../context/CareLinkContext';
 
@@ -113,13 +114,16 @@ export function HospitalDetailsView() {
   return (
     <section className="mx-auto max-w-5xl space-y-6">
       {/* Back button */}
-      <div>
+      <div className="flex items-center justify-between gap-3">
         <button
           onClick={() => setActiveTab('hospitals')}
           className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           <span>Back to hospital directory</span>
+        </button>
+        <button type="button" onClick={() => setActiveTab('hospitals')} aria-label="Close hospital details" title="Close hospital details" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-900">
+          <X className="h-5 w-5" />
         </button>
       </div>
 

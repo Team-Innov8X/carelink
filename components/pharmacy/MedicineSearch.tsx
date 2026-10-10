@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import confetti from 'canvas-confetti';
 import {
@@ -35,18 +35,21 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
   const [ordersLoading, setOrdersLoading] = useState(mode === 'patient');
   const [orderError, setOrderError] = useState('');
 
-  useEffect(() => {
+  const loadPatientOrders = useCallback(async () => {
     if (mode !== 'patient') return;
-    let cancelled = false;
-    void fetch('/api/pharmacy', { cache: 'no-store' }).then(async (response) => {
+    setOrdersLoading(true);
+    setOrderError('');
+    try {
+      const response = await fetch('/api/pharmacy', { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Could not load your medicine orders.');
-      if (!cancelled) setPatientOrders(Array.isArray(payload.medicineOrders) ? payload.medicineOrders : []);
-    }).catch((error: unknown) => {
-      if (!cancelled) setOrderError(error instanceof Error ? error.message : 'Could not load your medicine orders.');
-    }).finally(() => { if (!cancelled) setOrdersLoading(false); });
-    return () => { cancelled = true; };
+      setPatientOrders(Array.isArray(payload.medicineOrders) ? payload.medicineOrders : []);
+    } catch (error) {
+      setOrderError(error instanceof Error ? error.message : 'Could not load your medicine orders.');
+    } finally { setOrdersLoading(false); }
   }, [mode]);
+
+  useEffect(() => { void loadPatientOrders(); }, [loadPatientOrders]);
 
   const selectedMed =
     medicines.find((m) => m.id === selectedMedicineId) || medicines[0];
@@ -96,7 +99,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto">
       {/* Header with Navigation */}
       <div className="flex items-center justify-between">
         {mode === 'patient' && <button
@@ -111,7 +114,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
         <div className="flex items-center bg-slate-100 p-1 rounded-xl">
           {mode === 'patient' && <button
             onClick={() => setActiveSubTab('search')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${
               activeSubTab === 'search'
                 ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-500 hover:text-slate-900'
@@ -121,7 +124,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
           </button>}
           {mode === 'pharmacy' && <button
             onClick={() => setActiveSubTab('manage')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${
               activeSubTab === 'manage'
                 ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-500 hover:text-slate-900'
@@ -130,14 +133,14 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
             Inventory
           </button>}
           <button
-            onClick={() => setActiveSubTab('orders')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            onClick={() => { setActiveSubTab('orders'); void loadPatientOrders(); }}
+            className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${
               activeSubTab === 'orders'
                 ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            Orders ({medicineOrders.length})
+            Orders ({mode === 'patient' ? patientOrders.length : medicineOrders.length})
           </button>
         </div>
       </div>
@@ -402,11 +405,11 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
 
       {/* Sub-tab 3: Active Orders */}
       {activeSubTab === 'orders' && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
-          <h3 className="font-bold text-base text-slate-900">{mode === 'patient' ? 'Your Medicine Orders' : 'Live Dispatched Medicine Orders'}</h3>
+        <div className="bg-white rounded-2xl p-7 sm:p-8 border border-slate-200 shadow-xs space-y-5 text-sm">
+          <h3 className="font-bold text-lg text-slate-900">{mode === 'patient' ? 'Your Medicine Orders' : 'Live Dispatched Medicine Orders'}</h3>
 
           {mode === 'patient' && ordersLoading ? <p role="status" className="py-8 text-center text-sm text-slate-500">Loading your orders…</p> : null}
-          {mode === 'patient' && !ordersLoading && orderError ? <button type="button" onClick={() => { setOrdersLoading(true); setOrderError(''); void fetch('/api/pharmacy', { cache: 'no-store' }).then(async (response) => { const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload.error || 'Could not load your medicine orders.'); setPatientOrders(Array.isArray(payload.medicineOrders) ? payload.medicineOrders : []); }).catch((error: unknown) => setOrderError(error instanceof Error ? error.message : 'Could not load your medicine orders.')).finally(() => setOrdersLoading(false)); }} className="text-sm font-semibold text-sky-700 underline">Retry loading orders</button> : null}
+          {mode === 'patient' && !ordersLoading && orderError ? <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"><p>{orderError}</p><button type="button" onClick={() => void loadPatientOrders()} className="font-semibold text-sky-800 underline">Retry loading orders</button></div> : null}
           {!(mode === 'patient' && (ordersLoading || orderError)) && (mode === 'patient' ? patientOrders : medicineOrders).length === 0 ? (
             <div className="text-center py-10 text-slate-400 text-xs">
               {mode === 'patient' ? 'You have no medicine orders yet.' : 'No active pharmacy orders yet.'}
@@ -416,7 +419,7 @@ export const MedicineSearch: React.FC<{ mode?: 'patient' | 'pharmacy' }> = ({ mo
               {(mode === 'patient' ? patientOrders : medicineOrders).map((ord) => (
                 <div
                   key={ord.id}
-                  className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 flex items-center justify-between text-xs"
+                  className="p-5 rounded-xl border border-slate-200 bg-slate-50/80 flex items-center justify-between text-sm"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
