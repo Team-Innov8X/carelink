@@ -50,7 +50,10 @@ export async function POST(request: Request) {
     const org = { name: input.data.name, address: { street: input.data.address, city: input.data.city, state: input.data.state, zipCode: input.data.pincode, country: 'India' }, location: { type: 'Point', coordinates: coords }, contact: { phone: input.data.phone, email: auth.user.email, emergencyHotline: input.data.phone }, status: 'active', isDemo: false, ownerUserId: accountId, services: input.data.details || '', openingHours: input.data.openingHours || '', updatedAt: now, createdAt: now };
     if (user.role === 'pharmacy') {
       await db.collection('pharmacies').updateOne({ ownerUserId: accountId }, { $set: org }, { upsert: true });
-      await db.collection('user').updateOne({ _id: accountId as never }, { $set: { pharmacyName: org.name, pharmacyAddress: address, phone: org.contact.phone, onboardingCompleted: true, updatedAt: now } });
+      const registeredPharmacy = await db.collection('pharmacies').findOne({ ownerUserId: accountId }, { projection: { _id: 1 } });
+      const pharmacyId = registeredPharmacy?._id?.toString();
+      if (!pharmacyId) return Response.json({ error: 'Could not link the pharmacy inventory account.' }, { status: 500 });
+      await db.collection('user').updateOne({ _id: accountId as never }, { $set: { pharmacyId, pharmacyName: org.name, pharmacyAddress: address, phone: org.contact.phone, onboardingCompleted: true, updatedAt: now } });
     } else {
       const code = `HOSP-${new ObjectId().toHexString().slice(-8).toUpperCase()}`;
       await db.collection('hospitals').updateOne({ ownerUserId: accountId }, { $set: { ...org, code, capacitySummary: { totalBeds: input.data.totalBeds || 0, availableBeds: input.data.totalBeds || 0, totalVentilators: 0, availableVentilators: 0 } } }, { upsert: true });

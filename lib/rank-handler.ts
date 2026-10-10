@@ -5,7 +5,7 @@ type IdLike = string | { toString(): string };
 type HospitalRecord = {
   _id?: IdLike; id?: string; code?: string; name?: string;
   location?: { type?: "Point"; coordinates?: number[] };
-  status?: string; responseRate?: number;
+  status?: string; responseRate?: number; updatedAt?: Date | string; isDemo?: boolean;
 };
 type ResourceRecord = {
   _id?: IdLike; id?: string; hospitalId: string; type: string; category: string;
@@ -112,7 +112,9 @@ export function createRankHandler(deps: RankHandlerDependencies) {
         return {
           ...item,
           distanceKm: Math.round(6371.0088 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 10) / 10,
-          resources: raw.map((resource) => ({ id: resource.id, type: resource.type, category: resource.category, totalQuantity: resource.totalQuantity, availableQuantity: resource.availableQuantity })),
+          resources: raw.map((resource) => ({ id: resource.id, type: resource.type, category: resource.category, totalQuantity: resource.totalQuantity, availableQuantity: resource.availableQuantity, updatedAt: resource.updatedAt })),
+          availabilityUpdatedAt: hospital?.updatedAt instanceof Date ? hospital.updatedAt.toISOString() : hospital?.updatedAt ? String(hospital.updatedAt) : null,
+          isDemo: Boolean(hospital?.isDemo),
         };
       });
       return Response.json({ emergencyType: input.data.emergencyType, rankingWeights: displayedWeights, ranked: withDetails });
