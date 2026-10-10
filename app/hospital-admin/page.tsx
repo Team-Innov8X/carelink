@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { requireRole } from '@/lib/auth-utils';
 import HospitalAdminDashboard from './dashboard';
 import { getHospitalsCollection, getUsersCollection } from '@/lib/models';
+import { CareLinkProvider } from '@/context/CareLinkContext';
 
 export default async function HospitalAdminPage() {
   const authorization = await requireRole(['hospital_staff', 'hospital']);
@@ -26,5 +27,5 @@ export default async function HospitalAdminPage() {
       { $set: { onboardingCompleted: true, updatedAt: new Date() } },
     );
   }
-  return <HospitalAdminDashboard hospitalName={profile.hospitalName || ''} />;
+  return <CareLinkProvider initialRole="hospital"><HospitalAdminDashboard hospitalName={profile.hospitalName || ''} /></CareLinkProvider>;
 }
