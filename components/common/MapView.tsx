@@ -10,6 +10,7 @@ export type MapFacility = {
   type?: 'hospital' | 'pharmacy';
   location: { lat: number; lng: number; address?: string | null };
   registered: boolean;
+  isDemo?: boolean;
   label?: string;
   beds?: { total: number; available: number };
   doctors?: { count: number };
@@ -205,9 +206,11 @@ export const MapView: React.FC<MapViewProps> = ({
     if (activeFacilities.length > 0) {
       activeFacilities.forEach((item) => {
         const isRegistered = item.registered;
-        const markerColor = isRegistered ? '#2E7D4F' : '#64748B'; // Registered green vs Unregistered grey
+        const markerColor = item.isDemo ? '#C98A1F' : isRegistered ? '#2E7D4F' : '#64748B';
         const markerLetter = item.type === 'pharmacy' ? 'Rx' : 'H';
-        const labelBadge = isRegistered
+        const labelBadge = item.isDemo
+          ? '<span style="background:#C98A1F;color:white;font-size:10px;font-weight:bold;padding:2px 6px;border-radius:4px">Demo</span>'
+          : isRegistered
           ? '<span style="background:#2E7D4F;color:white;font-size:10px;font-weight:bold;padding:2px 6px;border-radius:4px">Live data</span>'
           : '<div style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:600;margin-top:5px">Not registered — availability unknown, call to confirm</div>';
 
@@ -228,7 +231,7 @@ export const MapView: React.FC<MapViewProps> = ({
         const html = `<div style="font:13px Arial,sans-serif;max-width:280px">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px">
             <strong>${escapeHtml(item.name)}</strong>
-            ${isRegistered ? labelBadge : ''}
+            ${labelBadge}
           </div>
           ${addressHtml}
           ${bedsLine}

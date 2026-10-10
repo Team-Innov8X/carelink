@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation';
 import { useCareLink } from '../../context/CareLinkContext';
 import { LogOut } from '@/components/icons';
 import { authClient } from '../../lib/auth-client';
+import { AccountPreferences } from './AccountPreferences';
 
 export const SettingsView: React.FC = () => {
   const { resetAllData } = useCareLink();
@@ -29,6 +30,7 @@ export const SettingsView: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
+      <AccountPreferences />
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">System Configuration</h1>
         <p className="text-xs text-slate-500 mt-0.5">

@@ -2,6 +2,8 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
+import { DelayedSkeleton, RequestListSkeleton } from '../common/Skeletons';
+import { fetchPatientSosRequests } from '../../lib/client-sos';
 import {
   Siren,
   Search,
@@ -30,6 +32,7 @@ export type PatientRequest = {
   arrivedAt?: string | null;
   completedAt?: string;
   driverAssigned?: boolean;
+  tripStage?: string;
   requestType?: 'emergency' | 'routine';
   patientPhone?: string;
   preferredTime?: string;
@@ -52,14 +55,22 @@ export const PatientEmergencyRequestsView: React.FC = () => {
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [cancellingId, setCancellingId] = useState('');
+  const [cancelMessage, setCancelMessage] = useState('');
 
   const fetchRequests = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/sos', { cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to load requests');
-      setRequests(data.requests ?? []);
+      const result = await fetchPatientSosRequests();
+      setRequests(result.map((item) => ({
+        ...item,
+        hospitalRequest: item.destination ? {
+          status: item.destination.status,
+          hospitalName: item.destination.name,
+          bedCategory: item.destination.bedCategory,
+          requiredSpecialty: undefined,
+        } : null,
+      })));
       setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not fetch requests');
@@ -67,6 +78,24 @@ export const PatientEmergencyRequestsView: React.FC = () => {
       setLoading(false);
     }
   }, []);
+
+  const cancelRequest = async (requestId: string) => {
+    if (!window.confirm('Cancel this SOS request? The request will remain in your history.')) return;
+    setCancellingId(requestId);
+    setCancelMessage('');
+    try {
+      const response = await fetch(`/api/sos/${encodeURIComponent(requestId)}/cancel`, { method: 'POST' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not cancel this SOS request.');
+      setCancelMessage('SOS request cancelled. It remains in your request history.');
+      window.dispatchEvent(new Event('carelink-sos-updated'));
+      await fetchRequests();
+    } catch (cause) {
+      setCancelMessage(cause instanceof Error ? cause.message : 'Could not cancel this SOS request.');
+    } finally {
+      setCancellingId('');
+    }
+  };
 
   useEffect(() => {
     void fetchRequests();
@@ -139,6 +168,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
       </div>
 
       {/* Filter and Search Bar */}
+      {cancelMessage && <p role="status" className="text-sm text-slate-700">{cancelMessage}</p>}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
         {/* Status Filter Tabs */}
         <div className="flex items-center gap-1.5 w-full sm:w-auto">
@@ -203,7 +233,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
       )}
 
       {/* Requests List */}
-      {filtered.length === 0 ? (
+      {loading ? <DelayedSkeleton><RequestListSkeleton /></DelayedSkeleton> : filtered.length === 0 ? (
         <div className="text-center py-16 px-4 bg-white rounded-3xl border border-slate-200 shadow-xs">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 mb-3">
             <Siren className="h-7 w-7" />
@@ -237,6 +267,8 @@ export const PatientEmergencyRequestsView: React.FC = () => {
             const requestCancelled = request.status === 'cancelled';
             const requestRejected = request.status === 'rejected';
             const driverArrived = Boolean(request.arrivedAt);
+            const pickupStarted = ['patient_on_board', 'en_route_hospital', 'arrived_hospital', 'handover_complete'].includes(request.tripStage || '');
+            const canCancel = !isRoutine && ['searching', 'accepted'].includes(request.status.toLowerCase()) && !pickupStarted;
 
             const driverStatus = driverCompleted
               ? 'Driver response completed'
@@ -398,6 +430,14 @@ export const PatientEmergencyRequestsView: React.FC = () => {
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+                {canCancel && (
+                  <div className="mt-4 flex justify-end">
+                    <button type="button" onClick={() => void cancelRequest(request.id)} disabled={cancellingId === request.id}
+                      className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50">
+                      {cancellingId === request.id ? 'Cancelling…' : 'Cancel SOS'}
+                    </button>
                   </div>
                 )}
               </article>

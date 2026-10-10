@@ -6,10 +6,15 @@ import { getHospitalsCollection } from "./models";
  * Retrieve current user & session on the server side.
  */
 export async function getServerSession() {
+  const startedAt = performance.now();
   const reqHeaders = await headers();
-  return await auth.api.getSession({
+  const session = await auth.api.getSession({
     headers: reqHeaders,
   });
+  if (process.env.CARELINK_PERF_LOGS === "1") {
+    console.info(JSON.stringify({ event: "carelink.perf", name: "session_lookup", durationMs: Math.round((performance.now() - startedAt) * 100) / 100, authenticated: Boolean(session?.user) }));
+  }
+  return session;
 }
 
 /** Resolve legacy hospital staff profiles that stored only the facility name. */

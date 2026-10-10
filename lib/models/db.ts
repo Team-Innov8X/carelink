@@ -58,6 +58,13 @@ export function initializeIndexes(): Promise<void> {
     const doctors = await getDoctorsCollection();
     await doctors.createIndex({ hospitalId: 1 });
 
+    const notifications = (await getDb()).collection("notifications");
+    const notificationTtlHours = Math.max(1, Number(process.env.NOTIFICATION_TTL_HOURS) || 24);
+    await notifications.createIndex({ createdAt: 1 }, { expireAfterSeconds: notificationTtlHours * 3600, name: "notifications_ttl" }).catch(async () => {
+      await (await getDb()).command({ collMod: "notifications", index: { name: "notifications_ttl", expireAfterSeconds: notificationTtlHours * 3600 } });
+    });
+    await notifications.createIndex({ recipientId: 1, createdAt: -1 });
+
     const holds = await getHoldsCollection();
     await holds.createIndex({ hospitalId: 1, status: 1 });
     // Expiry must release resource inventory before a hold can disappear.

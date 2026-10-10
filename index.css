@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+@keyframes carelink-skeleton-shimmer {
+  0% { background-position: 120% 0; }
+  100% { background-position: -120% 0; }
+}
+
+.carelink-skeleton {
+  background: linear-gradient(100deg, #e6edf2 20%, #f7fafc 40%, #e6edf2 60%);
+  background-size: 220% 100%;
+  animation: carelink-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
 @layer base {
   :root {
     --primary: #0284c7;
@@ -60,3 +71,16 @@
   border-radius: 0.75rem;
   font-family: inherit;
 }
+
+@keyframes sos-timeout-progress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+.animate-sos-timeout { animation: sos-timeout-progress 30s linear forwards; }
+aside[role="status"]:hover .animate-sos-timeout,
+aside[role="status"]:focus-within .animate-sos-timeout { animation-play-state: paused; }
+
+html[data-text-size="large"] { font-size: 112.5%; }
+html[data-text-size="extra-large"] { font-size: 125%; }
+html[data-high-contrast="true"] body { color: #000; }
+html[data-high-contrast="true"] a { color: #003d73; }

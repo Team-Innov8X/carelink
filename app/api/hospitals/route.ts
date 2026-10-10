@@ -4,10 +4,16 @@ import { requireRole } from "@/lib/auth-utils";
 import { errorResponse, validationError } from "@/lib/api-response";
 import { getHospitalsCollection, getResourcesCollection } from "@/lib/models";
 import { hospitalCreateSchema } from "@/lib/validation";
+import { distanceKm } from '@/lib/sos';
 
 export async function GET(request: Request) {
   try {
     const query = new URL(request.url).searchParams;
+    const latValue = query.get('lat'); const lngValue = query.get('lng');
+    if (latValue === null || lngValue === null) return errorResponse('Provide latitude and longitude to find nearby hospitals.', 400);
+    const lat = Number(latValue); const lng = Number(lngValue);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180) return errorResponse('Provide valid latitude and longitude.', 400);
+    const radiusKm = Math.max(1, Math.min(100, Number(query.get('radiusKm') || 25)));
     const category = query.get("emergencyType")?.trim() || query.get("specialty")?.trim();
     let hospitalIds: ObjectId[] | undefined;
     if (category) {
@@ -15,8 +21,12 @@ export async function GET(request: Request) {
       const ids = [...new Set(matches.map((item) => item.hospitalId))].filter(ObjectId.isValid).map((id) => new ObjectId(id));
       hospitalIds = ids;
     }
-    const hospitals = await (await getHospitalsCollection()).find(hospitalIds ? { _id: { $in: hospitalIds } } : { status: { $ne: "inactive" } }).project({ name: 1, location: 1, address: 1, status: 1 }).toArray();
-    return NextResponse.json(hospitals);
+    const filter = { status: { $ne: 'inactive' as const }, location: { $near: { $geometry: { type: 'Point' as const, coordinates: [lng, lat] }, $maxDistance: radiusKm * 1000 } }, ...(hospitalIds ? { _id: { $in: hospitalIds } } : {}) };
+    const hospitals = await (await getHospitalsCollection()).find(filter).limit(100).project({ name: 1, location: 1, address: 1, status: 1, isDemo: 1, capacitySummary: 1 }).toArray();
+    return NextResponse.json(hospitals.map(hospital => {
+      const [hLng, hLat] = hospital.location.coordinates;
+      return { ...hospital, distanceKm: Number(distanceKm({ latitude: lat, longitude: lng }, { latitude: hLat, longitude: hLng }).toFixed(1)), isDemo: Boolean((hospital as typeof hospital & { isDemo?: boolean }).isDemo) };
+    }));
   } catch { return errorResponse("Failed to list hospitals", 500); }
 }
 

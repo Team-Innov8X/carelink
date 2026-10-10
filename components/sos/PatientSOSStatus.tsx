@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Ambulance, Clock, Siren } from '@/components/icons';
+import { fetchPatientSosRequests } from '@/lib/client-sos';
 
 type PatientSOS = { id: string; status: 'searching' | 'accepted' | 'completed' | 'cancelled'; incidentType: string; createdAt: string; driverAssigned: boolean; tripStage?: string; destination?: { name: string; status: string; bedCategory?: string } | null; vitalsUpdate?: { bp: string; heartRate: number; spO2: number } | null };
 
@@ -16,10 +17,8 @@ export function PatientSOSStatus() {
   const [request, setRequest] = useState<PatientSOS | null>(null);
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch('/api/sos', { cache: 'no-store' });
-      if (!response.ok) return;
-      const result = await response.json();
-      const latest = (result.requests as PatientSOS[] | undefined)?.[0];
+      const requests = await fetchPatientSosRequests();
+      const latest = requests[0] as PatientSOS | undefined;
       setRequest(latest ?? null);
     } catch { /* Keep the most recent status visible if the network is temporarily unavailable. */ }
   }, []);

@@ -21,10 +21,6 @@ type DriverInfo = { name?: string; ambulanceId?: string | null };
 type PastTrip = { id: string; patientName: string; incidentType: string; createdAt: string; acceptedAt?: string; completedAt?: string; handoverAt?: string; tripStage?: string };
 
 const getDriverLocation = () => new Promise<Coordinates>((resolve, reject) => {
-  if (process.env.NODE_ENV === 'development') {
-    resolve({ latitude: 28.6352, longitude: 77.2168 });
-    return;
-  }
   if (!navigator.geolocation) {
     reject(new Error('This browser cannot access GPS location.'));
     return;
