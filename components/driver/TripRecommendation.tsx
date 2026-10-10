@@ -8,7 +8,7 @@ type TimelineEvent = { status: string; at: string; reason: string; hospitalName?
 type RecommendationState = { conditionId: string; conditionLabel: string; status: string; ranked: RecommendationItem[]; selectedHospitalId?: string; selectedHospitalName?: string; selectedHospitalLocation?: { latitude: number; longitude: number }; responseDeadline?: string; reroutes: number; timeline: TimelineEvent[]; fallbackText?: string; unservedReason?: string; fallbackFlags: string[] };
 type NearbyHospital = { id: string; name: string; travelTimeMinutes: number; directionsUrl: string; registered: boolean; label: string };
 
-export function TripRecommendation({ tripId, tripStage, patient, driver, onDestination }: { tripId: string; tripStage: string; patient: { latitude: number; longitude: number }; driver?: { latitude: number; longitude: number } | null; onDestination: (hospital?: { latitude: number; longitude: number }) => void }) {
+export function TripRecommendation({ tripId, tripStage, onDestination }: { tripId: string; tripStage: string; onDestination: (hospital?: { latitude: number; longitude: number }) => void }) {
   const [recommendation, setRecommendation] = useState<RecommendationState | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -17,7 +17,7 @@ export function TripRecommendation({ tripId, tripStage, patient, driver, onDesti
   const [overrideHospital, setOverrideHospital] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
   const [nearby, setNearby] = useState<NearbyHospital[]>([]);
-  const [clockNow, setClockNow] = useState(Date.now());
+  const [clockNow, setClockNow] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -41,7 +41,7 @@ export function TripRecommendation({ tripId, tripStage, patient, driver, onDesti
   }, [tripId, onDestination, nearby.length]);
 
   useEffect(() => {
-    const first = window.setTimeout(() => void refresh(), 0);
+    const first = window.setTimeout(() => { setClockNow(Date.now()); void refresh(); }, 0);
     const timer = window.setInterval(() => { setClockNow(Date.now()); if (document.visibilityState === 'visible') void refresh(); }, 3000);
     return () => { window.clearTimeout(first); window.clearInterval(timer); };
   }, [refresh]);
