@@ -33,7 +33,47 @@ export interface ICreateHoldParams {
   notes?: string;
 }
 
-export const HOLD_DURATION_MS = 5 * 60 * 1000;
+const configuredHoldDuration = Number(process.env.HOLD_DURATION_MS);
+export const HOLD_DURATION_MS = Number.isFinite(configuredHoldDuration) && configuredHoldDuration > 0 ? configuredHoldDuration : 300_000;
+const bedRequestExpiryTimers = new Map<string, { timer: ReturnType<typeof setTimeout>; at: number }>();
+
+function scheduleBedRequestExpiry(hospitalId: string, expiresAt: Date) {
+  const at = expiresAt.getTime();
+  const current = bedRequestExpiryTimers.get(hospitalId);
+  if (current && current.at <= at) return;
+  if (current) clearTimeout(current.timer);
+  const timer = setTimeout(() => {
+    bedRequestExpiryTimers.delete(hospitalId);
+    void expirePendingHolds(hospitalId).catch((error) => console.error("Failed to expire bed request", error));
+  }, Math.max(0, at - Date.now()));
+  bedRequestExpiryTimers.set(hospitalId, { timer, at });
+}
+
+async function notifyPatientHoldClosed(hold: IHold, reason: "no_beds" | "expired" | "cancelled") {
+  const recipientId = hold.patientId || hold.requestedByUserId;
+  if (!recipientId) return;
+  const notifications = (await getDb()).collection("notifications");
+  const id = `bed-hold-${reason}-${hold._id?.toString() ?? hold.id}`;
+  const title = reason === "no_beds" ? "No beds available" : reason === "expired" ? "Bed request expired" : "Another hospital confirmed your bed";
+  const message = reason === "no_beds"
+    ? "The hospital confirmed its last bed. Your queued request was closed; you can request another hospital."
+    : reason === "expired"
+      ? "The hospital did not accept your request within five minutes. Your place in line was released."
+      : "Your request at this hospital was cancelled because another hospital confirmed your bed.";
+  await notifications.updateOne({ _id: id as unknown as ObjectId }, { $setOnInsert: { _id: id as unknown as ObjectId, recipientId, type: "bed_request_closed", title, message, relatedRequestId: hold._id?.toString() ?? hold.id, createdAt: new Date() } }, { upsert: true });
+}
+
+async function closeQueuedWhenFull(hospitalId: string) {
+  const holdsCol = await getHoldsCollection();
+  const resourcesCol = await getResourcesCollection();
+  const bed = await resourcesCol.findOne({ hospitalId, type: "bed" });
+  if (!bed || (bed.confirmedQuantity ?? 0) < bed.totalQuantity) return;
+  const queued = await holdsCol.find({ hospitalId, status: "queued" }).toArray();
+  for (const hold of queued) {
+    const closed = await holdsCol.updateOne({ _id: hold._id, status: "queued" }, { $set: { status: "rejected", reason: "no_beds", releaseReason: "rejected", updatedAt: new Date() }, $unset: { queuePosition: "" } });
+    if (closed.modifiedCount) await notifyPatientHoldClosed(hold, "no_beds");
+  }
+}
 
 export interface INextRankedHospitalResult {
   hospital: IHospital;
@@ -314,14 +354,16 @@ export async function expirePendingHolds(hospitalId?: string) {
 
   for (const hold of due) {
     if (!hold._id) continue;
-    await holdsCol.updateOne(
-      { _id: hold._id },
-      { $set: { status: "expired", updatedAt: now }, $unset: { expiresAt: "" } },
+    const expired = await holdsCol.updateOne(
+      { _id: hold._id, status: "pending", expiresAt: { $lte: now } },
+      { $set: { status: "expired", reason: "expired", releaseReason: "expired", updatedAt: now }, $unset: { expiresAt: "" } },
     );
+    if (!expired.modifiedCount) continue;
     await resourcesCol.updateOne(
       { hospitalId: hold.hospitalId, type: "bed" },
       { $inc: { heldQuantity: -1 } },
     );
+    await notifyPatientHoldClosed(hold, "expired");
     results.push({ success: true, releasedHoldId: hold._id.toString(), nextRankedHospital: null });
     if (hold.hospitalId) {
       affectedHospitals.add(hold.hospitalId);
@@ -330,6 +372,11 @@ export async function expirePendingHolds(hospitalId?: string) {
 
   for (const hid of affectedHospitals) {
     await promoteNext(hid);
+  }
+
+  if (hospitalId) {
+    const next = await holdsCol.findOne({ hospitalId, status: "pending", expiresAt: { $exists: true } }, { sort: { expiresAt: 1 } });
+    if (next?.expiresAt) scheduleBedRequestExpiry(hospitalId, next.expiresAt);
   }
 
   return results;
@@ -555,6 +602,7 @@ export async function requestBedHold(params: {
     };
     try {
       const inserted = await holdsCol.insertOne(holdDoc);
+      scheduleBedRequestExpiry(hospitalId, expiresAt);
       return {
         success: true as const,
         status: "pending" as const,
@@ -687,6 +735,7 @@ export async function promoteNext(hospitalId: string): Promise<IHold | null> {
     return null;
   }
 
+  scheduleBedRequestExpiry(hospitalId, expiresAt);
   return promoted;
 }
 
@@ -721,13 +770,14 @@ export async function cancelPatientBedHold(
   const wasConfirmed = hold.status === "confirmed";
   const now = new Date();
 
-  await holdsCol.updateOne(
-    { _id: hold._id },
+  const cancelled = await holdsCol.updateOne(
+    { _id: hold._id, status: hold.status },
     {
       $set: { status: "cancelled", updatedAt: now },
       $unset: { expiresAt: "" },
     },
   );
+  if (!cancelled.modifiedCount) return { success: false, status: 409, error: "Hold was already processed" };
 
   if (wasPending) {
     await resourcesCol.updateOne(
@@ -775,9 +825,11 @@ export async function confirmPatientBedHold(
   if (!hold) return { success: false, status: 404, error: "Pending hold not found for this hospital" };
 
   const now = new Date();
-  await holdsCol.updateOne(
-    { _id: hold._id },
-    {
+  let confirmed;
+  try {
+    confirmed = await holdsCol.findOneAndUpdate(
+      { _id: hold._id, status: "pending" },
+      {
       $set: {
         status: "confirmed",
         confirmedAt: now,
@@ -785,8 +837,16 @@ export async function confirmPatientBedHold(
         updatedAt: now,
       },
       $unset: { expiresAt: "" },
-    },
-  );
+      },
+      { returnDocument: "after" },
+    );
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === 11000) {
+      return { success: false, status: 409, error: "Patient already has a confirmed hospital" };
+    }
+    throw error;
+  }
+  if (!confirmed) return { success: false, status: 409, error: "Pending hold was already processed" };
 
   await resourcesCol.updateOne(
     { hospitalId: hold.hospitalId, type: "bed" },
@@ -801,26 +861,35 @@ export async function confirmPatientBedHold(
     const otherActive = await holdsCol.find({
       patientId: hold.patientId,
       _id: { $ne: hold._id },
-      status: { $in: ["queued", "pending"] },
+      status: { $in: ["queued", "pending", "confirmed"] },
     }).toArray();
 
     for (const other of otherActive) {
-      if (other.status === "pending") {
-        await resourcesCol.updateOne(
-          { hospitalId: other.hospitalId, type: "bed" },
-          { $inc: { heldQuantity: -1 } },
-        );
-      }
-      await holdsCol.updateOne(
-        { _id: other._id },
+      const cancelled = await holdsCol.updateOne(
+        { _id: other._id, status: { $in: ["queued", "pending", "confirmed"] } },
         {
           $set: { status: "cancelled", updatedAt: now },
           $unset: { expiresAt: "" },
         },
       );
+      if (!cancelled.modifiedCount) continue;
+      await notifyPatientHoldClosed(other, "cancelled");
+      if (other.status === "pending") {
+        await resourcesCol.updateOne(
+          { hospitalId: other.hospitalId, type: "bed" },
+          { $inc: { heldQuantity: -1 } },
+        );
+      } else if (other.status === "confirmed") {
+        await resourcesCol.updateOne(
+          { hospitalId: other.hospitalId, type: "bed", confirmedQuantity: { $gte: other.quantity || 1 } },
+          { $inc: { confirmedQuantity: -(other.quantity || 1), availableQuantity: other.quantity || 1 } },
+        );
+      }
       await promoteNext(other.hospitalId);
     }
   }
+
+  await closeQueuedWhenFull(hold.hospitalId);
 
   const updatedHold = await holdsCol.findOne({ _id: hold._id });
   return { success: true, hold: updatedHold };
@@ -848,13 +917,14 @@ export async function rejectPatientBedHold(
   if (!hold) return { success: false, status: 404, error: "Pending hold not found for this hospital" };
 
   const now = new Date();
-  await holdsCol.updateOne(
-    { _id: hold._id },
+  const rejected = await holdsCol.updateOne(
+    { _id: hold._id, status: "pending" },
     {
       $set: { status: "rejected", updatedAt: now },
       $unset: { expiresAt: "" },
     },
   );
+  if (!rejected.modifiedCount) return { success: false, status: 409, error: "Pending hold was already processed" };
 
   await resourcesCol.updateOne(
     { hospitalId: hold.hospitalId, type: "bed" },

@@ -29,6 +29,7 @@ export interface IResource {
   totalQuantity: number;
   availableQuantity: number;
   heldQuantity: number; // Currently reserved/held by pending requests
+  confirmedQuantity?: number;
   status: "available" | "limited" | "unavailable";
   metadata?: Record<string, unknown>;
   createdAt: Date;

@@ -79,6 +79,10 @@ export function initializeIndexes(): Promise<void> {
     await holds.createIndex({ expiresAt: 1 });
     await holds.createIndex({ requestedByUserId: 1 });
     await holds.createIndex({ patientId: 1 });
+    await holds.createIndex(
+      { patientId: 1 },
+      { name: "one_confirmed_hold_per_patient", unique: true, partialFilterExpression: { patientId: { $exists: true }, status: "confirmed" } },
+    );
 
     // Partial unique index enforcing one active request per patient per hospital
     try {
