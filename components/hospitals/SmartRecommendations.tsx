@@ -3,7 +3,6 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { ArrowLeft, MapPin, User } from '@/components/icons';
-import { buildMatchExplanation } from '@/lib/smart-match-explanation';
 
 type MatchResource = { id: string; type: string; category: string; totalQuantity: number; availableQuantity: number };
 type MatchResult = {
@@ -126,7 +125,7 @@ export const SmartRecommendations: React.FC = () => {
       const named = results.find((item) => trimmed.toLowerCase().includes(item.name.toLowerCase()));
       const result = named ?? results[0];
       setExplained(result.hospitalId);
-      setAssistantMessages((current) => [...current, { role: 'user', text: trimmed }, { role: 'assistant', text: `${result.name}: ${buildMatchExplanation(result)}` }]);
+      setAssistantMessages((current) => [...current, { role: 'user', text: trimmed }, { role: 'assistant', text: `${result.name}: ${matchExplanation(result)}` }]);
       return;
     }
     if (/\b(alternatives?|similar)\b/i.test(trimmed) && results.length) {
@@ -139,13 +138,12 @@ export const SmartRecommendations: React.FC = () => {
     try {
       const response = await fetch('/api/rank/assist', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, current: { emergencyType: condition || 'hospital care', requiredResources: requestedResources, preferredResources: preferredRequirements.split(',').map((value) => value.trim()).filter(Boolean), bedCategory, maxTravelMinutes: Number(maxTravelMinutes), priority } }),
+        body: JSON.stringify({ message: trimmed, current: { emergencyType: condition || 'hospital care', requiredResources: requestedResources, bedCategory, maxTravelMinutes: Number(maxTravelMinutes), priority } }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || 'Could not refine your search.');
       setCondition(body.criteria.emergencyType);
       setRequirements(body.criteria.requiredResources.join(', '));
-      setPreferredRequirements(body.criteria.preferredResources.join(', '));
       setBedCategory(body.criteria.bedCategory);
       setMaxTravelMinutes(String(body.criteria.maxTravelMinutes));
       setPriority(body.criteria.priority);
@@ -156,6 +154,17 @@ export const SmartRecommendations: React.FC = () => {
       setAssistantError(cause instanceof Error ? cause.message : 'Could not refine your search.');
       setAssistantMessages((current) => [...current, { role: 'assistant', text: 'I could not update those criteria. Your current results and preferences are unchanged.' }]);
     } finally { setAssistantBusy(false); }
+  };
+
+  const matchExplanation = (result: MatchResult) => {
+    const resource = Math.round(result.scoreBreakdown.resourceMatch * 100);
+    const travel = Math.round(result.scoreBreakdown.travelTime * 100);
+    const freshness = Math.round(result.scoreBreakdown.freshness * 100);
+    const matched = result.matchedResources.length ? `Available matching needs: ${result.matchedResources.join(', ')}.` : 'No requested specialties or equipment were found available in current inventory.';
+    const missing = result.missingResources.length ? ` Missing or unavailable: ${result.missingResources.join(', ')}.` : ' All listed requirements matched.';
+    const eta = result.travelTimeMinutes == null ? 'Travel time was unavailable.' : `Estimated travel is ${Math.ceil(result.travelTimeMinutes)} minutes (${result.distanceKm} km).`;
+    const points = result.scoreContributions;
+    return `${matched}${missing} ${eta} Factor values: resource fit ${resource}%, travel fit ${travel}%, data freshness ${freshness}%. Weighted score points: resources ${points.resourceMatch.toFixed(1)}, travel ${points.travelTime.toFixed(1)}, freshness ${points.freshness.toFixed(1)}, availability ${points.availability.toFixed(1)}; status deduction ${points.statusPenalty.toFixed(1)}. These deterministic criteria produce ${result.score.toFixed(2)}/100; this is not an AI prediction.`;
   };
 
   const useMyLocation = () => {
@@ -258,7 +267,7 @@ export const SmartRecommendations: React.FC = () => {
           <p className="mt-2 text-xs text-slate-600">{result.matchedResources.length ? `Live inventory has ${result.matchedResources.map((item) => item.replaceAll('_', ' ')).join(', ')} available.` : 'No requested specialty or equipment is currently available in inventory.'} Travel estimate {result.travelTimeMinutes == null ? 'unavailable' : `~${Math.ceil(result.travelTimeMinutes)} min`} · {result.distanceKm} km.</p>
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600 sm:grid-cols-4"><span>Resource fit <b>{Math.round(result.scoreBreakdown.resourceMatch * 100)}%</b></span><span>Travel <b>{result.travelTimeMinutes == null ? '—' : `${Math.ceil(result.travelTimeMinutes)} min`}</b></span><span>Freshness <b>{Math.round(result.scoreBreakdown.freshness * 100)}%</b></span><span>{bedCategory} beds <b>{available} available</b></span></div>
         </div><div className="flex shrink-0 flex-col gap-2 sm:items-end"><button type="button" onClick={() => void requestBed(result)} disabled={requesting === result.hospitalId || !resource || Boolean(activeHold)} className="rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50">{requesting === result.hospitalId ? 'Sending…' : activeHold?.status === 'pending' ? 'Request pending' : activeHold?.status === 'queued' ? 'In queue' : activeHold?.status === 'confirmed' ? 'Confirmed' : resource ? `Request ${bedCategory} bed` : `No ${bedCategory} bed record`}</button><button type="button" onClick={() => setExplained((current) => current === result.hospitalId ? null : result.hospitalId)} className="text-xs font-semibold text-sky-800 hover:underline">{explained === result.hospitalId ? 'Hide explanation' : 'Why this match?'}</button>{activeHold?.status === 'queued' && activeHold.queuePosition && <span className="max-w-44 text-right text-[11px] text-slate-600">Queue position {activeHold.queuePosition}</span>}{resource && available === 0 && !activeHold && <span className="max-w-44 text-right text-[11px] text-amber-800">A request can still join the queue.</span>}</div></div>
-        {explained === result.hospitalId && <p className="mt-4 rounded-xl bg-sky-50 p-3 text-xs leading-5 text-sky-950">{buildMatchExplanation(result)}</p>}
+        {explained === result.hospitalId && <p className="mt-4 rounded-xl bg-sky-50 p-3 text-xs leading-5 text-sky-950">{matchExplanation(result)}</p>}
       </article>;
     })}</div></>}
   </div>;

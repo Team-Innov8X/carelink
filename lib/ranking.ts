@@ -39,7 +39,7 @@ export function rankHospitals(
   hospitals: RankingHospital[], input: RankingInput,
   options: { now?: Date; limit?: number; weights?: { resourceMatch: number; travelTime: number; freshness: number; availability: number } } = {},
 ): RankingResult[] {
-  const weights = options.weights ?? { resourceMatch: 0.45, travelTime: 0.25, freshness: 0.2, availability: 0.1 };
+  const weights = options.weights ?? { resourceMatch: 0.5, travelTime: 0.25, freshness: 0.15, availability: 0.1 };
   const weightTotal = Object.values(weights).reduce((sum, value) => sum + value, 0);
   if (Object.values(weights).some((value) => !Number.isFinite(value) || value < 0) || !Number.isFinite(weightTotal) || weightTotal <= 0) throw new RangeError("Ranking weights must be non-negative and have a positive sum.");
   const requiredList = input.requiredResources !== undefined ? input.requiredResources : DEFAULT_NEEDS[normalize(input.emergencyType)] ?? [input.emergencyType];
@@ -55,39 +55,26 @@ export function rankHospitals(
     const available = hospital.resources.filter((resource) => Number.isFinite(resource.availableQuantity) && resource.availableQuantity > 0);
     const matched = needs.filter((need) => available.some((resource) => sameNeed(need, resource.category)));
     const hasQueueableBed = (need: string) => hospital.resources.some((resource) => resource.type === "bed" && sameNeed(need, resource.category));
-    const eligible = needs.length > 0 && requiredNeeds.every((need) => matched.includes(need) || hasQueueableBed(need));
+    const eligible = requiredNeeds.every((need) => matched.includes(need) || hasQueueableBed(need));
     const resourceMatch = needs.length ? matched.length / needs.length : 0;
     const validTravelTime = typeof hospital.travelTimeMinutes === "number" && Number.isFinite(hospital.travelTimeMinutes) ? Math.max(0, hospital.travelTimeMinutes) : null;
     const travelTime = validTravelTime == null ? 0 : Math.max(0, Math.min(1, 1 - validTravelTime / 60));
-    // Capacity and freshness describe requested facilities only. Unrelated stock
-    // must not inflate a candidate's score or offset missing profile data.
-    const availability = needs.length ? needs.reduce((sum, need) => {
-      const quantity = available
-        .filter((resource) => sameNeed(need, resource.category))
-        .reduce((total, resource) => total + resource.availableQuantity, 0);
-      return sum + Math.min(1, quantity / 3);
-    }, 0) / needs.length : 0;
-    const freshness = needs.length ? needs.reduce((sum, need) => {
-      const matchingResources = hospital.resources.filter((resource) => sameNeed(need, resource.category));
-      if (!matchingResources.length) return sum;
-      const needFreshness = matchingResources.reduce((resourceSum, resource) => {
-        const timestamp = resource.updatedAt instanceof Date ? resource.updatedAt.getTime() : resource.updatedAt ? Date.parse(resource.updatedAt) : Number.NaN;
-        const ageHours = Number.isFinite(timestamp) ? Math.max(0, (now.getTime() - timestamp) / 3_600_000) : Infinity;
-        return resourceSum + 2 ** (-ageHours / 6);
-      }, 0) / matchingResources.length;
-      return sum + needFreshness;
-    }, 0) / needs.length : 0;
+    const freshness = hospital.resources.length ? hospital.resources.reduce((sum, resource) => {
+      const timestamp = resource.updatedAt instanceof Date ? resource.updatedAt.getTime() : resource.updatedAt ? Date.parse(resource.updatedAt) : Number.NaN;
+      const ageHours = Number.isFinite(timestamp) ? Math.max(0, (now.getTime() - timestamp) / 3_600_000) : Infinity;
+      return sum + 2 ** (-ageHours / 6);
+    }, 0) / hospital.resources.length : 0;
+    const availability = Math.min(1, available.reduce((sum, resource) => sum + Math.max(0, resource.availableQuantity), 0) / 10);
     const statusFactor = hospital.status === "active" ? 1 : hospital.status === "busy" ? 0.8 : 0;
     const scoreBreakdown = { resourceMatch, travelTime, freshness, availability };
     const normalizedWeights = Object.fromEntries(Object.entries(weights).map(([key, weight]) => [key, weight / weightTotal])) as typeof weights;
     const baseScore = Object.entries(normalizedWeights).reduce((sum, [key, weight]) => sum + scoreBreakdown[key as keyof typeof scoreBreakdown] * weight, 0) * 100;
-    const roundContribution = (value: number) => Math.round(value * 100) / 100;
     const scoreContributions = {
-      resourceMatch: roundContribution(scoreBreakdown.resourceMatch * normalizedWeights.resourceMatch * 100),
-      travelTime: roundContribution(scoreBreakdown.travelTime * normalizedWeights.travelTime * 100),
-      freshness: roundContribution(scoreBreakdown.freshness * normalizedWeights.freshness * 100),
-      availability: roundContribution(scoreBreakdown.availability * normalizedWeights.availability * 100),
-      statusPenalty: roundContribution(baseScore * (1 - statusFactor)),
+      resourceMatch: scoreBreakdown.resourceMatch * normalizedWeights.resourceMatch * 100,
+      travelTime: scoreBreakdown.travelTime * normalizedWeights.travelTime * 100,
+      freshness: scoreBreakdown.freshness * normalizedWeights.freshness * 100,
+      availability: scoreBreakdown.availability * normalizedWeights.availability * 100,
+      statusPenalty: baseScore * (1 - statusFactor),
     };
     const score = Math.round((baseScore * statusFactor) * 100) / 100;
     return { hospitalId: hospital.id, name: hospital.name, score, travelTimeMinutes: validTravelTime, scoreBreakdown, scoreContributions, matchedResources: matched, missingResources: needs.filter((need) => !matched.includes(need)), status: hospital.status, eligible };
