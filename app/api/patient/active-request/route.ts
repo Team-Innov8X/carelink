@@ -1,5 +1,5 @@
 import { requireRole } from "@/lib/auth-utils";
-import { sosCollections } from "@/lib/sos";
+import { advanceDispatch, sosCollections } from "@/lib/sos";
 import { getUsersCollection } from "@/lib/models/db";
 import { distanceKm, validCoordinates, workflowCollections } from "@/lib/sos";
 import { EMERGENCY_FALLBACK_TEXT, POLL_SECONDS, STALE_LOCATION_SECONDS } from "@/lib/dispatch/constants";
@@ -12,6 +12,8 @@ export async function GET() {
   const auth = await requireRole("patient");
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
   const { requests, drivers } = await sosCollections();
+  const pendingSos = await requests.findOne({ patientId: auth.user.id, status: "searching", type: { $ne: "normal" } }, { sort: { createdAt: -1 }, projection: { _id: 1 } });
+  if (pendingSos) await advanceDispatch(pendingSos._id);
   const item = await requests.findOne({
     patientId: auth.user.id,
     status: { $in: ["searching", "accepted", "no_driver_found", "cancelled", "completed", "expired"] },
