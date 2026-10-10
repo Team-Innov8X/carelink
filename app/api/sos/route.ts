@@ -42,7 +42,6 @@ export async function GET() {
   return Response.json({ requests: items.map((item) => ({
     id: item._id,
     type: item.type ?? (item.requestType === "routine" ? "normal" : "sos"),
-    requestType: item.requestType ?? (item.type === "normal" ? "routine" : "emergency"),
     status: item.status,
     fallbackInstruction: item.status === "no_driver_found" ? EMERGENCY_FALLBACK_TEXT : undefined,
     incidentType: item.incidentType,
@@ -71,7 +70,7 @@ export async function POST(request: Request) {
   const auth = await requireRole("patient");
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
 
-  let body: { location?: unknown; incidentType?: unknown; requiredEquipment?: unknown; requestType?: unknown; patientPhone?: unknown; patientName?: unknown; preferredTime?: unknown; notes?: unknown };
+  let body: { location?: unknown; pickupAddress?: unknown; incidentType?: unknown; requiredEquipment?: unknown; requestType?: unknown; patientPhone?: unknown; patientName?: unknown; preferredTime?: unknown; notes?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: "Invalid JSON body" }, { status: 400 }); }
   const patientLocation = body.location;
   if (!validCoordinates(patientLocation)) return Response.json({ error: "location must include valid latitude and longitude" }, { status: 400 });
@@ -111,12 +110,12 @@ export async function POST(request: Request) {
     _id: createRequestId(), patientId: auth.user.id, patientName: auth.user.name,
     passengerName: requestType === 'routine' && typeof body.patientName === 'string' ? body.patientName.trim() : auth.user.name,
     patientEmail: profile.email, patientPhone: requestType === 'routine' && typeof body.patientPhone === 'string' ? body.patientPhone.trim() : profile.phone,
-    location: patientLocation, incidentType: incidentType.trim(),
+    location: pickupLocation, incidentType: incidentType.trim(),
     requestType,
     preferredTime: typeof body.preferredTime === 'string' ? body.preferredTime.trim() : undefined,
     notes: typeof body.notes === 'string' ? body.notes.trim() : undefined,
     requiredEquipment: [...new Set(((body.requiredEquipment ?? []) as string[]).map((item) => item.trim()).filter(Boolean))],
-    type: "sos" as const, requestType: "emergency" as const, idempotencyKey,
+    type: requestType === 'routine' ? "normal" as const : "sos" as const, idempotencyKey,
     status: "searching" as const, driverId: null, dispatchRound: 0, createdAt,
     activePatientId: auth.user.id,
     dispatchStatus: "created" as const,

@@ -1,10 +1,12 @@
 import { redirect } from 'next/navigation';
+import { connection } from 'next/server';
 import { requireRole } from '@/lib/auth-utils';
 import HospitalAdminDashboard from './dashboard';
 import HospitalAdminProvider from './provider';
 import { getHospitalsCollection, getUsersCollection } from '@/lib/models';
 
 export default async function HospitalAdminPage() {
+  await connection();
   const authorization = await requireRole(['hospital_staff', 'hospital']);
   if (!authorization.authorized) {
     redirect(authorization.reason === 'UNAUTHENTICATED' ? '/signin' : '/');

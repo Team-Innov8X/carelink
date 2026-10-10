@@ -47,8 +47,6 @@ export type SosRequest = {
   type?: "sos" | "normal";
   urgency?: string;
   destination?: { hospitalId?: string; name?: string; latitude?: number; longitude?: number };
-  notes?: string;
-  preferredTime?: string;
   idempotencyKey?: string;
   activePatientId?: string;
   expiresAt?: Date;
