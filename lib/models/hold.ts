@@ -1,34 +1,31 @@
-export type HoldStatus =
-  | "pending"    // Hold placed, awaiting hospital confirmation or arrival
-  | "confirmed"  // Confirmed by hospital staff
-  | "fulfilled"  // Patient arrived & resource assigned
-  | "expired"    // Auto-expired because hold window lapsed
-  | "cancelled";  // Cancelled by requester or staff
+export const ACTIVE_HOLD_STATUSES = ["queued", "pending", "confirmed"] as const;
+export type HoldStatus = (typeof ACTIVE_HOLD_STATUSES)[number] | "rejected" | "expired" | "cancelled";
+export type HoldCloseReason = "no_beds" | "cancelled" | "rejected" | "expired";
 
-export type PriorityLevel = "critical" | "urgent" | "standard";
+const configuredHoldDuration = Number(process.env.HOLD_DURATION_MS);
+export const HOLD_DURATION_MS = Number.isFinite(configuredHoldDuration) && configuredHoldDuration > 0 ? configuredHoldDuration : 300_000;
 
 export interface IPatientDetails {
   name?: string;
   age?: number;
   gender?: string;
   conditionSummary?: string;
-  priority: PriorityLevel;
-  etaMinutes?: number; // Estimated Time of Arrival for ambulance
+  priority?: "critical" | "urgent" | "standard";
+  etaMinutes?: number;
 }
 
 export interface IHold {
-  _id?: string;
   id?: string;
   hospitalId: string;
-  resourceId: string;
-  requestedByUserId: string; // User ID of dispatcher or driver placing the hold
-  patientDetails: IPatientDetails;
-  quantity: number;
+  patientId: string;
+  requestedByUserId: string;
+  seq: number;
   status: HoldStatus;
-  expiresAt: Date;
-  confirmedAt?: Date;
-  fulfilledAt?: Date;
-  notes?: string;
+  position?: number;
+  expiresAt?: Date;
+  reason?: HoldCloseReason;
+  patientDetails?: IPatientDetails;
   createdAt: Date;
   updatedAt: Date;
+  confirmedAt?: Date;
 }

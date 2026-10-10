@@ -150,8 +150,10 @@ export async function POST() {
     const sampleHolds = [
       {
         hospitalId: hospital1Id,
+        patientId: "dispatcher-demo-user-id",
         resourceId: resource1Id,
         requestedByUserId: "dispatcher-demo-user-id",
+        seq: 1,
         patientDetails: {
           name: "John Doe",
           age: 45,

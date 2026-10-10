@@ -45,10 +45,22 @@ export async function initializeIndexes() {
     const holds = await getHoldsCollection();
     await holds.createIndex({ hospitalId: 1, status: 1 });
     await holds.createIndex({ expiresAt: 1 });
+    await holds.createIndex({ patientId: 1, hospitalId: 1 }, {
+      unique: true,
+      partialFilterExpression: { patientId: { $exists: true }, hospitalId: { $exists: true }, status: { $in: ["queued", "pending", "confirmed"] } },
+      name: "one_active_request_per_patient_hospital",
+    });
+    await holds.createIndex({ patientId: 1 }, {
+      unique: true,
+      partialFilterExpression: { status: "confirmed" },
+      name: "one_confirmation_per_patient",
+    });
+    await holds.createIndex({ hospitalId: 1, status: 1, seq: 1 });
     await holds.createIndex({ requestedByUserId: 1 });
 
     console.log("CareLink MongoDB indexes successfully initialized.");
   } catch (error) {
     console.error("Failed to initialize MongoDB indexes:", error);
+    throw error;
   }
 }

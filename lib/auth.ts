@@ -31,6 +31,11 @@ export const auth = betterAuth({
         required: false,
         input: true,
       },
+      hospitalId: {
+        type: "string",
+        required: false,
+        input: false,
+      },
     },
   },
 });
