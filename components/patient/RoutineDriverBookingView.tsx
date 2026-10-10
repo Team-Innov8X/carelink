@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import {
   Car,
@@ -39,6 +39,7 @@ export const RoutineDriverBookingView: React.FC = () => {
   const [isLocating, setIsLocating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string; refId?: string } | null>(null);
+  const idempotencyKey = useRef<string | null>(null);
 
   const toggleMobility = (item: string) => {
     setMobilityNeeds((prev) =>
@@ -100,13 +101,14 @@ export const RoutineDriverBookingView: React.FC = () => {
     ].filter(Boolean).join(' | ');
 
     try {
-      const response = await fetch('/api/sos', {
+      idempotencyKey.current ??= window.crypto.randomUUID();
+      const response = await fetch('/api/requests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey.current },
         body: JSON.stringify({
           location: targetCoords,
-          incidentType: `Routine Transport: ${reason}`,
-          requestType: 'routine',
+          destination: destination || 'Destination to be confirmed',
+          urgency: reason,
           patientPhone: patientPhone.trim(),
           preferredTime: preferredTimeDisplay,
           requiredEquipment: mobilityNeeds,
@@ -116,6 +118,7 @@ export const RoutineDriverBookingView: React.FC = () => {
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to submit driver request.');
+      idempotencyKey.current = null;
 
       setFeedback({
         type: 'success',

@@ -30,6 +30,7 @@ const MainAppContent: React.FC = () => {
   const [isNewEmergencyOpen, setIsNewEmergencyOpen] = useState(false);
   const [sosSubmitting, setSosSubmitting] = useState(false);
   const sosSubmittingRef = useRef(false);
+  const sosIdempotencyKey = useRef<string | null>(null);
   const [sosMessage, setSosMessage] = useState('');
   const [sosRequestId, setSosRequestId] = useState('');
   const [sosCancelPending, setSosCancelPending] = useState(false);
@@ -118,13 +119,15 @@ const MainAppContent: React.FC = () => {
     sosSubmittingRef.current = true;
     const sendRequest = async (location: { latitude: number; longitude: number }) => {
       try {
+        const idempotencyKey = sosIdempotencyKey.current ??= window.crypto.randomUUID();
         const response = await fetch('/api/sos', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
           body: JSON.stringify({ location, incidentType }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Could not send your emergency request.');
+        sosIdempotencyKey.current = null;
         const statusMessage = result.message || (!result.existing
           ? 'Emergency request sent to the hospital and ambulance network'
           : result.request.status === 'completed'

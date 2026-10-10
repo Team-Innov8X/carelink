@@ -25,15 +25,27 @@
 |---|---|---|
 | 0 — audit and UI baseline | Complete; visual review is limited by the signed-out browser session | `drv: document existing SOS workflow and UI audit` |
 | 1 — data model and state machine | Complete; pure types, shared config, transition rules, invariants, and tests; no UI/API behavior changed | `drv: add dispatch state machine and invariants` |
+| 2 — dispatch and APIs | Complete; SOS idempotency, round dispatch, normal requests, guarded accept/decline/cancel, and API aliases | `drv: implement dispatch APIs and atomic acceptance` |
 
 ## Phase 1 implementation notes
 
 - Added canonical request, offer, driver-presence, location-ping, snapshot, and transition-log types under `lib/dispatch/state-machine.ts`.
 - Added pure request/offer transitions, scoped patient/idempotency-key retry resolution, atomic in-memory offer acceptance with sibling superseding, and I1–I5 invariant validation.
 - Added centralized configuration in `lib/dispatch/constants.ts`. Defaults: 10-second SOS offers, 3 drivers per round, 3 rounds, 10 km search radius, 15-minute normal-request expiry, 3-second polling, 5-second GPS pings, 30-second stale-location threshold, 30-second route refresh, 200 m deviation threshold, and 30-day location retention. Fallback text is configurable and otherwise instructs patients to contact local emergency services.
-- Existing dispatch implementation is not yet wired to these constants; that integration belongs to Phase 2, when dispatch behavior is updated.
+- At the Phase 1 handoff, existing dispatch implementation was not yet wired to these constants; Phase 2 now uses the central offer, batch, round, radius, normal-expiry, and stale-location settings.
 - Verification: `npm test -- --run` (35 tests), `npx tsc --noEmit`, and `npm run build` all pass.
-- UI and existing API behavior were not changed. The model is not yet wired into MongoDB or API routes; that is Phase 2.
+- Phase 1 changed no UI or API behavior; Phase 2 integrates the model rules into the existing MongoDB collections and routes.
+
+## Phase 2 implementation notes
+
+- SOS `POST /api/sos` now requires `Idempotency-Key`, returns prior retries, and uses unique patient/key and active-patient indexes to close concurrent duplicate creation races. The existing SOS UI reuses its key through network retries.
+- Driver dispatch offers the nearest eligible batch simultaneously, honors stale-location and busy-driver exclusions, uses the configured fixed radius/round/expiry values, records request and offer transition history, expires and reoffers offers, supersedes siblings after acceptance, and reaches `no_driver_found` after the last round.
+- Driver acceptance keeps the conditional `findOneAndUpdate({_id, status: "searching"})` claim and conditional driver reservation. Only the request claim winner proceeds; a losing reservation is released. The Promise.all race test models this conditional claim; it does not connect to a live MongoDB replica set.
+- Added normal transport creation at `POST /api/requests`, including idempotency, eligible-driver offers, destination/urgency/notes, and server expiry. The current booking form now submits to that endpoint without changing its layout.
+- Added API aliases for driver feed/location/presence, patient active request, offer accept/decline, request cancellation, and trip status. Cancellation supports the owning patient or assigned driver and releases pending offers/driver reservation.
+- Driver pre-acceptance offer data now contains a rounded approximate pickup area and omits patient name and phone. Exact location/contact details remain in the assigned-trip response after acceptance.
+- Verification: `npm test -- --run` (38 tests), `npx tsc --noEmit`, and `npm run build` all pass. The new route handlers appear in the production route manifest.
+- No dashboard layout work was done. Full database concurrency/authorization integration tests require a disposable test MongoDB and remain a verification limitation; Phase 3 is the next spec phase.
 
 ## Functional gaps found for later phases
 

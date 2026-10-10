@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth-utils";
 import { advanceDispatch, createRequestId, ensureHospitalRequestForSos, getHospitalRequestsCollection, sosCollections, validCoordinates } from "@/lib/sos";
 import { getUsersCollection } from "@/lib/models/db";
+import { EMERGENCY_FALLBACK_TEXT } from "@/lib/dispatch/constants";
 
 export const runtime = "nodejs";
 
@@ -11,18 +12,18 @@ export async function GET() {
   const authMs = performance.now() - authStartedAt;
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
   const collectionStartedAt = performance.now();
-  const [{ requests, drivers }, hospitalRequests] = await Promise.all([sosCollections(), getHospitalRequestsCollection()]);
+  const [{ requests }, hospitalRequests] = await Promise.all([sosCollections(), getHospitalRequestsCollection()]);
   const collectionMs = performance.now() - collectionStartedAt;
   const role = (auth.user as { role?: string }).role;
   const query = role === "dispatcher" ? {} : { patientId: auth.user.id };
   const requestQueryStartedAt = performance.now();
   const patientProjection = role === "dispatcher" ? undefined : {
-    _id: 1, patientId: 1, patientName: 1, patientPhone: 1, status: 1, incidentType: 1,
+    _id: 1, patientId: 1, patientName: 1, patientPhone: 1, status: 1, type: 1, requestType: 1, location: 1, destination: 1, urgency: 1, notes: 1, incidentType: 1,
     createdAt: 1, acceptedAt: 1, arrivedAt: 1, completedAt: 1, driverId: 1,
     requiredEquipment: 1, tripStage: 1, tripTimestamps: 1, vitalsUpdate: 1, issue: 1,
   };
   const items = await requests.find(query, patientProjection ? { projection: patientProjection } : undefined).sort({ createdAt: -1 }).limit(50).toArray();
-  await Promise.all(items.filter((item) => item.status === "searching").map((item) => advanceDispatch(item._id)));
+  await Promise.all(items.filter((item) => item.status === "searching" && item.type !== "normal").map((item) => advanceDispatch(item._id)));
   const requestQueryMs = performance.now() - requestQueryStartedAt;
   const hospitalQueryStartedAt = performance.now();
   const linkedHospitalRequests = items.length ? await hospitalRequests.find(
@@ -39,8 +40,14 @@ export async function GET() {
   const driverProfileById = new Map(userRows.map((user) => [user.id, user]));
   return Response.json({ requests: items.map((item) => ({
     id: item._id,
+    type: item.type ?? (item.requestType === "routine" ? "normal" : "sos"),
+    requestType: item.requestType ?? (item.type === "normal" ? "routine" : "emergency"),
     status: item.status,
+    fallbackInstruction: item.status === "no_driver_found" ? EMERGENCY_FALLBACK_TEXT : undefined,
     incidentType: item.incidentType,
+    location: item.location,
+    urgency: item.urgency ?? null,
+    notes: item.notes ?? null,
     patientName: item.patientName,
     patientPhone: item.patientPhone,
     requiredEquipment: item.requiredEquipment,
@@ -50,7 +57,9 @@ export async function GET() {
     tripTimestamps: item.tripTimestamps,
     vitalsUpdate: item.vitalsUpdate,
     issue: item.issue,
-    destination: (() => { const target = hospitalBySosId.get(item._id); return target ? { name: target.hospitalName, status: target.status, bedCategory: target.bedCategory, rejectionReason: target.rejectionReason } : null; })(),
+    destination: item.destination?.name
+      ? { name: item.destination.name }
+      : (() => { const target = hospitalBySosId.get(item._id); return target ? { name: target.hospitalName, status: target.status, bedCategory: target.bedCategory, rejectionReason: target.rejectionReason } : null; })(),
     driverAssigned: Boolean(item.driverId),
     driver: item.driverId ? { ...(driverProfileById.get(item.driverId) ?? {}), location: driverLocationById.get(item.driverId) ?? null } : null,
   })) });
@@ -72,8 +81,15 @@ export async function POST(request: Request) {
     return Response.json({ error: "requiredEquipment must be an array of strings" }, { status: 400 });
   }
 
+  const idempotencyKey = request.headers.get("idempotency-key")?.trim() ?? "";
+  if (!idempotencyKey || idempotencyKey.length > 160) return Response.json({ error: "An Idempotency-Key header is required (maximum 160 characters)." }, { status: 400 });
   const { requests } = await sosCollections();
-  const existing = await requests.findOne({ patientId: auth.user.id, status: { $in: ["searching", "accepted"] } });
+  const retried = await requests.findOne({ patientId: auth.user.id, idempotencyKey });
+  if (retried) {
+    const hospitalRequest = await ensureHospitalRequestForSos(retried).catch(() => null);
+    return Response.json({ request: { id: retried._id, status: retried.status, createdAt: retried.createdAt }, hospitalRequestId: hospitalRequest?._id ?? null, message: "This SOS was already created.", existing: true });
+  }
+  const existing = await requests.findOne({ patientId: auth.user.id, type: { $ne: "normal" }, status: { $in: ["searching", "accepted"] } });
   if (existing) {
     const hospitalRequest = await ensureHospitalRequestForSos(existing).catch(() => null);
     return Response.json({
@@ -84,14 +100,26 @@ export async function POST(request: Request) {
     });
   }
   const profile = auth.user as typeof auth.user & { email?: string; phone?: string };
+  const createdAt = new Date();
   const sos = {
     _id: createRequestId(), patientId: auth.user.id, patientName: auth.user.name,
     patientEmail: profile.email, patientPhone: profile.phone,
     location: patientLocation, incidentType: incidentType.trim(),
     requiredEquipment: [...new Set(((body.requiredEquipment ?? []) as string[]).map((item) => item.trim()).filter(Boolean))],
-    status: "searching" as const, driverId: null, dispatchRound: 0, createdAt: new Date(),
+    type: "sos" as const, requestType: "emergency" as const, idempotencyKey,
+    status: "searching" as const, driverId: null, dispatchRound: 0, createdAt,
+    activePatientId: auth.user.id,
+    dispatchStatus: "created" as const,
+    transitionLog: [{ from: null, to: "created", at: createdAt, actor: { type: "patient", id: auth.user.id }, reason: "SOS created" }],
   };
-  await requests.insertOne(sos);
+  try {
+    await requests.insertOne(sos);
+  } catch (error) {
+    if ((error as { code?: number })?.code !== 11000) throw error;
+    const winner = await requests.findOne({ patientId: auth.user.id, $or: [{ idempotencyKey }, { activePatientId: auth.user.id }] });
+    if (winner) return Response.json({ request: { id: winner._id, status: winner.status, createdAt: winner.createdAt }, message: "An active request already exists.", existing: true });
+    throw error;
+  }
   await advanceDispatch(sos._id);
 
   const hospitalRequest = await ensureHospitalRequestForSos(sos).catch(() => null);
