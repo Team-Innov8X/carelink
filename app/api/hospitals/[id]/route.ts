@@ -34,19 +34,19 @@ export async function GET(request: Request, { params }: Context) {
     const originLng = url.searchParams.get("lng") ? Number(url.searchParams.get("lng")) : null;
 
     const hospCoords = hospital.location?.coordinates;
-    const hospitalLocation: Coordinates = hospCoords && hospCoords.length >= 2
+    const hospitalLocation: Coordinates | null = hospCoords && hospCoords.length >= 2
       ? { latitude: hospCoords[1], longitude: hospCoords[0] }
-      : { latitude: 28.6139, longitude: 77.209 };
+      : null;
 
     let patientOrigin: Coordinates | undefined;
     let distanceInKm: number | null = null;
 
-    if (originLat !== null && originLng !== null && Number.isFinite(originLat) && Number.isFinite(originLng)) {
+    if (hospitalLocation && originLat !== null && originLng !== null && Number.isFinite(originLat) && originLat >= -90 && originLat <= 90 && Number.isFinite(originLng) && originLng >= -180 && originLng <= 180) {
       patientOrigin = { latitude: originLat, longitude: originLng };
       distanceInKm = Number(distanceKm(patientOrigin, hospitalLocation).toFixed(1));
     }
 
-    const directionsUrl = mapsUrl(hospitalLocation, patientOrigin);
+    const directionsUrl = hospitalLocation ? mapsUrl(hospitalLocation, patientOrigin) : null;
 
     // Extract doctors/specialists from doctors collection
     const doctorsCol = await (await import("@/lib/models")).getDoctorsCollection();

@@ -24,15 +24,29 @@ export async function POST(request: Request) {
   if (user.onboardingCompleted) return Response.json({ error: 'Onboarding is already complete.' }, { status: 409 });
   const address = `${input.data.address}, ${input.data.city}, ${input.data.state} ${input.data.pincode}, India`;
   try {
-    const geocodeUrl = new URL('https://nominatim.openstreetmap.org/search');
-    geocodeUrl.searchParams.set('format', 'jsonv2'); geocodeUrl.searchParams.set('limit', '1'); geocodeUrl.searchParams.set('q', address);
-    const geoResponse = await fetch(geocodeUrl, { headers: { 'User-Agent': 'CareLinkEmergencyAllocator/1.0 (facility onboarding)' }, signal: AbortSignal.timeout(10000) });
-    if (!geoResponse.ok) return Response.json({ error: 'Could not locate this address. Check it and try again.' }, { status: 502 });
-    const [geo] = await geoResponse.json() as { lat: string; lon: string }[];
-    if (!geo) return Response.json({ error: 'Address not found. Add a more specific address.' }, { status: 422 });
+    const geocodeStartedAt = performance.now();
+    let geoPoint: { lat: number; lng: number } | null = null;
+    if (process.env.GOOGLE_MAPS_API_KEY) {
+      const geocodeUrl = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+      geocodeUrl.searchParams.set('address', address); geocodeUrl.searchParams.set('key', process.env.GOOGLE_MAPS_API_KEY);
+      const response = await fetch(geocodeUrl, { signal: AbortSignal.timeout(10000) });
+      if (!response.ok) return Response.json({ error: 'Could not locate this address. Check it and try again.' }, { status: 502 });
+      const data = await response.json() as { status?: string; results?: Array<{ geometry?: { location?: { lat?: number; lng?: number } } }> };
+      const point = data.results?.[0]?.geometry?.location;
+      if (data.status === 'OK' && typeof point?.lat === 'number' && typeof point.lng === 'number') geoPoint = { lat: point.lat, lng: point.lng };
+    } else {
+      const geocodeUrl = new URL('https://nominatim.openstreetmap.org/search');
+      geocodeUrl.searchParams.set('format', 'jsonv2'); geocodeUrl.searchParams.set('limit', '1'); geocodeUrl.searchParams.set('q', address);
+      const response = await fetch(geocodeUrl, { headers: { 'User-Agent': 'CareLinkEmergencyAllocator/1.0 (facility onboarding)' }, signal: AbortSignal.timeout(10000) });
+      if (!response.ok) return Response.json({ error: 'Could not locate this address. Check it and try again.' }, { status: 502 });
+      const [geo] = await response.json() as { lat: string; lon: string }[];
+      if (geo) geoPoint = { lat: Number(geo.lat), lng: Number(geo.lon) };
+    }
+    if (process.env.CARELINK_PERF_LOGS === '1') console.info(JSON.stringify({ event: 'carelink.perf', name: 'onboarding_geocode', durationMs: Math.round((performance.now() - geocodeStartedAt) * 100) / 100 }));
+    if (!geoPoint) return Response.json({ error: 'Address not found. Add a more specific address.' }, { status: 422 });
     const now = new Date(); const db = (await clientPromise).db();
     const accountId = auth.user.id;
-    const coords: [number, number] = [Number(geo.lon), Number(geo.lat)];
+    const coords: [number, number] = [geoPoint.lng, geoPoint.lat];
     const org = { name: input.data.name, address: { street: input.data.address, city: input.data.city, state: input.data.state, zipCode: input.data.pincode, country: 'India' }, location: { type: 'Point', coordinates: coords }, contact: { phone: input.data.phone, email: auth.user.email, emergencyHotline: input.data.phone }, status: 'active', isDemo: false, ownerUserId: accountId, services: input.data.details || '', openingHours: input.data.openingHours || '', updatedAt: now, createdAt: now };
     if (user.role === 'pharmacy') {
       await db.collection('pharmacies').updateOne({ ownerUserId: accountId }, { $set: org }, { upsert: true });
@@ -42,6 +56,6 @@ export async function POST(request: Request) {
       await db.collection('hospitals').updateOne({ ownerUserId: accountId }, { $set: { ...org, code, capacitySummary: { totalBeds: input.data.totalBeds || 0, availableBeds: input.data.totalBeds || 0, totalVentilators: 0, availableVentilators: 0 } } }, { upsert: true });
       await db.collection('user').updateOne({ _id: accountId as never }, { $set: { hospitalName: org.name, hospitalAddress: address, phone: org.contact.phone, onboardingCompleted: true, updatedAt: now } });
     }
-    return Response.json({ success: true, location: { lat: coords[1], lng: coords[0] } });
+    return Response.json({ success: true, location: geoPoint });
   } catch { return Response.json({ error: 'Could not save organization details. Try again.' }, { status: 500 }); }
 }

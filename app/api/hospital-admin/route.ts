@@ -24,6 +24,9 @@ export async function GET() {
   }
   const hospitalName = (authorization.user as typeof authorization.user & { hospitalName?: string }).hospitalName;
   if (!hospitalName) return Response.json({ error: 'Your account is not linked to a hospital.' }, { status: 403 });
+  const mongoClient = await clientPromise;
+  const facility = await mongoClient.db().collection('hospitals').findOne({ ownerUserId: authorization.user.id }, { projection: { location: 1, address: 1 } });
+  const hasAddress = Boolean(facility?.location && facility?.address);
   const hospital = await getAssignedHospital(hospitalName);
   if (hospital) {
     const { hospitalRequests, hospitalAdmissions } = await workflowCollections();
@@ -39,10 +42,10 @@ export async function GET() {
       target.set(item.bedCategory, (target.get(item.bedCategory) ?? 0) + 1);
     }
     const enriched = { ...hospital, acceptingRequests: hospital.acceptingRequests !== false, lastCapacityUpdatedAt: hospital.lastCapacityUpdatedAt, beds: Object.fromEntries(Object.entries(hospital.beds).map(([key, bed]) => [key, { ...bed, reserved: reservedByType.get(key) ?? 0, occupied: Math.max(occupiedByType.get(key) ?? 0, Math.max(0, bed.total - bed.available - (reservedByType.get(key) ?? 0))) }])) };
-    return Response.json({ hospital: enriched });
+    return Response.json({ hospital: enriched, hasAddress });
   }
   return hospital
-    ? Response.json({ hospital })
+    ? Response.json({ hospital, hasAddress })
     : Response.json({ error: 'No bed capacity record is linked to your hospital account.' }, { status: 404 });
 }
 

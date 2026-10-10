@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:triage": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test test/triage-policy.test.mjs"
   },
   "dependencies": {
     "@types/canvas-confetti": "^1.9.0",

@@ -7,7 +7,7 @@ import {
   HeartHandshake,
   Siren,
   Car,
-  Sparkles,
+  HeartPulse,
 } from '../icons';
 
 export const MobileNav: React.FC = () => {
@@ -20,7 +20,7 @@ export const MobileNav: React.FC = () => {
     role === 'patient'
       ? [
           { id: 'dashboard', label: 'Home', icon: <LayoutDashboard className="w-5 h-5" /> },
-          { id: 'triage', label: 'Triage', icon: <Sparkles className="w-5 h-5 text-amber-500" /> },
+          { id: 'triage', label: 'Symptom check', icon: <HeartPulse className="w-5 h-5" /> },
           { id: 'requests', label: 'Requests', icon: <Siren className="w-5 h-5" /> },
           { id: 'driver-request', label: 'Driver', icon: <Car className="w-5 h-5" /> },
           { id: 'hospitals', label: 'Hospitals', icon: <Building2 className="w-5 h-5" /> },
