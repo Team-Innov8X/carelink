@@ -71,14 +71,16 @@
 - Driver heartbeats now include accuracy, heading, and speed. The server updates the latest driver fix during an owned active trip even though the driver is no longer available for new requests. Trip pings are inserted only after both the configured interval and movement threshold, while every accepted GPS heartbeat updates freshness.
 - Added the `driver_location_pings` collection with an `at` TTL index driven by `LOCATION_RETENTION_DAYS`; records include trip, driver, coordinates, accuracy, and timestamp. Tunable movement and maximum route-accuracy thresholds are centralized in `lib/dispatch/constants.ts`.
 - MapView now keeps the driver marker and GPS accuracy circle across polling updates, animates marker transitions, fits bounds per trip instead of per poll, and exposes Recenter after pan. Route lookup is limited by `ROUTE_REFRESH_SECONDS` except when movement exceeds `ROUTE_DEVIATION_M`; poor GPS accuracy suppresses route drawing and displays a clear notice. A direct line is labeled approximate while road directions are unavailable.
+- A small `/api/dispatch/config` response shares only non-secret GPS/map thresholds with the browser, keeping server environment configuration authoritative.
 - Both patient and driver trip maps receive the same server GPS data and trip identity. Patient ETA-change notice (>10 minutes) was already implemented in Phase 4 and remains active.
 - Verification: targeted ESLint, `npx tsc --noEmit`, and `git diff --check` pass. Browser geolocation, routing service availability, Mongo TTL deletion, and two-account live-map checks need a running authenticated development environment and remain manual QA items.
 
-## Functional gaps found for later phases
+## Phase 6 implementation notes
 
-- Routine transport currently posts `requestType`, destination, schedule, and notes to `POST /api/sos`, but that handler only validates and persists the SOS fields (`location`, `incidentType`, and `requiredEquipment`). There is no distinct normal-request endpoint or driver Requests feed yet.
-- SOS creation checks for an existing active request before inserting, but there is no idempotency key or unique active-SOS constraint. Concurrent taps/retries can pass the check together and create multiple active requests.
-- The driver feed returns the full SOS pickup coordinates, name, and phone in pending-offer cards before a driver accepts. The spec requires rough area/distance before acceptance and exact pickup details after acceptance.
-- Patient cancellation is implemented, but the current cancel route only authorizes the patient role; assigned-driver cancellation is not exposed.
-- Candidate eligibility filters available drivers with a location, but does not enforce the spec's stale-location cutoff. Client GPS uses periodic `getCurrentPosition` calls rather than a `watchPosition` stream and persisted location-ping history.
-- Offer acceptance uses a conditional request update, then marks competing offers as `taken`; concurrency behavior and rollback paths still need the Phase 2 concurrent-accept verification.
+- Added `npm run sim-driver`, a development-only signed-in driver GPS simulator. It posts a configurable path to the existing `/api/driver/location` endpoint, accepts only localhost URLs, refuses production mode, and requires a session cookie without printing it.
+- Added `docs/DRIVER_QA.md` with the two-browser setup and manual checklist covering F1–F12, the 12 required edge cases, responsive dashboard widths, geolocation/routing/TTL checks, and simulator instructions.
+- Automated verification: `npm test` (9 files, 38 tests), `npx tsc --noEmit`, targeted ESLint, `git diff --check`, and `npm run build` pass. The simulator's live posting and checklist scenarios were not executed because no signed-in patient/driver browser session or disposable development MongoDB was available; see `docs/DRIVER_QA.md` for reproducible steps.
+
+## Baseline gaps resolved
+
+The initial audit found routine requests missing from the driver feed, SOS creation without idempotency, exact patient details exposed before acceptance, missing assigned-driver cancellation, no stale GPS/history tracking, and insufficient concurrent-accept verification. Phases 1–5 now address these gaps through the central state model, distinct normal-request workflow, idempotent create API, redacted offers, owner/assignment-scoped cancellation, stale-aware GPS tracking and retained trip pings, plus the atomic-claim concurrency test. A real MongoDB race and multi-user authorization integration run remains a manual verification item.

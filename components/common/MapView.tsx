@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import type * as Leaflet from 'leaflet';
-import { MAX_ROUTE_ACCURACY_M, ROUTE_DEVIATION_M, ROUTE_REFRESH_SECONDS } from '../../lib/dispatch/constants';
 
 export type MapFacility = {
   id: string;
@@ -69,6 +68,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const [hasPanned, setHasPanned] = useState(false);
   const fittedBoundsKeyRef = useRef<string | null>(null);
   const [routedPath, setRoutedPath] = useState<{ key: string; path: [number, number][] } | null>(null);
+  const [routeConfig, setRouteConfig] = useState<{ routeRefreshSeconds: number; routeDeviationM: number; maxRouteAccuracyM: number } | null>(null);
   const lastRouteRequestRef = useRef<{ at: number; driver: [number, number] } | null>(null);
   const [fetchedFacilities, setFetchedFacilities] = useState<MapFacility[]>([]);
   const { ambulances, hospitals, emergencies, selectedEmergencyId, setSelectedEmergencyId } = useCareLink();
@@ -91,13 +91,25 @@ export const MapView: React.FC<MapViewProps> = ({
     : '';
 
   useEffect(() => {
-    if (!routeKey) return;
-    if (typeof driverAccuracyM === 'number' && driverAccuracyM > MAX_ROUTE_ACCURACY_M) return;
+    if (!routeKey || routeConfig) return;
+    const controller = new AbortController();
+    void fetch('/api/dispatch/config', { cache: 'force-cache', signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((config) => {
+        if (config && Number.isFinite(config.routeRefreshSeconds) && Number.isFinite(config.routeDeviationM) && Number.isFinite(config.maxRouteAccuracyM)) setRouteConfig(config);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [routeKey, routeConfig]);
+
+  useEffect(() => {
+    if (!routeKey || !routeConfig) return;
+    if (typeof driverAccuracyM === 'number' && driverAccuracyM > routeConfig.maxRouteAccuracyM) return;
     const routePoints = routeKey.split('|').map((point) => point.split(',').map(Number) as [number, number]);
     const latestDriver = routePoints[0];
     const lastRoute = lastRouteRequestRef.current;
     const movedMeters = lastRoute ? Math.hypot((latestDriver[0] - lastRoute.driver[0]) * 111_000, (latestDriver[1] - lastRoute.driver[1]) * 111_000 * Math.cos(latestDriver[0] * Math.PI / 180)) : Infinity;
-    if (lastRoute && Date.now() - lastRoute.at < ROUTE_REFRESH_SECONDS * 1000 && movedMeters <= ROUTE_DEVIATION_M) return;
+    if (lastRoute && Date.now() - lastRoute.at < routeConfig.routeRefreshSeconds * 1000 && movedMeters <= routeConfig.routeDeviationM) return;
     lastRouteRequestRef.current = { at: Date.now(), driver: latestDriver };
 
     const controller = new AbortController();
@@ -122,7 +134,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
     // Do not abort a valid route lookup on the next GPS poll. Route requests are
     // already throttled below; old results are ignored unless their key matches.
-  }, [routeKey, driverAccuracyM]);
+  }, [routeKey, driverAccuracyM, routeConfig]);
   const currentRoutedPath = routeKey && routedPath?.key === routeKey ? routedPath.path : null;
 
   useEffect(() => {
@@ -337,7 +349,7 @@ export const MapView: React.FC<MapViewProps> = ({
     });
 
     const sosRoute = patientLocation && driverLocation ? [driverLocation, patientLocation, ...(hospitalLocation ? [hospitalLocation] : [])] as [number, number][] : null;
-    if (sosRoute && !(typeof driverAccuracyM === 'number' && driverAccuracyM > MAX_ROUTE_ACCURACY_M)) {
+    if (sosRoute && !(routeConfig && typeof driverAccuracyM === 'number' && driverAccuracyM > routeConfig.maxRouteAccuracyM)) {
       routeRef.current = L.polyline(currentRoutedPath ?? sosRoute, {
         color: '#e11d48',
         weight: currentRoutedPath ? 5 : 4,
@@ -367,7 +379,7 @@ export const MapView: React.FC<MapViewProps> = ({
       fittedBoundsKeyRef.current = boundsKey;
       setHasPanned(false);
     }
-  }, [mapReady, mapCenter, zoom, ambulances, hospitals, emergencies, hospital, showNetworkMarkers, showRouteLine, ambulance, patientLocation, patientName, driverLocation, driverAccuracyM, hospitalLocation, driverLocations, currentRoutedPath, setSelectedEmergencyId, activeFacilities, fitBoundsKey, routeKey]);
+  }, [mapReady, mapCenter, zoom, ambulances, hospitals, emergencies, hospital, showNetworkMarkers, showRouteLine, ambulance, patientLocation, patientName, driverLocation, driverAccuracyM, hospitalLocation, driverLocations, currentRoutedPath, setSelectedEmergencyId, activeFacilities, fitBoundsKey, routeKey, routeConfig]);
 
   if (!mapCenter) {
     return <div className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-500" style={{ height }}>No location records to show.</div>;
@@ -377,7 +389,7 @@ export const MapView: React.FC<MapViewProps> = ({
     <div className="relative isolate w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm" style={{ height }}>
       <div ref={containerRef} className="h-full w-full" aria-label="Map showing ambulances, hospitals, and emergency requests" />
       {hasPanned && <button type="button" onClick={() => { const L = leafletRef.current; const map = mapRef.current; if (!L || !map) return; const points = [driverLocation, patientLocation, hospitalLocation].filter((point): point is [number, number] => Boolean(point)); if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 14 }); setHasPanned(false); }} className="absolute right-3 top-3 z-[1000] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow">Recenter</button>}
-      {showRouteLine && patientLocation && driverLocation && (typeof driverAccuracyM === 'number' && driverAccuracyM > MAX_ROUTE_ACCURACY_M
+      {showRouteLine && patientLocation && driverLocation && (routeConfig && typeof driverAccuracyM === 'number' && driverAccuracyM > routeConfig.maxRouteAccuracyM
         ? <div className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-amber-800 shadow">Driver GPS accuracy is low; route is hidden until a better fix arrives.</div>
         : <div className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-slate-700 shadow">{currentRoutedPath ? 'Road route' : 'Route approximate while directions load'}</div>)}
       {mapError && <div role="status" className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-rose-700 shadow">{mapError}</div>}
