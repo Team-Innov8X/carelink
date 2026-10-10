@@ -36,29 +36,24 @@ export async function getUsersCollection(): Promise<Collection<IUser>> {
   return db.collection<IUser>("user"); // Uses Better Auth 'user' collection
 }
 
-let notificationRecipientIndexPromise: Promise<void> | null = null;
+export async function ensureNotificationIndexes<TSchema extends Document>(notifications: Collection<TSchema>): Promise<void> {
+  const notificationTtlHours = Math.max(1, Number(process.env.NOTIFICATION_TTL_HOURS) || 24);
 
-/** Reconcile the notification recipient index to one stable name. Older code
- * created the same key pattern without a name, which conflicts with the named
- * index created by workflowCollections. */
-export function ensureNotificationRecipientIndex<TSchema extends Document>(collection: Collection<TSchema>): Promise<void> {
-  if (notificationRecipientIndexPromise) return notificationRecipientIndexPromise;
-  notificationRecipientIndexPromise = (async () => {
-    const key = { recipientId: 1, createdAt: -1 };
-    const indexes = await collection.listIndexes().toArray();
-    const existing = indexes.find((index) => {
-      const entries = Object.entries(index.key as Record<string, number>);
-      return entries.length === 2 && entries[0][0] === "recipientId" && entries[0][1] === 1
-        && entries[1][0] === "createdAt" && entries[1][1] === -1;
-    });
-    if (existing?.name === "notifications_recipient_created") return;
-    if (existing?.name) await collection.dropIndex(existing.name);
-    await collection.createIndex(key, { name: "notifications_recipient_created" });
-  })().catch((error: unknown) => {
-    notificationRecipientIndexPromise = null;
-    throw error;
-  });
-  return notificationRecipientIndexPromise;
+  // Create the query index first so the collection exists before listIndexes.
+  // Use MongoDB's generated name so this is compatible with existing installs.
+  await notifications.createIndex({ recipientId: 1, createdAt: -1 });
+  await notifications.createIndex({ userId: 1, createdAt: -1 });
+
+  // Older databases may have this index under MongoDB's default `createdAt_1`
+  // name. Always update the existing key-pattern index rather than assuming
+  // it is named `notifications_ttl`.
+  const indexes = await notifications.listIndexes().toArray();
+  const ttlIndex = indexes.find((index) => (index.key as Record<string, number>)?.createdAt === 1);
+  if (ttlIndex?.name) {
+    await (await getDb()).command({ collMod: "notifications", index: { name: ttlIndex.name, expireAfterSeconds: notificationTtlHours * 3600 } });
+  } else {
+    await notifications.createIndex({ createdAt: 1 }, { expireAfterSeconds: notificationTtlHours * 3600, name: "notifications_ttl" });
+  }
 }
 
 let indexesPromise: Promise<void> | null = null;
@@ -86,16 +81,7 @@ export function initializeIndexes(): Promise<void> {
     await doctors.createIndex({ hospitalId: 1 });
 
     const notifications = (await getDb()).collection("notifications");
-    const notificationTtlHours = Math.max(1, Number(process.env.NOTIFICATION_TTL_HOURS) || 24);
-    const notificationIndexes = await notifications.listIndexes().toArray();
-    const existingTtlIndex = notificationIndexes.find((index) => (index.key as Record<string, number>)?.createdAt === 1);
-    if (existingTtlIndex?.name) {
-      await (await getDb()).command({ collMod: "notifications", index: { name: existingTtlIndex.name, expireAfterSeconds: notificationTtlHours * 3600 } });
-    } else {
-      await notifications.createIndex({ createdAt: 1 }, { expireAfterSeconds: notificationTtlHours * 3600, name: "notifications_ttl" });
-    }
-    await ensureNotificationRecipientIndex(notifications);
-    await notifications.createIndex({ userId: 1, createdAt: -1 });
+    await ensureNotificationIndexes(notifications);
 
     const holds = await getHoldsCollection();
     await holds.createIndex({ hospitalId: 1, status: 1 });

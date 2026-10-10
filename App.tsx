@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Role } from './types';
 import { CareLinkProvider, useCareLink } from './context/CareLinkContext';
 import { Navbar } from './components/common/Navbar';
@@ -24,25 +24,80 @@ import { RoutineDriverBookingView } from './components/patient/RoutineDriverBook
 import { TriageChatView } from './components/patient/TriageChatView';
 import { HospitalStaffView } from './components/hospitalStaff/HospitalStaffView';
 
+const SOS_NOTICE_TIMEOUT_MS = 30_000;
+
 const MainAppContent: React.FC = () => {
   const { activeTab, role, setActiveTab } = useCareLink();
   const [isNewEmergencyOpen, setIsNewEmergencyOpen] = useState(false);
   const [sosSubmitting, setSosSubmitting] = useState(false);
   const sosSubmittingRef = useRef(false);
+  const sosIdempotencyKey = useRef<string | null>(null);
   const [sosMessage, setSosMessage] = useState('');
   const [sosRequestId, setSosRequestId] = useState<string | null>(null);
+  const [sosNeedsPickupAddress, setSosNeedsPickupAddress] = useState(false);
+  const [sosPickupAddress, setSosPickupAddress] = useState('');
+  const [sosAddressSubmitting, setSosAddressSubmitting] = useState(false);
+  const [sosCanUndo, setSosCanUndo] = useState(false);
+  const [sosUndoSubmitting, setSosUndoSubmitting] = useState(false);
   const sosToastTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); }, []);
 
-  const showSosToast = (message: string, requestId: string | null = null) => {
+  const showSosToast = (message: string, requestId: string | null = null, timeoutMs = SOS_NOTICE_TIMEOUT_MS, canUndo = false) => {
+    if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current);
     setSosMessage(message);
     setSosRequestId(requestId);
-    if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current);
+    setSosCanUndo(canUndo);
     if (message) {
       sosToastTimer.current = window.setTimeout(() => {
         setSosMessage('');
         setSosRequestId(null);
+        setSosCanUndo(false);
         sosToastTimer.current = null;
-      }, 6500);
+      }, timeoutMs);
+    }
+  };
+
+  const undoSosRequest = async () => {
+    if (!sosRequestId || !sosCanUndo || sosUndoSubmitting) return;
+    setSosUndoSubmitting(true);
+    try {
+      const response = await fetch(`/api/sos/${encodeURIComponent(sosRequestId)}/cancel`, { method: 'POST' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not cancel this SOS request.');
+      window.dispatchEvent(new Event('carelink-sos-updated'));
+      showSosToast('SOS request cancelled.');
+    } catch (error) {
+      showSosToast(error instanceof Error ? error.message : 'Could not cancel this SOS request.');
+    } finally {
+      setSosUndoSubmitting(false);
+    }
+  };
+
+  const submitSosRequest = async (location: { latitude: number; longitude: number }, pickupAddress?: string, incidentType = 'Emergency assistance requested') => {
+    try {
+      const idempotencyKey = sosIdempotencyKey.current ??= window.crypto.randomUUID();
+      const response = await fetch('/api/sos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({ location: pickupAddress ? { ...location, address: pickupAddress } : location, incidentType, ...(pickupAddress ? { pickupAddress } : {}) }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not send your emergency request.');
+      sosIdempotencyKey.current = null;
+      const statusMessage = result.message || (result.existing ? 'Your SOS request has already been created' : 'Emergency request sent to the ambulance network');
+      const canUndo = !result.existing && result.request.status === 'searching';
+      const timeoutMs = canUndo ? (result.undoWindowSeconds || 5) * 1000 : SOS_NOTICE_TIMEOUT_MS;
+      showSosToast(`${statusMessage.replace(/[.\s]+$/, '')}. Reference: ${result.request.id}`, result.request.id, timeoutMs, canUndo);
+      setSosNeedsPickupAddress(false);
+      setSosPickupAddress('');
+      setActiveTab('dashboard');
+      window.dispatchEvent(new Event('carelink-sos-updated'));
+    } catch (error) {
+      showSosToast(error instanceof Error ? error.message : 'Could not send your emergency request.');
+    } finally {
+      sosSubmittingRef.current = false;
+      setSosSubmitting(false);
+      setSosAddressSubmitting(false);
     }
   };
 
@@ -54,32 +109,10 @@ const MainAppContent: React.FC = () => {
     if (!window.confirm('Emergency SOS\n\nAre you sure you want to request emergency assistance?')) return;
     if (sosSubmittingRef.current) return;
     sosSubmittingRef.current = true;
-    const sendRequest = async (location: { latitude: number; longitude: number }) => {
-      try {
-        const response = await fetch('/api/sos', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ location, incidentType }),
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Could not send your emergency request.');
-        const statusMessage = result.message || (!result.existing
-          ? 'Emergency request sent to the hospital and ambulance network'
-          : result.request.status === 'completed'
-            ? 'This recent SOS was already handled'
-            : 'Your SOS request has already been created');
-        showSosToast(`${statusMessage.replace(/[.\s]+$/, '')}. Reference: ${result.request.id}`, result.request.id);
-        window.dispatchEvent(new Event('carelink-sos-updated'));
-      } catch (error) {
-        showSosToast(error instanceof Error ? error.message : 'Could not send your emergency request.');
-      } finally {
-        sosSubmittingRef.current = false;
-        setSosSubmitting(false);
-      }
-    };
 
     if (!navigator.geolocation) {
-      showSosToast('This browser cannot access GPS. Enable location services or use a GPS-enabled device.');
+      setSosNeedsPickupAddress(true);
+      showSosToast('GPS is unavailable. Enter a pickup address to send this SOS.');
       sosSubmittingRef.current = false;
       return;
     }
@@ -87,17 +120,39 @@ const MainAppContent: React.FC = () => {
     setSosSubmitting(true);
     showSosToast('Getting your GPS location…');
     navigator.geolocation.getCurrentPosition(({ coords }) => {
-      void sendRequest({ latitude: coords.latitude, longitude: coords.longitude });
+      void submitSosRequest({ latitude: coords.latitude, longitude: coords.longitude }, undefined, incidentType);
     }, (error) => {
       const message = error.code === error.PERMISSION_DENIED
-        ? 'Location permission is needed to send an SOS. Allow location access and try again.'
+        ? 'Location permission was denied. Allow GPS or enter a pickup address to send this SOS.'
         : error.code === error.TIMEOUT
-          ? 'Could not get your location in time. Please try again.'
-          : 'Your location is unavailable. Turn on GPS and try again.';
+          ? 'Could not get your location in time. Try GPS again or enter a pickup address.'
+          : 'Your location is unavailable. Turn on GPS or enter a pickup address.';
+      setSosNeedsPickupAddress(true);
       showSosToast(message);
       sosSubmittingRef.current = false;
       setSosSubmitting(false);
     }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+  };
+
+  const sendSosFromAddress = async () => {
+    if (sosSubmittingRef.current || sosAddressSubmitting) return;
+    const address = sosPickupAddress.trim();
+    if (address.length < 5) { showSosToast('Enter a pickup address with a street, city, or nearby landmark.'); return; }
+    sosSubmittingRef.current = true;
+    setSosAddressSubmitting(true);
+    setSosSubmitting(true);
+    showSosToast('Finding the pickup address…');
+    try {
+      const response = await fetch('/api/places/geocode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not find that pickup address.');
+      await submitSosRequest(result.location, address);
+    } catch (error) {
+      showSosToast(error instanceof Error ? error.message : 'Could not find that pickup address.');
+      sosSubmittingRef.current = false;
+      setSosSubmitting(false);
+      setSosAddressSubmitting(false);
+    }
   };
 
   return (
@@ -162,11 +217,12 @@ const MainAppContent: React.FC = () => {
               <div>
                 <p className="font-bold text-slate-900 text-sm">Emergency request status</p>
                 <p className="mt-1 text-xs text-slate-600 leading-relaxed">{sosMessage}</p>
-                <p className="mt-2 text-[11px] font-medium text-slate-400">Track live driver status under &quot;Your Emergency Requests&quot; · Closes in 6.5s</p>
-                {sosRequestId && <button type="button" onClick={() => { setActiveTab('requests'); if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); setSosMessage(''); setSosRequestId(null); }} className="mt-2 text-xs font-bold text-sky-800 underline underline-offset-2">View emergency request details</button>}
+                <p className="mt-2 text-[11px] font-medium text-slate-400">Track live driver status under &quot;Your Emergency Requests&quot;.</p>
+                {sosRequestId && <div className="mt-2 flex flex-wrap gap-3"><button type="button" onClick={() => { setActiveTab('requests'); if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); setSosMessage(''); setSosRequestId(null); setSosCanUndo(false); }} className="text-xs font-bold text-sky-800 underline underline-offset-2">View emergency request details</button>{sosCanUndo && <button type="button" disabled={sosUndoSubmitting} onClick={() => void undoSosRequest()} className="text-xs font-bold text-rose-700 underline underline-offset-2 disabled:opacity-60">{sosUndoSubmitting ? 'Cancelling…' : 'Undo SOS'}</button>}</div>}
+                {sosNeedsPickupAddress && <div className="mt-3 flex flex-col gap-2"><label htmlFor="sos-pickup-address" className="text-xs font-semibold text-slate-700">Pickup address</label><input id="sos-pickup-address" value={sosPickupAddress} onChange={(event) => setSosPickupAddress(event.target.value)} maxLength={240} placeholder="Street, area, city, nearby landmark" className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm text-slate-900" /><button type="button" disabled={sosAddressSubmitting || sosSubmitting} onClick={() => void sendSosFromAddress()} className="min-h-10 rounded-lg bg-rose-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-60">{sosAddressSubmitting ? 'Finding address…' : 'Send SOS from address'}</button></div>}
               </div>
             </div>
-            <button type="button" onClick={() => { if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); setSosMessage(''); setSosRequestId(null); }} aria-label="Dismiss emergency notification" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
+            <button type="button" onClick={() => { if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); setSosMessage(''); setSosRequestId(null); setSosCanUndo(false); }} aria-label="Dismiss emergency notification" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
               <X className="h-4 w-4" />
             </button>
           </div>

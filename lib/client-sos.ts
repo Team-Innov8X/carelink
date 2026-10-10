@@ -14,6 +14,7 @@ export type ClientSosRequest = {
   rejectionReason?: string;
   requiredEquipment?: string[];
   tripStage?: string;
+  fallbackInstruction?: string | null;
   vitalsUpdate?: { bp: string; heartRate: number; spO2: number } | null;
   destination?: { name: string; status: string; bedCategory?: string; rejectionReason?: string } | null;
 };

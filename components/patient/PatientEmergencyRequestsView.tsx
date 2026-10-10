@@ -33,6 +33,7 @@ export type PatientRequest = {
   preferredTime?: string;
   notes?: string;
   rejectionReason?: string;
+  fallbackInstruction?: string | null;
   requiredEquipment?: string[];
   driver?: { name?: string; vehicleNumber?: string; ambulanceType?: string | null; location?: { latitude: number; longitude: number } | null } | null;
   hospitalRequest: null | {
@@ -77,7 +78,9 @@ export const PatientEmergencyRequestsView: React.FC = () => {
     setCancellingId(requestId);
     setCancelMessage('');
     try {
-      const response = await fetch(`/api/sos/${encodeURIComponent(requestId)}/cancel`, { method: 'POST' });
+      const target = requests.find((item) => item.id === requestId);
+      const cancelPath = target?.requestType === 'routine' ? '/api/requests' : '/api/sos';
+      const response = await fetch(`${cancelPath}/${encodeURIComponent(requestId)}/cancel`, { method: 'POST' });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Could not cancel this SOS request.');
       setCancelMessage('SOS request cancelled. It remains in your request history.');
@@ -102,7 +105,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
   }, [fetchRequests]);
 
   const filtered = requests.filter((r) => {
-    const isCompleted = ['completed', 'cancelled', 'rejected'].includes(r.status.toLowerCase());
+    const isCompleted = ['completed', 'cancelled', 'rejected', 'no_driver_found', 'expired'].includes(r.status.toLowerCase());
     if (statusFilter === 'active' && isCompleted) return false;
     if (statusFilter === 'completed' && !isCompleted) return false;
 
@@ -262,7 +265,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
             const requestRejected = request.status === 'rejected' || request.status === 'no_driver_found';
             const driverArrived = Boolean(request.arrivedAt);
             const pickupStarted = ['patient_on_board', 'en_route_hospital', 'arrived_hospital', 'handover_complete'].includes(request.tripStage || '');
-            const canCancel = !isRoutine && ['searching', 'accepted'].includes(request.status.toLowerCase()) && !pickupStarted;
+            const canCancel = ['searching', 'accepted'].includes(request.status.toLowerCase()) && !pickupStarted;
 
             const driverStatus = driverCompleted
               ? 'Driver response completed'
@@ -432,7 +435,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
                   <div className="mt-4 flex justify-end">
                     <button type="button" onClick={() => void cancelRequest(request.id)} disabled={cancellingId === request.id}
                       className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50">
-                      {cancellingId === request.id ? 'Cancelling…' : 'Cancel SOS'}
+                      {cancellingId === request.id ? 'Cancelling…' : isRoutine ? 'Cancel request' : 'Cancel SOS'}
                     </button>
                   </div>
                 )}

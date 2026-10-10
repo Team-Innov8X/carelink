@@ -1,0 +1,1087 @@
+{
+  "id": "S2",
+  "name": "S2 surge and insufficient ICU capacity",
+  "seed": 20261033,
+  "description": "2 ICU handovers; remaining ICU requests unserved without downgrade",
+  "inputs": {
+    "day": 35,
+    "minute": 882,
+    "patients": [
+      {
+        "id": "svalidation-scenario-2-p0",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 1,
+        "waitingMinutes": 30,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p1",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 2,
+        "waitingMinutes": 29,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p2",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 3,
+        "waitingMinutes": 28,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p3",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 1,
+        "waitingMinutes": 27,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p4",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 2,
+        "waitingMinutes": 26,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p5",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 3,
+        "waitingMinutes": 25,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p6",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 1,
+        "waitingMinutes": 24,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p7",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 2,
+        "waitingMinutes": 23,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p8",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 3,
+        "waitingMinutes": 22,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p9",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 1,
+        "waitingMinutes": 21,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p10",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 2,
+        "waitingMinutes": 20,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p11",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 3,
+        "waitingMinutes": 19,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p12",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 1,
+        "waitingMinutes": 18,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      },
+      {
+        "id": "svalidation-scenario-2-p13",
+        "batchId": "svalidation-scenario-2",
+        "urgency": 2,
+        "waitingMinutes": 17,
+        "resourceType": "icu_bed",
+        "etaMin": 25
+      }
+    ],
+    "hospitals": [
+      {
+        "id": "north",
+        "name": "North General",
+        "travelTimeMinutes": 18,
+        "rejectionRate": 0.04,
+        "capabilities": [
+          "cardiac",
+          "trauma"
+        ],
+        "confirmedFree": {
+          "icu_bed": 2,
+          "emergency_bed": 10
+        },
+        "supportedTypes": [
+          "icu_bed",
+          "emergency_bed"
+        ],
+        "closedTypes": []
+      },
+      {
+        "id": "east",
+        "name": "East Medical",
+        "travelTimeMinutes": 53,
+        "rejectionRate": 0.07,
+        "capabilities": [
+          "cardiac"
+        ],
+        "confirmedFree": {
+          "icu_bed": 0,
+          "emergency_bed": 10
+        },
+        "supportedTypes": [
+          "icu_bed",
+          "emergency_bed"
+        ],
+        "closedTypes": []
+      },
+      {
+        "id": "central",
+        "name": "Central Hospital",
+        "travelTimeMinutes": 43,
+        "rejectionRate": 0.1,
+        "capabilities": [
+          "trauma"
+        ],
+        "confirmedFree": {
+          "icu_bed": 0,
+          "emergency_bed": 10
+        },
+        "supportedTypes": [
+          "icu_bed",
+          "emergency_bed"
+        ],
+        "closedTypes": []
+      },
+      {
+        "id": "west",
+        "name": "West Community",
+        "travelTimeMinutes": 35,
+        "rejectionRate": 0.03,
+        "capabilities": [],
+        "confirmedFree": {
+          "icu_bed": 0,
+          "emergency_bed": 10
+        },
+        "supportedTypes": [
+          "icu_bed",
+          "emergency_bed"
+        ],
+        "closedTypes": []
+      }
+    ],
+    "draws": [
+      {
+        "patientId": "svalidation-scenario-2-p0",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p1",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p2",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p3",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p4",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p5",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p6",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p7",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p8",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p9",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p10",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p11",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p12",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      },
+      {
+        "patientId": "svalidation-scenario-2-p13",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      }
+    ],
+    "events": [],
+    "scenarioNotes": {
+      "expected": "2 ICU handovers; remaining ICU requests unserved without downgrade"
+    }
+  },
+  "expectedOutcomes": {
+    "baseline": {
+      "episodeId": "validation-scenario-2",
+      "patients": [
+        {
+          "patientId": "svalidation-scenario-2-p0",
+          "urgency": 1,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 18,
+          "hospitalId": "north",
+          "reason": null
+        },
+        {
+          "patientId": "svalidation-scenario-2-p1",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p2",
+          "urgency": 3,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p3",
+          "urgency": 1,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 18,
+          "hospitalId": "north",
+          "reason": null
+        },
+        {
+          "patientId": "svalidation-scenario-2-p4",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p5",
+          "urgency": 3,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p6",
+          "urgency": 1,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "capacity_exhausted"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p7",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p8",
+          "urgency": 3,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p9",
+          "urgency": 1,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "capacity_exhausted"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p10",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p11",
+          "urgency": 3,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p12",
+          "urgency": 1,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "capacity_exhausted"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p13",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        }
+      ],
+      "logs": [],
+      "incompatible_allocations": 0,
+      "double_counted_reservations": 0
+    },
+    "modelAware": {
+      "episodeId": "validation-scenario-2",
+      "patients": [
+        {
+          "patientId": "svalidation-scenario-2-p0",
+          "urgency": 1,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 18,
+          "hospitalId": "north",
+          "reason": null
+        },
+        {
+          "patientId": "svalidation-scenario-2-p1",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p2",
+          "urgency": 3,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p3",
+          "urgency": 1,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 18,
+          "hospitalId": "north",
+          "reason": null
+        },
+        {
+          "patientId": "svalidation-scenario-2-p4",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p5",
+          "urgency": 3,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p6",
+          "urgency": 1,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "capacity_exhausted"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p7",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p8",
+          "urgency": 3,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p9",
+          "urgency": 1,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "capacity_exhausted"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p10",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p11",
+          "urgency": 3,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p12",
+          "urgency": 1,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "capacity_exhausted"
+        },
+        {
+          "patientId": "svalidation-scenario-2-p13",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        }
+      ],
+      "logs": [],
+      "incompatible_allocations": 0,
+      "double_counted_reservations": 0
+    }
+  },
+  "patients": [
+    {
+      "id": "svalidation-scenario-2-p0",
+      "urgency": 1,
+      "requiredResource": "icu_bed",
+      "assignedHospital": "north",
+      "etaMin": 25,
+      "pAvailable": 0.6306198998742508,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "handed_over",
+      "reason": null,
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p1",
+      "urgency": 2,
+      "requiredResource": "icu_bed",
+      "assignedHospital": null,
+      "etaMin": 25,
+      "pAvailable": 0,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority",
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p2",
+      "urgency": 3,
+      "requiredResource": "icu_bed",
+      "assignedHospital": null,
+      "etaMin": 25,
+      "pAvailable": 0,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority",
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p3",
+      "urgency": 1,
+      "requiredResource": "icu_bed",
+      "assignedHospital": "north",
+      "etaMin": 25,
+      "pAvailable": 0.6306198998742508,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "handed_over",
+      "reason": null,
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p4",
+      "urgency": 2,
+      "requiredResource": "icu_bed",
+      "assignedHospital": null,
+      "etaMin": 25,
+      "pAvailable": 0,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority",
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p5",
+      "urgency": 3,
+      "requiredResource": "icu_bed",
+      "assignedHospital": null,
+      "etaMin": 25,
+      "pAvailable": 0,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority",
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p6",
+      "urgency": 1,
+      "requiredResource": "icu_bed",
+      "assignedHospital": null,
+      "etaMin": 25,
+      "pAvailable": 0,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "unserved",
+      "reason": "capacity_exhausted",
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p7",
+      "urgency": 2,
+      "requiredResource": "icu_bed",
+      "assignedHospital": null,
+      "etaMin": 25,
+      "pAvailable": 0,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority",
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p8",
+      "urgency": 3,
+      "requiredResource": "icu_bed",
+      "assignedHospital": null,
+      "etaMin": 25,
+      "pAvailable": 0,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority",
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p9",
+      "urgency": 1,
+      "requiredResource": "icu_bed",
+      "assignedHospital": null,
+      "etaMin": 25,
+      "pAvailable": 0,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "unserved",
+      "reason": "capacity_exhausted",
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p10",
+      "urgency": 2,
+      "requiredResource": "icu_bed",
+      "assignedHospital": null,
+      "etaMin": 25,
+      "pAvailable": 0,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority",
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p11",
+      "urgency": 3,
+      "requiredResource": "icu_bed",
+      "assignedHospital": null,
+      "etaMin": 25,
+      "pAvailable": 0,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority",
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p12",
+      "urgency": 1,
+      "requiredResource": "icu_bed",
+      "assignedHospital": null,
+      "etaMin": 25,
+      "pAvailable": 0,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "unserved",
+      "reason": "capacity_exhausted",
+      "reroutes": 0
+    },
+    {
+      "id": "svalidation-scenario-2-p13",
+      "urgency": 2,
+      "requiredResource": "icu_bed",
+      "assignedHospital": null,
+      "etaMin": 25,
+      "pAvailable": 0,
+      "probabilityByHospital": {
+        "north": 0.6306198998742508,
+        "east": 0.18777296673889268,
+        "central": 0.3941344744296017,
+        "west": 0.6792377200105213
+      },
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority",
+      "reroutes": 0
+    }
+  ],
+  "hospitals": [
+    {
+      "id": "north",
+      "name": "North General",
+      "freeUnits": {
+        "icu_bed": 2,
+        "emergency_bed": 10
+      },
+      "closed": false
+    },
+    {
+      "id": "east",
+      "name": "East Medical",
+      "freeUnits": {
+        "icu_bed": 0,
+        "emergency_bed": 10
+      },
+      "closed": false
+    },
+    {
+      "id": "central",
+      "name": "Central Hospital",
+      "freeUnits": {
+        "icu_bed": 0,
+        "emergency_bed": 10
+      },
+      "closed": false
+    },
+    {
+      "id": "west",
+      "name": "West Community",
+      "freeUnits": {
+        "icu_bed": 0,
+        "emergency_bed": 10
+      },
+      "closed": false
+    }
+  ],
+  "timeline": [
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p0",
+      "event": "hold_requested",
+      "status": "requested"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p1",
+      "event": "unserved",
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p10",
+      "event": "unserved",
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p11",
+      "event": "unserved",
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p12",
+      "event": "unserved",
+      "status": "unserved",
+      "reason": "capacity_exhausted"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p13",
+      "event": "unserved",
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p2",
+      "event": "unserved",
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p3",
+      "event": "hold_requested",
+      "status": "requested"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p4",
+      "event": "unserved",
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p5",
+      "event": "unserved",
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p6",
+      "event": "unserved",
+      "status": "unserved",
+      "reason": "capacity_exhausted"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p7",
+      "event": "unserved",
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p8",
+      "event": "unserved",
+      "status": "unserved",
+      "reason": "displaced_by_higher_priority"
+    },
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-2-p9",
+      "event": "unserved",
+      "status": "unserved",
+      "reason": "capacity_exhausted"
+    },
+    {
+      "at": 883,
+      "patientId": "svalidation-scenario-2-p0",
+      "event": "hospital_confirmed",
+      "status": "confirmed"
+    },
+    {
+      "at": 883,
+      "patientId": "svalidation-scenario-2-p3",
+      "event": "hospital_confirmed",
+      "status": "confirmed"
+    },
+    {
+      "at": 907,
+      "patientId": "svalidation-scenario-2-p0",
+      "event": "handover_completed",
+      "status": "handed_over"
+    },
+    {
+      "at": 907,
+      "patientId": "svalidation-scenario-2-p3",
+      "event": "handover_completed",
+      "status": "handed_over"
+    }
+  ],
+  "forecastProbabilities": {
+    "svalidation-scenario-2-p0": 0.6306198998742508,
+    "svalidation-scenario-2-p3": 0.6306198998742508
+  }
+}

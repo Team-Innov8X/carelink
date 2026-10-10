@@ -27,11 +27,31 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const patch: Record<string, unknown> = { tripStage: stage, tripTimestamps, updatedAt: at };
     if (stage === 'arrived_patient') patch.arrivedAt = at;
     if (stage === 'handover_complete') patch.completedAt = at;
+    const dispatchProgress: Partial<Record<TripStage, string>> = {
+      arrived_patient: 'arrived_at_patient',
+      patient_on_board: 'picked_up',
+      en_route_hospital: 'en_route_to_hospital',
+      handover_complete: 'completed',
+    };
+    const dispatchTo = dispatchProgress[stage];
+    const dispatchFrom = sos.dispatchStatus ?? (stage === 'arrived_patient' ? 'accepted' : undefined);
+    if (dispatchTo) patch.dispatchStatus = dispatchTo;
+    if (stage === 'handover_complete') patch.status = 'completed';
     const expectedStage = sos.tripStage ? { tripStage: current } : current === 'accepted' ? { tripStage: { $exists: false }, arrivedAt: { $exists: false } } : { tripStage: { $exists: false }, arrivedAt: { $exists: true } };
-    const changed = await requests.updateOne({ _id: id, driverId: auth.user.id, status: 'accepted', ...expectedStage }, { $set: patch });
+    const update: Record<string, unknown> = { $set: patch };
+    if (dispatchTo && dispatchFrom) {
+      const transitions = stage === 'arrived_patient' && dispatchFrom === 'accepted'
+        ? [
+            { from: 'accepted', to: 'en_route_to_patient', at, actor: { type: 'driver', id: auth.user.id }, reason: 'Driver en route to patient' },
+            { from: 'en_route_to_patient', to: 'arrived_at_patient', at, actor: { type: 'driver', id: auth.user.id }, reason: 'Driver arrived at patient' },
+          ]
+        : [{ from: dispatchFrom, to: dispatchTo, at, actor: { type: 'driver', id: auth.user.id }, reason: `Trip advanced to ${stage}` }];
+      update.$push = { transitionLog: { $each: transitions } };
+    }
+    if (stage === 'handover_complete') update.$unset = { activePatientId: '' };
+    const changed = await requests.updateOne({ _id: id, driverId: auth.user.id, status: 'accepted', ...expectedStage }, update as never);
     if (!changed.modifiedCount) return Response.json({ error: 'Trip status changed. Refresh the assignment and continue from the next step.' }, { status: 409 });
     if (stage === 'handover_complete') {
-      await requests.updateOne({ _id: id, driverId: auth.user.id, status: 'accepted' }, { $set: { status: 'completed' } });
       await drivers.updateOne({ userId: auth.user.id, activeRequestId: id }, { $set: { available: true, availableSince: at, updatedAt: at }, $unset: { activeRequestId: '' } });
     }
     const { hospitalRequests } = await workflowCollections();

@@ -1,0 +1,256 @@
+{
+  "baseline": {
+    "patientCount": 3437,
+    "handoverSuccessOnFirstChoice": 0.5603724178062264,
+    "reroutesPerPatient": 0.11172534186790806,
+    "meanTimeToHandoverMinutes": 31.862775217613926,
+    "p90TimeToHandoverMinutes": 55,
+    "unservedCount": 1484,
+    "unservedByReason": {
+      "capacity_exhausted": 707,
+      "displaced_by_higher_priority": 663,
+      "travel_time_limit": 114
+    },
+    "urgency1FailureRate": 0.3234782608695652,
+    "incompatible_allocations": 0,
+    "double_counted_reservations": 0
+  },
+  "modelAware": {
+    "patientCount": 3437,
+    "handoverSuccessOnFirstChoice": 0.5629909805062554,
+    "reroutesPerPatient": 0.11085248763456503,
+    "meanTimeToHandoverMinutes": 31.87716615698267,
+    "p90TimeToHandoverMinutes": 55,
+    "unservedCount": 1475,
+    "unservedByReason": {
+      "capacity_exhausted": 699,
+      "displaced_by_higher_priority": 662,
+      "travel_time_limit": 114
+    },
+    "urgency1FailureRate": 0.3130434782608696,
+    "incompatible_allocations": 0,
+    "double_counted_reservations": 0
+  },
+  "pairedBootstrap95": {
+    "handoverSuccessModelMinusBaseline": {
+      "estimate": 0.002466080216080215,
+      "lower95": -0.00021212121212121237,
+      "upper95": 0.005209346209346208,
+      "resamples": 2000,
+      "seed": 20261013
+    },
+    "reroutesPerPatientModelMinusBaseline": {
+      "estimate": -0.0008486790986790987,
+      "lower95": -0.0033425925925925928,
+      "upper95": 0.0016947681947681948,
+      "resamples": 2000,
+      "seed": 20261015
+    },
+    "meanTimeModelMinusBaseline": {
+      "estimate": 0.030079365079365074,
+      "lower95": -0.09087758537758535,
+      "upper95": 0.17399434824434826,
+      "resamples": 2000,
+      "seed": 20261014
+    }
+  },
+  "seed": 20261020,
+  "episodeCount": 300,
+  "split": "validation",
+  "days": [
+    31,
+    40
+  ],
+  "caseReview": {
+    "episodeId": "validation-day-32-episode-22",
+    "baselineSuccess": 0.5555555555555556,
+    "modelAwareSuccess": 0.4444444444444444,
+    "baseline": {
+      "episodeId": "validation-day-32-episode-22",
+      "patients": [
+        {
+          "patientId": "e22-p0",
+          "urgency": 2,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 53,
+          "hospitalId": "north",
+          "reason": null
+        },
+        {
+          "patientId": "e22-p1",
+          "urgency": 1,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "travel_time_limit"
+        },
+        {
+          "patientId": "e22-p2",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "e22-p3",
+          "urgency": 2,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 53,
+          "hospitalId": "north",
+          "reason": null
+        },
+        {
+          "patientId": "e22-p4",
+          "urgency": 3,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "e22-p5",
+          "urgency": 2,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 53,
+          "hospitalId": "north",
+          "reason": null
+        },
+        {
+          "patientId": "e22-p6",
+          "urgency": 1,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 34,
+          "hospitalId": "west",
+          "reason": null
+        },
+        {
+          "patientId": "e22-p7",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "travel_time_limit"
+        },
+        {
+          "patientId": "e22-p8",
+          "urgency": 1,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 53,
+          "hospitalId": "north",
+          "reason": null
+        }
+      ],
+      "logs": [],
+      "incompatible_allocations": 0,
+      "double_counted_reservations": 0
+    },
+    "modelAware": {
+      "episodeId": "validation-day-32-episode-22",
+      "patients": [
+        {
+          "patientId": "e22-p0",
+          "urgency": 2,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "capacity_exhausted"
+        },
+        {
+          "patientId": "e22-p1",
+          "urgency": 1,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "travel_time_limit"
+        },
+        {
+          "patientId": "e22-p2",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "e22-p3",
+          "urgency": 2,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 53,
+          "hospitalId": "north",
+          "reason": null
+        },
+        {
+          "patientId": "e22-p4",
+          "urgency": 3,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "displaced_by_higher_priority"
+        },
+        {
+          "patientId": "e22-p5",
+          "urgency": 2,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 53,
+          "hospitalId": "north",
+          "reason": null
+        },
+        {
+          "patientId": "e22-p6",
+          "urgency": 1,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 34,
+          "hospitalId": "west",
+          "reason": null
+        },
+        {
+          "patientId": "e22-p7",
+          "urgency": 2,
+          "firstChoice": false,
+          "reroutes": 0,
+          "minutes": null,
+          "hospitalId": null,
+          "reason": "travel_time_limit"
+        },
+        {
+          "patientId": "e22-p8",
+          "urgency": 1,
+          "firstChoice": true,
+          "reroutes": 0,
+          "minutes": 53,
+          "hospitalId": "north",
+          "reason": null
+        }
+      ],
+      "logs": [
+        {
+          "event": "hospital_rejection",
+          "patientId": "e22-p0",
+          "replan": {
+            "assignments": [],
+            "unserved": []
+          }
+        }
+      ],
+      "incompatible_allocations": 0,
+      "double_counted_reservations": 0
+    }
+  }
+}

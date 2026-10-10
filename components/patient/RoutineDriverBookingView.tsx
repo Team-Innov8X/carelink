@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import {
   Car,
@@ -35,6 +35,7 @@ export const RoutineDriverBookingView: React.FC = () => {
   const [isLocating, setIsLocating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string; refId?: string } | null>(null);
+  const idempotencyKey = useRef<string | null>(null);
 
   const toggleMobility = (item: string) => {
     setMobilityNeeds((prev) =>
@@ -83,7 +84,6 @@ export const RoutineDriverBookingView: React.FC = () => {
     setIsSubmitting(true);
     setFeedback(null);
 
-    const targetCoords = coordinates;
     const preferredTimeDisplay = timingType === 'asap'
       ? 'Immediate (Next Available Driver)'
       : scheduledDateTime || 'Scheduled';
@@ -97,9 +97,19 @@ export const RoutineDriverBookingView: React.FC = () => {
     ].filter(Boolean).join(' | ');
 
     try {
-      const response = await fetch('/api/sos', {
+      let targetCoords = coordinates;
+      if (!targetCoords) {
+        const lookup = await fetch('/api/places/geocode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address: pickupAddress.trim() }) });
+        const geocoded = await lookup.json();
+        if (!lookup.ok) throw new Error(geocoded.error || 'Could not locate the pickup address.');
+        targetCoords = geocoded.location as { latitude: number; longitude: number };
+        setCoordinates(targetCoords);
+        if (geocoded.displayName) setPickupAddress(geocoded.displayName);
+      }
+      idempotencyKey.current ??= window.crypto.randomUUID();
+      const response = await fetch('/api/requests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey.current },
         body: JSON.stringify({
           location: targetCoords,
           incidentType: `Routine Transport: ${reason}`,
@@ -114,6 +124,7 @@ export const RoutineDriverBookingView: React.FC = () => {
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to submit driver request.');
+      idempotencyKey.current = null;
 
       setFeedback({
         type: 'success',
@@ -122,6 +133,7 @@ export const RoutineDriverBookingView: React.FC = () => {
       });
 
       window.dispatchEvent(new Event('carelink-sos-updated'));
+      setActiveTab('dashboard');
     } catch (error) {
       setFeedback({
         type: 'error',
@@ -341,7 +353,7 @@ export const RoutineDriverBookingView: React.FC = () => {
                   required
                   placeholder="Street, Landmark, Apartment / Flat number"
                   value={pickupAddress}
-                  onChange={(e) => setPickupAddress(e.target.value)}
+                  onChange={(e) => { setPickupAddress(e.target.value); setCoordinates(null); }}
                   className="w-full text-xs px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200"
                 />
               </div>

@@ -1,0 +1,290 @@
+{
+  "id": "S4",
+  "name": "S4 availability change during travel",
+  "seed": 20261035,
+  "description": "S4 availability change during travel",
+  "inputs": {
+    "day": 35,
+    "minute": 882,
+    "patients": [
+      {
+        "id": "svalidation-scenario-4-p0",
+        "batchId": "svalidation-scenario-4",
+        "urgency": 1,
+        "waitingMinutes": 30,
+        "resourceType": "emergency_bed",
+        "etaMin": 25
+      }
+    ],
+    "hospitals": [
+      {
+        "id": "north",
+        "name": "North General",
+        "travelTimeMinutes": 18,
+        "rejectionRate": 0.04,
+        "capabilities": [
+          "cardiac",
+          "trauma"
+        ],
+        "confirmedFree": {
+          "icu_bed": 12,
+          "emergency_bed": 12
+        },
+        "supportedTypes": [
+          "icu_bed",
+          "emergency_bed"
+        ],
+        "closedTypes": []
+      },
+      {
+        "id": "east",
+        "name": "East Medical",
+        "travelTimeMinutes": 53,
+        "rejectionRate": 0.07,
+        "capabilities": [
+          "cardiac"
+        ],
+        "confirmedFree": {
+          "icu_bed": 12,
+          "emergency_bed": 12
+        },
+        "supportedTypes": [
+          "icu_bed",
+          "emergency_bed"
+        ],
+        "closedTypes": []
+      },
+      {
+        "id": "central",
+        "name": "Central Hospital",
+        "travelTimeMinutes": 43,
+        "rejectionRate": 0.1,
+        "capabilities": [
+          "trauma"
+        ],
+        "confirmedFree": {
+          "icu_bed": 12,
+          "emergency_bed": 12
+        },
+        "supportedTypes": [
+          "icu_bed",
+          "emergency_bed"
+        ],
+        "closedTypes": []
+      },
+      {
+        "id": "west",
+        "name": "West Community",
+        "travelTimeMinutes": 35,
+        "rejectionRate": 0.03,
+        "capabilities": [],
+        "confirmedFree": {
+          "icu_bed": 12,
+          "emergency_bed": 12
+        },
+        "supportedTypes": [
+          "icu_bed",
+          "emergency_bed"
+        ],
+        "closedTypes": []
+      }
+    ],
+    "draws": [
+      {
+        "patientId": "svalidation-scenario-4-p0",
+        "rejection": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        },
+        "delay": {
+          "north": 1,
+          "east": 1,
+          "central": 1,
+          "west": 1
+        }
+      }
+    ],
+    "events": [
+      {
+        "minute": 883,
+        "hospitalId": "north",
+        "resourceType": "emergency_bed",
+        "kind": "resource_loss",
+        "unitsLost": 1
+      }
+    ],
+    "scenarioNotes": {
+      "lostHospital": "north",
+      "resourceType": "emergency_bed"
+    }
+  },
+  "expectedOutcomes": {
+    "baseline": {
+      "episodeId": "validation-scenario-4",
+      "patients": [
+        {
+          "patientId": "svalidation-scenario-4-p0",
+          "urgency": 1,
+          "firstChoice": true,
+          "reroutes": 1,
+          "minutes": 43,
+          "hospitalId": "north",
+          "reason": null
+        }
+      ],
+      "logs": [
+        {
+          "event": "resource_loss",
+          "patientId": "svalidation-scenario-4-p0",
+          "replan": {
+            "assignments": [
+              {
+                "patientId": "svalidation-scenario-4-p0",
+                "hospitalId": "north",
+                "reservationId": "sim-hold-2",
+                "p_available": 1,
+                "travelTimeMinutes": 18,
+                "cost": 18,
+                "reason": "Lowest-cost feasible hospital by travel time and arrival-availability forecast."
+              }
+            ],
+            "unserved": []
+          }
+        }
+      ],
+      "incompatible_allocations": 0,
+      "double_counted_reservations": 0
+    },
+    "modelAware": {
+      "episodeId": "validation-scenario-4",
+      "patients": [
+        {
+          "patientId": "svalidation-scenario-4-p0",
+          "urgency": 1,
+          "firstChoice": true,
+          "reroutes": 1,
+          "minutes": 43,
+          "hospitalId": "north",
+          "reason": null
+        }
+      ],
+      "logs": [
+        {
+          "event": "resource_loss",
+          "patientId": "svalidation-scenario-4-p0",
+          "replan": {
+            "assignments": [
+              {
+                "patientId": "svalidation-scenario-4-p0",
+                "hospitalId": "north",
+                "reservationId": "sim-hold-2",
+                "p_available": 0.9999925449096095,
+                "travelTimeMinutes": 18,
+                "cost": 18.000186377259762,
+                "reason": "Lowest-cost feasible hospital by travel time and arrival-availability forecast."
+              }
+            ],
+            "unserved": []
+          }
+        }
+      ],
+      "incompatible_allocations": 0,
+      "double_counted_reservations": 0
+    }
+  },
+  "patients": [
+    {
+      "id": "svalidation-scenario-4-p0",
+      "urgency": 1,
+      "requiredResource": "emergency_bed",
+      "assignedHospital": "north",
+      "etaMin": 25,
+      "pAvailable": 0.9999983505521439,
+      "probabilityByHospital": {
+        "north": 0.9999983505521439,
+        "east": 0.9999985602150547,
+        "central": 0.9999945861697255,
+        "west": 0.9999968423065794
+      },
+      "status": "handed_over",
+      "reason": null,
+      "reroutes": 1
+    }
+  ],
+  "hospitals": [
+    {
+      "id": "north",
+      "name": "North General",
+      "freeUnits": {
+        "icu_bed": 12,
+        "emergency_bed": 12
+      },
+      "closed": false
+    },
+    {
+      "id": "east",
+      "name": "East Medical",
+      "freeUnits": {
+        "icu_bed": 12,
+        "emergency_bed": 12
+      },
+      "closed": false
+    },
+    {
+      "id": "central",
+      "name": "Central Hospital",
+      "freeUnits": {
+        "icu_bed": 12,
+        "emergency_bed": 12
+      },
+      "closed": false
+    },
+    {
+      "id": "west",
+      "name": "West Community",
+      "freeUnits": {
+        "icu_bed": 12,
+        "emergency_bed": 12
+      },
+      "closed": false
+    }
+  ],
+  "timeline": [
+    {
+      "at": 882,
+      "patientId": "svalidation-scenario-4-p0",
+      "event": "hold_requested",
+      "status": "requested"
+    },
+    {
+      "at": 883,
+      "patientId": "svalidation-scenario-4-p0",
+      "event": "hospital_confirmed",
+      "status": "confirmed"
+    },
+    {
+      "at": 883,
+      "patientId": "system",
+      "hospitalId": "north",
+      "event": "resource_loss",
+      "status": "resource_lost"
+    },
+    {
+      "at": 884,
+      "patientId": "svalidation-scenario-4-p0",
+      "event": "resource_loss",
+      "status": "replanned"
+    },
+    {
+      "at": 907,
+      "patientId": "svalidation-scenario-4-p0",
+      "event": "handover_completed",
+      "status": "handed_over"
+    }
+  ],
+  "forecastProbabilities": {
+    "svalidation-scenario-4-p0": 0.9999983505521439
+  }
+}

@@ -1,4 +1,4 @@
-export type Role = 'dispatcher' | 'hospital' | 'pharmacy' | 'paramedic' | 'patient';
+export type Role = 'dispatcher' | 'hospital' | 'pharmacy' | 'paramedic' | 'patient' | 'driver';
 
 export interface BedAvailability {
   available: number;

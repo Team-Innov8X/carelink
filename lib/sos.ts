@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { Document } from "mongodb";
 import clientPromise from "./mongodb.ts";
-import { ensureNotificationRecipientIndex } from "./models/db.ts";
+import { ensureNotificationIndexes } from "./models/db.ts";
+import {
+  SOS_MAX_ROUNDS,
+  SOS_OFFER_BATCH_SIZE,
+  SOS_OFFER_DURATION_MS,
+  STALE_LOCATION_SECONDS,
+  NORMAL_REQUEST_EXPIRY_MIN,
+} from "./dispatch/constants.ts";
+import { selectSosOfferBatch } from "./dispatch/round-planner.ts";
 
 export type Coordinates = { latitude: number; longitude: number };
 
@@ -18,7 +26,7 @@ export type SosRequest = {
   preferredTime?: string;
   notes?: string;
   requiredEquipment: string[];
-  status: "searching" | "accepted" | "completed" | "cancelled" | "no_driver_found";
+  status: "searching" | "accepted" | "completed" | "cancelled" | "no_driver_found" | "expired";
   driverId: string | null;
   rejectedDriverIds?: string[];
   createdAt: Date;
@@ -34,15 +42,23 @@ export type SosRequest = {
   assignmentOfferedAt?: Date;
   completedAt?: Date;
   dispatchRound?: number;
+  dispatchRoundAt?: Date;
   noDriverFoundAt?: Date;
+  type?: "sos" | "normal";
+  urgency?: string;
+  destination?: { hospitalId?: string; name?: string; latitude?: number; longitude?: number };
+  idempotencyKey?: string;
+  activePatientId?: string;
+  expiresAt?: Date;
+  transitionLog?: Array<{ from: string | null; to: string; at: Date; actor: { type: string; id: string }; reason: string }>;
+  dispatchStatus?: "created" | "offered" | "accepted" | "en_route_to_patient" | "arrived_at_patient" | "picked_up" | "en_route_to_hospital" | "completed" | "no_driver_found" | "cancelled" | "expired";
 };
 
-export const DISPATCH_BATCH_SIZE = Math.max(1, Number(process.env.DISPATCH_BATCH_SIZE) || 3);
-export const OFFER_DURATION_MS = Math.max(1000, Number(process.env.OFFER_DURATION_MS) || 10_000);
-export const DISPATCH_MAX_ROUNDS = Math.max(1, Number(process.env.DISPATCH_MAX_ROUNDS) || 3);
-const DISPATCH_BASE_RADIUS_KM = Math.max(1, Number(process.env.DISPATCH_RADIUS_KM) || 10);
+export const DISPATCH_BATCH_SIZE = SOS_OFFER_BATCH_SIZE;
+export const OFFER_DURATION_MS = SOS_OFFER_DURATION_MS;
+export const DISPATCH_MAX_ROUNDS = SOS_MAX_ROUNDS;
 
-export type DispatchOffer = { _id: string; requestId: string; driverId: string; round: number; createdAt: Date; expiresAt: Date; status: "offered" | "accepted" | "rejected" | "expired" | "taken" };
+export type DispatchOffer = { _id: string; requestId: string; driverId: string; round: number; createdAt: Date; expiresAt: Date; status: "pending" | "offered" | "accepted" | "declined" | "rejected" | "expired" | "superseded" | "taken"; respondedAt?: Date; transitionLog?: Array<{ from: string | null; to: string; at: Date; actor: { type: string; id: string }; reason: string }> };
 
 export type HospitalAdmissionRequest = {
   _id: string;
@@ -222,6 +238,8 @@ export async function sosCollections() {
   sosIndexesPromise ??= Promise.all([
     requests.createIndex({ patientId: 1, status: 1, createdAt: -1 }, { name: 'sos_patient_status_created' }),
     requests.createIndex({ status: 1, createdAt: -1 }, { name: 'sos_status_created' }),
+    requests.createIndex({ patientId: 1, idempotencyKey: 1 }, { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } }, name: "sos_patient_idempotency" }),
+    requests.createIndex({ activePatientId: 1 }, { unique: true, sparse: true, name: "sos_one_active_request_per_patient" }),
   ]).then(() => undefined).catch(error => { sosIndexesPromise = undefined; throw error; });
   await sosIndexesPromise;
   await offers.createIndex({ requestId:  1, driverId: 1 }, { unique: true, name: "dispatch_offer_request_driver" });
@@ -242,11 +260,7 @@ export async function getHospitalRequestsCollection() {
 export async function workflowCollections() {
   const db = (await clientPromise).db();
   const notifications = db.collection<CareNotification>("notifications");
-  const ttlHours = Math.max(1, Number(process.env.NOTIFICATION_TTL_HOURS) || 24);
-  workflowIndexesPromise ??= Promise.all([
-    notifications.createIndex({ createdAt: 1 }, { name: 'notifications_ttl', expireAfterSeconds: ttlHours * 3600 }).catch(() => db.command({ collMod: 'notifications', index: { name: 'notifications_ttl', expireAfterSeconds: ttlHours * 3600 } })),
-    ensureNotificationRecipientIndex(notifications),
-  ]).then(() => undefined).catch(error => { workflowIndexesPromise = undefined; throw error; });
+  workflowIndexesPromise ??= ensureNotificationIndexes(notifications).catch(error => { workflowIndexesPromise = undefined; throw error; });
   await workflowIndexesPromise;
   const hospitalRequests = await getHospitalRequestsCollection();
   return {
@@ -283,40 +297,92 @@ export async function advanceDispatch(requestId: string) {
   const now = new Date();
   const request = await requests.findOne({ _id: requestId, status: "searching" });
   if (!request) return;
-  await offers.updateMany({ requestId, status: "offered", expiresAt: { $lte: now } }, { $set: { status: "expired" } });
+  await Promise.all((["offered", "pending"] as const).map((from) => offers.updateMany(
+    { requestId, status: from, expiresAt: { $lte: now } },
+    { $set: { status: "expired", respondedAt: now }, $push: { transitionLog: { from, to: "expired", at: now, actor: { type: "system", id: "dispatch" }, reason: "Offer expired" } } },
+  )));
   const round = request.dispatchRound ?? 0;
   const currentRoundFilter = round === 0 ? { $or: [{ dispatchRound: 0 }, { dispatchRound: { $exists: false } }] } : { dispatchRound: round };
-  const stillOpen = await offers.countDocuments({ requestId, round, status: "offered", expiresAt: { $gt: now } });
+  const stillOpen = await offers.countDocuments({ requestId, round, status: { $in: ["offered", "pending"] }, expiresAt: { $gt: now } });
   if (stillOpen) return;
-  const complete = await offers.countDocuments({ requestId, round, status: { $in: ["rejected", "expired", "taken"] } });
+  const complete = await offers.countDocuments({ requestId, round, status: { $in: ["rejected", "declined", "expired", "taken", "superseded"] } });
   const roundOfferCount = await offers.countDocuments({ requestId, round });
   if (round > 0 && complete === 0 && roundOfferCount > 0) return;
   const nextRound = round + 1;
   if (nextRound > DISPATCH_MAX_ROUNDS) {
-    await requests.updateOne({ _id: requestId, status: "searching", dispatchRound: round }, { $set: { status: "no_driver_found", noDriverFoundAt: now, dispatchRound: nextRound } });
+    await requests.updateOne({ _id: requestId, status: "searching", dispatchRound: round }, {
+      $set: { status: "no_driver_found", dispatchStatus: "no_driver_found", noDriverFoundAt: now, dispatchRound: nextRound },
+      $unset: { activePatientId: "" },
+      ...(request.dispatchStatus === "offered" ? { $push: { transitionLog: { from: "offered", to: "no_driver_found", at: now, actor: { type: "system", id: "dispatch" }, reason: "All dispatch rounds exhausted" } } } : {}),
+    });
     return;
   }
   const alreadyOffered = await offers.find({ requestId }).project({ driverId: 1 }).toArray();
   const excluded = alreadyOffered.map((offer) => offer.driverId);
-  const candidates = await drivers.find({ available: true, activeRequestId: { $exists: false }, location: { $exists: true }, userId: { $nin: excluded } }).toArray();
-  const radius = DISPATCH_BASE_RADIUS_KM * nextRound;
-  const nearest = candidates.filter((driver) => validCoordinates(driver.location) && distanceKm(request.location, driver.location) <= radius)
-    .sort((a, b) => distanceKm(request.location, a.location!) - distanceKm(request.location, b.location!)).slice(0, DISPATCH_BATCH_SIZE);
+  const staleBefore = new Date(now.getTime() - STALE_LOCATION_SECONDS * 1000);
+  const candidates = await drivers.find({ available: true, activeRequestId: { $exists: false }, currentTripId: { $in: [null] }, location: { $exists: true }, locationUpdatedAt: { $gte: staleBefore }, userId: { $nin: excluded } }).toArray();
+  const nearest = selectSosOfferBatch(
+    request.location,
+    candidates.filter((driver) => validCoordinates(driver.location)).map((driver) => ({
+      driverId: driver.userId,
+      location: driver.location!,
+      locationUpdatedAt: driver.locationUpdatedAt,
+      online: driver.available,
+      busy: Boolean(driver.activeRequestId || driver.currentTripId),
+    })),
+    new Set(excluded),
+    now,
+  );
+  // Do not burn through every dispatch round synchronously when nobody is
+  // online (or location-eligible) at the instant the SOS is created. Keep the
+  // request searchable so a driver who comes online during this window can be
+  // offered it on the next patient/driver poll.
+  if (!nearest.length) {
+    const roundStartedAt = request.dispatchRoundAt ?? request.createdAt;
+    if (now.getTime() - new Date(roundStartedAt).getTime() < OFFER_DURATION_MS) return;
+  }
   // Guard the round transition; concurrent pollers can only win this CAS once.
   const advanced = await requests.updateOne({ _id: requestId, status: "searching", ...currentRoundFilter }, { $set: { dispatchRound: nextRound, dispatchRoundAt: now } });
   if (!advanced.modifiedCount) return;
+  if (request.dispatchStatus === "created") {
+    await requests.updateOne({ _id: requestId, dispatchStatus: "created" }, {
+      $set: { dispatchStatus: "offered" },
+      $push: { transitionLog: { from: "created", to: "offered", at: now, actor: { type: "system", id: "dispatch" }, reason: "Driver offers sent" } },
+    });
+  }
   if (!nearest.length) {
-    if (nextRound >= DISPATCH_MAX_ROUNDS) await requests.updateOne({ _id: requestId, status: "searching", dispatchRound: nextRound }, { $set: { status: "no_driver_found", noDriverFoundAt: now } });
-    else await advanceDispatch(requestId);
+    if (nextRound >= DISPATCH_MAX_ROUNDS) await requests.updateOne({ _id: requestId, status: "searching", dispatchRound: nextRound }, {
+      $set: { status: "no_driver_found", dispatchStatus: "no_driver_found", noDriverFoundAt: now },
+      $unset: { activePatientId: "" },
+      $push: { transitionLog: { from: "offered", to: "no_driver_found", at: now, actor: { type: "system", id: "dispatch" }, reason: "No eligible drivers found" } },
+    });
     return;
   }
   const expiresAt = new Date(now.getTime() + OFFER_DURATION_MS);
-  await offers.insertMany(nearest.map((driver) => ({ _id: `${requestId}:${nextRound}:${driver.userId}`, requestId, driverId: driver.userId, round: nextRound, createdAt: now, expiresAt, status: "offered" as const })), { ordered: false }).catch(() => undefined);
+  await offers.insertMany(nearest.map((driver) => ({
+    _id: `${requestId}:${nextRound}:${driver.driverId}`, requestId, driverId: driver.driverId, round: nextRound,
+    createdAt: now, expiresAt, status: "pending" as const,
+    transitionLog: [{ from: null, to: "pending", at: now, actor: { type: "system", id: "dispatch" }, reason: "Offer created" }],
+  })), { ordered: false }).catch(() => undefined);
 }
 
 export async function expireAndReofferDriverOffers() {
-  const { requests } = await sosCollections();
-  const open = await requests.find({ status: "searching" }).project({ _id: 1 }).limit(100).toArray();
+  const { requests, offers } = await sosCollections();
+  const now = new Date();
+  const expired = await requests.find({ type: "normal", status: "searching", expiresAt: { $lte: now } }).project({ _id: 1, dispatchStatus: 1, transitionLog: 1 }).limit(100).toArray();
+  for (const request of expired) {
+    const from = request.dispatchStatus ?? "offered";
+    const changed = await requests.updateOne({ _id: request._id, type: "normal", status: "searching", expiresAt: { $lte: now } }, {
+      $set: { status: "expired", dispatchStatus: "expired", expiredAt: now },
+      $unset: { activePatientId: "" },
+      $push: { transitionLog: { from, to: "expired", at: now, actor: { type: "system", id: "dispatch" }, reason: `Normal request expired after ${NORMAL_REQUEST_EXPIRY_MIN} minutes` } },
+    });
+    if (changed.modifiedCount) await Promise.all((["pending", "offered"] as const).map((from) => offers.updateMany(
+      { requestId: request._id, status: from },
+      { $set: { status: "expired", respondedAt: now }, $push: { transitionLog: { from, to: "expired", at: now, actor: { type: "system", id: "dispatch" }, reason: "Normal request expired" } } },
+    )));
+  }
+  const open = await requests.find({ status: "searching", type: { $ne: "normal" } }).project({ _id: 1 }).limit(100).toArray();
   await Promise.all(open.map((request) => advanceDispatch(request._id)));
 }
 
