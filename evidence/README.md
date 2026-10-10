@@ -4,6 +4,7 @@
 
 - **Starting commit:** `095c8ec2da0b2576ced1c0cd9659a0ed12269a83`
 - **Final implementation commit before this README-only commit:** `cb3de711db42e86107bbe769fc65f5409b6adf1d`
+- **Final repository commit entering Phase 6 part 2 documentation:** `bfca948773ca99a6619b8ae69f087b3ba43268b8` (Phase 6 part 2 adds the checklist and limitations disclosure; its commit follows this recorded parent.)
 - **Evaluation freeze:** `hlth02-eval-freeze` at `b79ee9234ed73dccb846a375ffd4b6a314d5ab87`
 - **Summary:** added a seeded synthetic hospital world and chronological dataset split; a TypeScript L2 logistic availability forecaster; a simulation-only allocation engine with an in-memory reservation ledger, re-planning, and a production adapter boundary; paired replay evaluation; six validation-derived scenario demonstrations; and the public `/surge-demo` page. The live Mongo-backed `POST /api/allocate-batch` endpoint was skipped. It was listed as a should-have, not a must-have.
 
