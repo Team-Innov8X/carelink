@@ -12,6 +12,13 @@ Start tag: `hlth02-start`
 - `lib/models/hold.ts`: existing hold statuses and patient details. `pending` is the closest existing equivalent to the spec's `requested`; the existing model does not include every simulation-only transition.
 - `lib/models/hospital.ts` and `lib/models/resource.ts`: existing hospital and resource persistence models. The simulation's four-hospital world should use separate typed fixtures rather than changing production persistence semantics.
 
+## Phase 3 allocation foundation
+
+- The allocation engine and ledger use `lib/allocation/types.ts` simulation types only. `production-adapter.ts` is the boundary to the live service: `icu_bed` maps to production `type: "bed", category: "icu"`, `emergency_bed` maps to `type: "bed", category: "emergency"`, simulation urgency maps to `critical` / `urgent` / `standard`, and simulation `requested` maps to the existing service's `pending` hold.
+- `lib/services/hold-service.ts` now accepts an optional `patientId` so the adapter can retain the engine's patient identity in the production hold record. The adapter delegates atomic claims to `createHold()`; no live holds are created by the simulation engine.
+- Allocation policy values are in `lib/allocation/constants.ts` and are fixed before any allocation test-day replay. Development and fuzz testing use in-memory fixtures with seed `20261013`; no test-day split data is used.
+- `tests/allocation-ledger-fuzz.test.ts` checks I1–I6 after each of 20,000 events across 1,000 fixed-seed sequences. `tests/allocation-engine.test.ts` covers capacity contention, urgency order, capability feasibility, forecast fallback, and idempotency.
+
 ## Phase 0 tooling
 
 Added `tsx` and `vitest` as development dependencies and scripts for `gen-data`, `train`, `eval`, and `test`. Existing `dev` script remains `next dev`.
