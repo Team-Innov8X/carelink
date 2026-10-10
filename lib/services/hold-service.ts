@@ -20,6 +20,7 @@ import type {
 
 export interface ICreateHoldParams {
   hospitalId: string;
+  patientId?: string;
   resourceId?: string;
   ambulanceId?: string;
   parentHoldId?: string;
@@ -124,6 +125,7 @@ export async function createHold(params: ICreateHoldParams) {
       holdDoc = {
         hospitalId: params.hospitalId,
         resourceId: updatedResource._id!.toString(),
+        patientId: params.patientId,
         ambulanceId: params.ambulanceId,
         parentHoldId: params.parentHoldId,
         requestedByUserId: params.requestedByUserId,
