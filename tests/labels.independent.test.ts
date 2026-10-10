@@ -9,12 +9,10 @@ function labelFromRawTimeline(raw: HospitalDay, decisionMinute: number, etaMinut
 }
 
 describe("independent ground-truth labels", () => {
-  it("re-derives validation-day labels from the raw free-unit timeline", () => {
-    const period = simulateWorld(20261010, 40);
-    const validationDays = period.days.filter((day) => day.day >= 31 && day.day <= 40);
-    const validationSamples = period.samples.filter((sample) => sample.day >= 31 && sample.day <= 40);
-    const days = new Map(validationDays.map((day) => [day.day, day]));
-    for (const sample of validationSamples) {
+  it("re-derives every sample label from the raw free-unit timeline", () => {
+    const period = simulateWorld(20261010);
+    const days = new Map(period.days.map((day) => [day.day, day]));
+    for (const sample of period.samples) {
       const day = days.get(sample.day);
       expect(day).toBeDefined();
       const raw = day!.hospitals.find((hospital) => hospital.hospitalId === sample.hospitalId && hospital.resourceType === sample.resourceType);
