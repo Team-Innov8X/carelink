@@ -68,6 +68,7 @@ function normalizeCriteria(value: unknown, current: Current) {
 type AuthResult = { authorized: boolean; user?: { id: string } | null; reason?: string | null };
 type AssistDependencies = {
   authorize: () => Promise<AuthResult>;
+  provider?: "grok" | "groq";
   apiKey?: string;
   model?: string;
   endpoint?: string;
@@ -88,7 +89,7 @@ export function createSmartMatchAssistHandler(deps: AssistDependencies) {
     if (prior && now - prior.since < 60_000 && prior.count >= 12) return Response.json({ error: "Please wait a minute before refining your search again." }, { status: 429 });
     rateLimits.set(auth.user.id, !prior || now - prior.since >= 60_000 ? { since: now, count: 1 } : { ...prior, count: prior.count + 1 });
     let criteria: ReturnType<typeof normalizeCriteria> = null;
-    let source: "grok" | "fallback" = "fallback";
+    let source: "grok" | "groq" | "fallback" = "fallback";
     if (deps.apiKey && deps.model) {
       try {
         const response = await (deps.fetcher ?? fetch)(deps.endpoint || "https://api.x.ai/v1/chat/completions", {
@@ -101,7 +102,7 @@ export function createSmartMatchAssistHandler(deps: AssistDependencies) {
         if (response.ok) {
           const data = await response.json();
           criteria = normalizeCriteria(JSON.parse(String(data?.choices?.[0]?.message?.content)), input.data.current);
-          if (criteria) source = "grok";
+          if (criteria) source = deps.provider ?? "grok";
         }
       } catch { /* Use deterministic fallback if the provider is down or returns invalid output. */ }
     }
