@@ -16,7 +16,6 @@ import { NewEmergencyModal } from './components/dispatcher/NewEmergencyModal';
 import { EmergencyRequestsView } from './components/dispatcher/EmergencyRequestsView';
 import { NotificationCenter } from './components/notifications/NotificationCenter';
 import { MobileNav } from './components/mobile/MobileNav';
-import { PatientSOSStatus } from './components/sos/PatientSOSStatus';
 import { LoaderCircle, Siren, CheckCircle2, X } from './components/icons';
 import { PatientEmergencyRequestsView } from './components/patient/PatientEmergencyRequestsView';
 import { PatientSmartMatch } from './components/patient/PatientSmartMatch';
@@ -30,6 +29,7 @@ const MainAppContent: React.FC = () => {
   const [isNewEmergencyOpen, setIsNewEmergencyOpen] = useState(false);
   const [sosSubmitting, setSosSubmitting] = useState(false);
   const sosSubmittingRef = useRef(false);
+  const sosIdempotencyKey = useRef<string | null>(null);
   const [sosMessage, setSosMessage] = useState('');
   const [sosRequestId, setSosRequestId] = useState<string | null>(null);
   const sosToastTimer = useRef<number | null>(null);
@@ -52,24 +52,28 @@ const MainAppContent: React.FC = () => {
       setIsNewEmergencyOpen(true);
       return;
     }
-    if (!window.confirm('Emergency SOS\n\nAre you sure you want to request emergency assistance?')) return;
     if (sosSubmittingRef.current) return;
     sosSubmittingRef.current = true;
-    const sendRequest = async (location: { latitude: number; longitude: number }) => {
+    const sendRequest = async (location: { latitude: number; longitude: number }, pickupAddress?: string) => {
       try {
+        const idempotencyKey = sosIdempotencyKey.current ??= window.crypto.randomUUID();
         const response = await fetch('/api/sos', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ location, incidentType }),
+          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+          body: JSON.stringify({ location: pickupAddress ? { ...location, address: pickupAddress } : location, incidentType, pickupAddress }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'Could not send your emergency request.');
+        sosIdempotencyKey.current = null;
         const statusMessage = result.message || (!result.existing
           ? 'Emergency request sent to the hospital and ambulance network'
           : result.request.status === 'completed'
             ? 'This recent SOS was already handled'
             : 'Your SOS request has already been created');
-        showSosToast(`${statusMessage.replace(/[.\s]+$/, '')}. Reference: ${result.request.id}`, result.request.id);
+        const canUndo = !result.existing && result.request.status === 'searching';
+        showSosToast(`${statusMessage.replace(/[.\s]+$/, '')}. Reference: ${result.request.id}`, canUndo ? result.request.id : null, canUndo ? result.undoWindowSeconds * 1000 : SOS_NOTICE_TIMEOUT_MS, canUndo);
+        setSosNeedsPickupAddress(false);
+        setActiveTab('dashboard');
         window.dispatchEvent(new Event('carelink-sos-updated'));
       } catch (error) {
         showSosToast(error instanceof Error ? error.message : 'Could not send your emergency request.');
@@ -80,7 +84,8 @@ const MainAppContent: React.FC = () => {
     };
 
     if (!navigator.geolocation) {
-      showSosToast('This browser cannot access GPS. Enable location services or use a GPS-enabled device.');
+      setSosNeedsPickupAddress(true);
+      showSosToast('GPS is unavailable. Enter a pickup address to send this SOS.');
       sosSubmittingRef.current = false;
       return;
     }
@@ -91,14 +96,53 @@ const MainAppContent: React.FC = () => {
       void sendRequest({ latitude: coords.latitude, longitude: coords.longitude });
     }, (error) => {
       const message = error.code === error.PERMISSION_DENIED
-        ? 'Location permission is needed to send an SOS. Allow location access and try again.'
+        ? 'Location permission was denied. Allow GPS or enter a pickup address to send this SOS.'
         : error.code === error.TIMEOUT
-          ? 'Could not get your location in time. Please try again.'
-          : 'Your location is unavailable. Turn on GPS and try again.';
+          ? 'Could not get your location in time. Try GPS again or enter a pickup address.'
+          : 'Your location is unavailable. Turn on GPS or enter a pickup address.';
+      setSosNeedsPickupAddress(true);
       showSosToast(message);
       sosSubmittingRef.current = false;
       setSosSubmitting(false);
     }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+  };
+
+  const sendSosFromAddress = async () => {
+    if (sosSubmittingRef.current || sosAddressSubmitting) return;
+    if (sosPickupAddress.trim().length < 5) { showSosToast('Enter a pickup address with a street, city, or nearby landmark.'); return; }
+    sosSubmittingRef.current = true;
+    setSosAddressSubmitting(true);
+    setSosSubmitting(true);
+    showSosToast('Finding the pickup address…');
+    try {
+      const lookup = await fetch('/api/places/geocode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address: sosPickupAddress.trim() }) });
+      const geocoded = await lookup.json();
+      if (!lookup.ok) throw new Error(geocoded.error || 'Could not find that pickup address.');
+      await sendRequestFromResolvedAddress(geocoded.location, sosPickupAddress.trim());
+    } catch (cause) {
+      showSosToast(cause instanceof Error ? cause.message : 'Could not send your emergency request.');
+    } finally {
+      sosSubmittingRef.current = false;
+      setSosSubmitting(false);
+      setSosAddressSubmitting(false);
+    }
+  };
+
+  const sendRequestFromResolvedAddress = async (location: { latitude: number; longitude: number }, pickupAddress: string) => {
+    try {
+      const idempotencyKey = sosIdempotencyKey.current ??= window.crypto.randomUUID();
+      const response = await fetch('/api/sos', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ location: { ...location, address: pickupAddress }, incidentType: 'Emergency assistance requested', pickupAddress }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not send your emergency request.');
+      sosIdempotencyKey.current = null;
+      const canUndo = !result.existing && result.request.status === 'searching';
+      showSosToast(`${(result.message || 'Emergency request sent').replace(/[.\s]+$/, '')}. Reference: ${result.request.id}`, canUndo ? result.request.id : null, canUndo ? result.undoWindowSeconds * 1000 : SOS_NOTICE_TIMEOUT_MS, canUndo);
+      setSosNeedsPickupAddress(false);
+      setActiveTab('dashboard');
+      window.dispatchEvent(new Event('carelink-sos-updated'));
+    } catch (cause) {
+      showSosToast(cause instanceof Error ? cause.message : 'Could not send your emergency request.');
+    }
   };
 
   return (

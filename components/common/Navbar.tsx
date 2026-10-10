@@ -63,18 +63,18 @@ export const Navbar: React.FC = () => {
         </div>
 
         {/* Global Search */}
-        <div className="flex-1 max-w-md hidden md:block">
+        {role !== 'driver' && <div className="flex-1 max-w-md hidden md:block">
           <div className="relative">
             <SearchField value={searchQuery} onChange={setSearchQuery} placeholder="Search hospitals, requests, or patients..." label="Search accessible hospitals, medicines, and cases" className="[&>input]:rounded-xl [&>input]:border-transparent [&>input]:bg-slate-100/80 [&>input]:hover:bg-slate-100 [&>input]:focus:bg-white [&>input]:py-2 [&>input]:pr-4" />
             {query && <div id="global-search-results" role="listbox" className="absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
               {searchResults.length ? searchResults.map((result) => <button type="button" role="option" aria-selected="false" key={result.id} onClick={() => { setActiveTab(result.tab); setSearchQuery(''); }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-50"><span className="block truncate text-sm font-semibold text-slate-800">{result.title}</span><span className="block truncate text-xs text-slate-500">{result.detail}</span></button>) : <p className="px-3 py-3 text-sm text-slate-500">No results found</p>}
             </div>}
           </div>
-        </div>
+        </div>}
 
         {/* Right Section: Notification and account */}
         <div className="flex items-center gap-2 sm:gap-3">
-          <button type="button" aria-label="Open search" aria-expanded={mobileSearchOpen} onClick={() => setMobileSearchOpen((open) => !open)} className="rounded-xl p-2 text-slate-600 hover:bg-slate-100 md:hidden"><Search className="h-5 w-5" /></button>
+          {role !== 'driver' && <button type="button" aria-label="Open search" aria-expanded={mobileSearchOpen} onClick={() => setMobileSearchOpen((open) => !open)} className="rounded-xl p-2 text-slate-600 hover:bg-slate-100 md:hidden"><Search className="h-5 w-5" /></button>}
           {/* Active Emergency Alert Badge */}
           <button
             onClick={() => setActiveTab('notifications')}
@@ -95,7 +95,7 @@ export const Navbar: React.FC = () => {
 
         </div>
       </div>
-      {mobileSearchOpen && <div className="absolute left-0 right-0 top-full z-50 border-b border-slate-200 bg-white p-3 shadow-md md:hidden">
+      {role !== 'driver' && mobileSearchOpen && <div className="absolute left-0 right-0 top-full z-50 border-b border-slate-200 bg-white p-3 shadow-md md:hidden">
         <SearchField value={searchQuery} onChange={setSearchQuery} placeholder="Search hospitals, medicines, requests" label="Search accessible hospitals, medicines, and cases" />
         {query && <div role="listbox" className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-slate-200 p-1">
           {searchResults.length ? searchResults.map((result) => <button type="button" role="option" aria-selected="false" key={result.id} onClick={() => { setActiveTab(result.tab); setSearchQuery(''); setMobileSearchOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-sky-50"><span className="block text-sm font-semibold text-slate-800">{result.title}</span><span className="block text-xs text-slate-500">{result.detail}</span></button>) : <p className="px-3 py-3 text-sm text-slate-500">No results found</p>}

@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test:triage": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test test/triage-policy.test.mjs",
     "gen-data": "tsx sim/generate.ts",
+    "sim-driver": "tsx sim/driver.ts",
     "train": "tsx sim/train.ts",
     "eval": "tsx sim/evaluate.ts",
     "test": "vitest run",

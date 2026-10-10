@@ -50,7 +50,9 @@ interface CacheEntry {
 
 // In-memory rounded-cell cache to keep public Overpass traffic modest.
 const placesCache = new Map<string, CacheEntry>();
+const failedLookupCache = new Map<string, number>();
 const CACHE_TTL_MS = 10 * 60 * 1000;
+const FAILURE_BACKOFF_MS = 60 * 1000;
 
 /**
  * Computes a coarse spatial cell key by rounding coordinates to 2 decimal places (~1.1 km).
@@ -66,6 +68,7 @@ export function getCellKey(lat: number, lng: number, type: string): string {
  */
 export function clearPlacesCache(): void {
   placesCache.clear();
+  failedLookupCache.clear();
 }
 
 /**
@@ -85,6 +88,7 @@ export async function fetchPlacesNearby(
   if (cached && now - cached.timestamp < CACHE_TTL_MS) {
     return cached.results;
   }
+  if ((failedLookupCache.get(cellKey) ?? 0) > now) return [];
 
   try {
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -111,7 +115,8 @@ export async function fetchPlacesNearby(
     const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'User-Agent': 'CareLinkEmergencyAllocator/1.0 (nearby facility lookup)' }, body: new URLSearchParams({ data: query }), signal: AbortSignal.timeout(10_000) });
     if (process.env.CARELINK_PERF_LOGS === '1') console.info(JSON.stringify({ event: 'carelink.perf', name: 'overpass_facilities', type, durationMs: Math.round((performance.now() - externalStartedAt) * 100) / 100, status: res.status }));
     if (!res.ok) {
-      console.warn(`OpenStreetMap Overpass returned HTTP ${res.status}`);
+      failedLookupCache.set(cellKey, now + FAILURE_BACKOFF_MS);
+      if (res.status !== 429 && res.status !== 504) console.warn(`OpenStreetMap Overpass returned HTTP ${res.status}`);
       return [];
     }
     const data = await res.json() as { elements?: Array<{ id: number; type: string; lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> }> };
@@ -124,7 +129,10 @@ export async function fetchPlacesNearby(
     placesCache.set(cellKey, { timestamp: now, results });
     return results;
   } catch (error) {
+    failedLookupCache.set(cellKey, now + FAILURE_BACKOFF_MS);
+    if (!(error instanceof Error && error.name === 'AbortError')) {
       console.warn('OpenStreetMap search request failed:', error instanceof Error ? error.message : error);
+    }
     return [];
   }
 }

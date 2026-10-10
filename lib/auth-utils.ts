@@ -8,6 +8,7 @@ import { normalizeRole } from "./roles";
  */
 export async function getServerSession() {
   const startedAt = performance.now();
+  await connectMongoClient();
   const reqHeaders = await headers();
   const session = await auth.api.getSession({
     headers: reqHeaders,
