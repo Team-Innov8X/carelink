@@ -14,7 +14,9 @@
     "eval": "tsx sim/evaluate.ts",
     "test": "vitest run",
     "test:forecast": "tsx sim/test-model.ts",
-    "rec-gen-data": "tsx sim/generate-acceptance.ts"
+    "rec-gen-data": "tsx sim/generate-acceptance.ts",
+    "rec-train": "tsx sim/train-acceptance.ts",
+    "rec-eval": "tsx sim/evaluate-acceptance.ts"
   },
   "dependencies": {
     "@types/canvas-confetti": "^1.9.0",
