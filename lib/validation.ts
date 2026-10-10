@@ -21,7 +21,12 @@ export const resourceUpdateSchema = z.object({
 export const rankRequestSchema = z.object({
   emergencyType: z.string().trim().min(1).max(100),
   ambulanceLocation: z.object({ latitude: z.number().finite().min(-90).max(90), longitude: z.number().finite().min(-180).max(180) }),
-  requiredResources: z.array(z.string().trim().min(1)).optional(),
+  requiredResources: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
+  preferredResources: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  maxTravelMinutes: z.number().finite().min(1).max(240).optional(),
+  bedCategory: z.string().trim().min(1).max(100).optional(),
+  priority: z.enum(["balanced", "resources", "travel", "freshness"]).optional(),
 });
 
 export const createHoldSchema = z.object({

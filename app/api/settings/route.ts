@@ -13,7 +13,7 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const auth = await requireRole();
+  const auth = await requireRole(["admin", "dispatcher"]);
   if (!auth.authorized) return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
   let body: typeof defaults;
   try { body = await request.json(); } catch { return Response.json({ error: 'Invalid JSON body.' }, { status: 400 }); }

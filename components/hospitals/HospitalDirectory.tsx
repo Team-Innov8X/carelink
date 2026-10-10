@@ -32,8 +32,8 @@ export const HospitalDirectory: React.FC = () => {
   const [sortBest, setSortBest] = useState(true);
   const [confirmations, setConfirmations] = useState<Record<string, string>>({});
   const [staleThresholdMinutes, setStaleThresholdMinutes] = useState(10);
-  if (role === 'patient') return <NearbyFacilitiesPanel />;
   React.useEffect(() => { fetch('/api/settings', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null).then((result) => { if (result?.settings?.staleThresholdMinutes) setStaleThresholdMinutes(result.settings.staleThresholdMinutes); }).catch(() => {}); }, []);
+  if (role === 'patient') return <NearbyFacilitiesPanel />;
 
   // Filter logic
   const filteredHospitals = hospitals.filter((hosp) => {
@@ -119,13 +119,13 @@ export const HospitalDirectory: React.FC = () => {
           </p>
         </div>
 
-        <button
+      {role === 'dispatcher' && <button
           onClick={() => setActiveTab('recommendations')}
           className="px-4 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold text-xs rounded-xl shadow-md flex items-center gap-2 self-start sm:self-auto transition-all"
         >
           <Sparkles className="w-4 h-4" />
           <span>Patient Smart Match</span>
-        </button>
+      </button>}
       </div>
 
       <NearbyFacilitiesPanel />
