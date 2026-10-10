@@ -202,5 +202,164 @@
   "parity": {
     "savedVectors": 20,
     "maxRuntimeParityError": 0
+  },
+  "test": {
+    "sampleCount": 2400,
+    "seed": 20261011,
+    "days": [
+      41,
+      50
+    ],
+    "model": {
+      "count": 2400,
+      "positiveCount": 732,
+      "negativeCount": 1668,
+      "positiveRate": 0.305,
+      "brierScore": 0.07382771845771406,
+      "logLoss": 0.24426110762699968,
+      "accuracyAtHalf": 0.8991666666666667,
+      "calibration10Bins": [
+        {
+          "bin": 0,
+          "count": 1110,
+          "meanPrediction": 0.02196274163524592,
+          "observedRate": 0.009009009009009009
+        },
+        {
+          "bin": 1,
+          "count": 298,
+          "meanPrediction": 0.14073835307210525,
+          "observedRate": 0.10067114093959731
+        },
+        {
+          "bin": 2,
+          "count": 93,
+          "meanPrediction": 0.24823765204790396,
+          "observedRate": 0.07526881720430108
+        },
+        {
+          "bin": 3,
+          "count": 128,
+          "meanPrediction": 0.3432155235690181,
+          "observedRate": 0.3203125
+        },
+        {
+          "bin": 4,
+          "count": 71,
+          "meanPrediction": 0.4486975082213492,
+          "observedRate": 0.6901408450704225
+        },
+        {
+          "bin": 5,
+          "count": 81,
+          "meanPrediction": 0.555092928452655,
+          "observedRate": 0.7530864197530864
+        },
+        {
+          "bin": 6,
+          "count": 100,
+          "meanPrediction": 0.6470115562896166,
+          "observedRate": 0.63
+        },
+        {
+          "bin": 7,
+          "count": 56,
+          "meanPrediction": 0.7357945404271298,
+          "observedRate": 0.7857142857142857
+        },
+        {
+          "bin": 8,
+          "count": 143,
+          "meanPrediction": 0.8589011951408759,
+          "observedRate": 0.8531468531468531
+        },
+        {
+          "bin": 9,
+          "count": 320,
+          "meanPrediction": 0.9697782042743338,
+          "observedRate": 0.953125
+        }
+      ]
+    },
+    "baseline": {
+      "count": 2400,
+      "positiveCount": 732,
+      "negativeCount": 1668,
+      "positiveRate": 0.305,
+      "brierScore": 0.09333333333333334,
+      "logLoss": 3.2236191301916812,
+      "accuracyAtHalf": 0.9066666666666666,
+      "calibration10Bins": [
+        {
+          "bin": 0,
+          "count": 1674,
+          "meanPrediction": 0,
+          "observedRate": 0.06869772998805257
+        },
+        {
+          "bin": 1,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 2,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 3,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 4,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 5,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 6,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 7,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 8,
+          "count": 0,
+          "meanPrediction": null,
+          "observedRate": null
+        },
+        {
+          "bin": 9,
+          "count": 726,
+          "meanPrediction": 1,
+          "observedRate": 0.849862258953168
+        }
+      ]
+    },
+    "brierDifferenceModelMinusBaseline": -0.019505614875619276,
+    "pairedBrierDifferenceBootstrap95": {
+      "estimate": -0.01950561487561923,
+      "lower95": -0.025928157473966904,
+      "upper95": -0.013063347853561402,
+      "resamples": 1000,
+      "seed": 20261012
+    },
+    "note": "Single evaluation after hlth02-pre-test freeze; test set is not used for tuning."
   }
 }

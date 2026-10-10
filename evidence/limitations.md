@@ -7,6 +7,12 @@
 - The stay-duration distribution is estimated from stays admitted and discharged within training days 1–30. This excludes censored/longer stays and can bias expected-release estimates downward or toward shorter stays.
 - The model improves validation Brier score, while the hard baseline currently has slightly higher accuracy at a 0.5 threshold. Probabilities and thresholded classification answer different questions; this trade-off should remain visible in results.
 
+## Frozen test evaluation (days 41–50)
+
+After tagging `hlth02-pre-test` at commit `698b652`, the test split was scored once on 2,400 samples. Model Brier was 0.0738 versus 0.0933 for baseline; the paired 1,000-resample 95% interval for model-minus-baseline Brier was [-0.0259, -0.0131]. Model log loss was 0.2443 versus 3.2236; accuracy was 0.899 versus 0.907. The baseline's slightly higher threshold accuracy remains a trade-off.
+
+This post-test edit records the test output and trade-off only. Model weights, features, generator parameters, selected lambda, and tuning decisions were not changed after the test result.
+
 ## Test-run case review
 
-To be completed after the single frozen test evaluation and replay analysis.
+To be completed after the replay analysis.
