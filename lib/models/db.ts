@@ -51,12 +51,26 @@ export function initializeIndexes(): Promise<void> {
     await hospitals.createIndex({ location: "2dsphere" });
     await hospitals.createIndex({ code: 1 }, { unique: true });
     await hospitals.createIndex({ placeId: 1 }, { sparse: true });
+    await hospitals.createIndex({ ownerUserId: 1 }, { sparse: true });
+    await (await getDb()).collection("pharmacies").createIndex({ location: "2dsphere" });
 
     const resources = await getResourcesCollection();
     await resources.createIndex({ hospitalId: 1, type: 1, category: 1, status: 1 });
 
     const doctors = await getDoctorsCollection();
     await doctors.createIndex({ hospitalId: 1 });
+
+    const notifications = (await getDb()).collection("notifications");
+    const notificationTtlHours = Math.max(1, Number(process.env.NOTIFICATION_TTL_HOURS) || 24);
+    const notificationIndexes = await notifications.listIndexes().toArray();
+    const existingTtlIndex = notificationIndexes.find((index) => (index.key as Record<string, number>)?.createdAt === 1);
+    if (existingTtlIndex?.name) {
+      await (await getDb()).command({ collMod: "notifications", index: { name: existingTtlIndex.name, expireAfterSeconds: notificationTtlHours * 3600 } });
+    } else {
+      await notifications.createIndex({ createdAt: 1 }, { expireAfterSeconds: notificationTtlHours * 3600, name: "notifications_ttl" });
+    }
+    await notifications.createIndex({ recipientId: 1, createdAt: -1 });
+    await notifications.createIndex({ userId: 1, createdAt: -1 });
 
     const holds = await getHoldsCollection();
     await holds.createIndex({ hospitalId: 1, status: 1 });
@@ -65,6 +79,10 @@ export function initializeIndexes(): Promise<void> {
     await holds.createIndex({ expiresAt: 1 });
     await holds.createIndex({ requestedByUserId: 1 });
     await holds.createIndex({ patientId: 1 });
+    await holds.createIndex(
+      { patientId: 1 },
+      { name: "one_confirmed_hold_per_patient", unique: true, partialFilterExpression: { patientId: { $exists: true }, status: "confirmed" } },
+    );
 
     // Partial unique index enforcing one active request per patient per hospital
     try {

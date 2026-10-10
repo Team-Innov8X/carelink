@@ -3,6 +3,7 @@ import { useCareLink } from '../../context/CareLinkContext';
 import { submitBedRequest } from '../../utils/hospitalRequests';
 import { StaleDataWarning } from '../common/AlertBanner';
 import { hospitalSpecialties } from '../../data/hospitalSpecialties';
+import { NearbyFacilitiesPanel } from './NearbyFacilitiesPanel';
 import {
   Search,
   RotateCcw,
@@ -11,6 +12,7 @@ import {
 
 export const HospitalDirectory: React.FC = () => {
   const {
+    role,
     hospitals,
     emergencies,
     selectedEmergencyId,
@@ -31,6 +33,7 @@ export const HospitalDirectory: React.FC = () => {
   const [confirmations, setConfirmations] = useState<Record<string, string>>({});
   const [staleThresholdMinutes, setStaleThresholdMinutes] = useState(10);
   React.useEffect(() => { fetch('/api/settings', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null).then((result) => { if (result?.settings?.staleThresholdMinutes) setStaleThresholdMinutes(result.settings.staleThresholdMinutes); }).catch(() => {}); }, []);
+  if (role === 'patient') return <NearbyFacilitiesPanel />;
 
   // Filter logic
   const filteredHospitals = hospitals.filter((hosp) => {
@@ -116,14 +119,16 @@ export const HospitalDirectory: React.FC = () => {
           </p>
         </div>
 
-        <button
+      {role === 'dispatcher' && <button
           onClick={() => setActiveTab('recommendations')}
           className="px-4 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold text-xs rounded-xl shadow-md flex items-center gap-2 self-start sm:self-auto transition-all"
         >
           <Sparkles className="w-4 h-4" />
           <span>Patient Smart Match</span>
-        </button>
+      </button>}
       </div>
+
+      <NearbyFacilitiesPanel />
 
       {requestMessage && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900">{requestMessage}</p>}
 

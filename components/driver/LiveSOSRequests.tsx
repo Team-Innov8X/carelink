@@ -21,10 +21,6 @@ type DriverInfo = { name?: string; ambulanceId?: string | null };
 type PastTrip = { id: string; patientName: string; incidentType: string; createdAt: string; acceptedAt?: string; completedAt?: string; handoverAt?: string; tripStage?: string };
 
 const getDriverLocation = () => new Promise<Coordinates>((resolve, reject) => {
-  if (process.env.NODE_ENV === 'development') {
-    resolve({ latitude: 28.6352, longitude: 77.2168 });
-    return;
-  }
   if (!navigator.geolocation) {
     reject(new Error('This browser cannot access GPS location.'));
     return;
@@ -67,7 +63,6 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient: [numbe
   const seenOfferIds = useRef(new Set<string>());
   const hasLoadedOnce = useRef(false);
   const mappedActiveRequestId = useRef<string | null>(null);
-  const mapCallback = useRef(onShowOnMap);
   const priorityOf = (request: LiveSOS) => request.priority || (/cardiac|respir|stroke|unconscious|trauma|critical/i.test(`${request.incidentType} ${request.requiredEquipment.join(' ')}`) ? 'Critical' : 'Urgent');
   const visibleRequests = [...requests].sort((a, b) => (priorityOf(a) === 'Critical' ? 0 : 1) - (priorityOf(b) === 'Critical' ? 0 : 1) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
@@ -118,6 +113,18 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient: [numbe
     const timer = window.setInterval(() => void refresh(), 5000);
     return () => { window.clearTimeout(initial); window.clearInterval(timer); };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!available) return;
+    const heartbeat = async () => {
+      try {
+        const location = await getDriverLocation();
+        await fetch('/api/sos/available', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location }) });
+      } catch { /* A missed GPS update naturally makes this driver stale. */ }
+    };
+    const timer = window.setInterval(() => void heartbeat(), 10_000);
+    return () => window.clearInterval(timer);
+  }, [available]);
 
   useEffect(() => {
     const initial = window.setTimeout(() => setClockNow(Date.now()), 0);
@@ -198,7 +205,9 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient: [numbe
       setAlertRequest(null);
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not accept this request.');
+      const reason = error instanceof Error ? error.message : 'Could not accept this request.';
+      setMessage(reason);
+      if (reason.toLowerCase().includes('already been taken') || reason.toLowerCase().includes('expired')) setAlertRequest(null);
     } finally {
       setBusy(false);
     }
@@ -280,13 +289,6 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient: [numbe
   const currentStep = activeRequest ? Math.max(0, tripSteps.findIndex(([stage]) => stage === activeRequest.tripStage)) : 0;
   const nextStep = tripSteps[currentStep + 1];
   const demoSteps = ['Accepted', 'Arrived at patient', 'Patient on board', 'En route to hospital', 'Arrived at hospital', 'Handover complete'];
-
-  useEffect(() => { mapCallback.current = onShowOnMap; }, [onShowOnMap]);
-  const activeRequestId = activeRequest?.id;
-  useEffect(() => {
-    if (process.env.NODE_ENV !== 'development' || activeRequestId) return;
-    mapCallback.current([28.6328, 77.2195], [28.6352, 77.2168], [28.618, 77.212]);
-  }, [activeRequestId]);
 
   const showHistory = async () => {
     setView('history');

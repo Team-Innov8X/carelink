@@ -17,7 +17,7 @@ export type SosRequest = {
   preferredTime?: string;
   notes?: string;
   requiredEquipment: string[];
-  status: "searching" | "accepted" | "completed" | "cancelled";
+  status: "searching" | "accepted" | "completed" | "cancelled" | "no_driver_found";
   driverId: string | null;
   rejectedDriverIds?: string[];
   createdAt: Date;
@@ -32,7 +32,16 @@ export type SosRequest = {
   assignmentExpiresAt?: Date;
   assignmentOfferedAt?: Date;
   completedAt?: Date;
+  dispatchRound?: number;
+  noDriverFoundAt?: Date;
 };
+
+export const DISPATCH_BATCH_SIZE = Math.max(1, Number(process.env.DISPATCH_BATCH_SIZE) || 3);
+export const OFFER_DURATION_MS = Math.max(1000, Number(process.env.OFFER_DURATION_MS) || 10_000);
+export const DISPATCH_MAX_ROUNDS = Math.max(1, Number(process.env.DISPATCH_MAX_ROUNDS) || 3);
+const DISPATCH_BASE_RADIUS_KM = Math.max(1, Number(process.env.DISPATCH_RADIUS_KM) || 10);
+
+export type DispatchOffer = { _id: string; requestId: string; driverId: string; round: number; createdAt: Date; expiresAt: Date; status: "offered" | "accepted" | "rejected" | "expired" | "taken" };
 
 export type HospitalAdmissionRequest = {
   _id: string;
@@ -45,7 +54,7 @@ export type HospitalAdmissionRequest = {
   location: Coordinates;
   incidentType: string;
   requiredEquipment: string[];
-  status: "pending" | "accepting" | "accepted" | "expiring" | "rerouting" | "rejected";
+  status: "pending" | "accepting" | "accepted" | "expiring" | "rerouting" | "rejected" | "cancelled";
   requestType?: "sos" | "bed";
   inventorySource?: "app-state";
   bedCategory?: "general" | "icu" | "trauma" | "ventilators";
@@ -202,20 +211,47 @@ export type CareNotification = {
   createdAt: Date;
 };
 
+let sosIndexesPromise: Promise<void> | undefined;
 export async function sosCollections() {
   const db = (await clientPromise).db();
   const requests = db.collection<SosRequest>("sosRequests");
   const drivers = db.collection<Document & { userId: string; available: boolean; location?: Coordinates }>("drivers");
+  const offers = db.collection<DispatchOffer>("dispatch_offers");
   const hospitals = db.collection<Document & { name: string; location: Coordinates; equipment: string[] }>("hospitals");
-  return { requests, drivers, hospitals };
+  sosIndexesPromise ??= Promise.all([
+    requests.createIndex({ patientId: 1, status: 1, createdAt: -1 }, { name: 'sos_patient_status_created' }),
+    requests.createIndex({ status: 1, createdAt: -1 }, { name: 'sos_status_created' }),
+  ]).then(() => undefined).catch(error => { sosIndexesPromise = undefined; throw error; });
+  await sosIndexesPromise;
+  await offers.createIndex({ requestId:  1, driverId: 1 }, { unique: true, name: "dispatch_offer_request_driver" });
+  await offers.createIndex({ driverId: 1, status: 1, expiresAt: 1 }, { name: "dispatch_offer_driver_status_expiry" });
+  return { requests, drivers, hospitals, offers };
+}
+
+let workflowIndexesPromise: Promise<void> | undefined;
+let hospitalRequestIndexesPromise: Promise<void> | undefined;
+export async function getHospitalRequestsCollection() {
+  const db = (await clientPromise).db();
+  const hospitalRequests = db.collection<HospitalAdmissionRequest>("hospitalAdmissionRequests");
+  hospitalRequestIndexesPromise ??= hospitalRequests.createIndex({ sosRequestId: 1 }, { name: 'hospital_requests_sos_id' }).then(() => undefined).catch(error => { hospitalRequestIndexesPromise = undefined; throw error; });
+  await hospitalRequestIndexesPromise;
+  return hospitalRequests;
 }
 
 export async function workflowCollections() {
   const db = (await clientPromise).db();
+  const notifications = db.collection<CareNotification>("notifications");
+  const ttlHours = Math.max(1, Number(process.env.NOTIFICATION_TTL_HOURS) || 24);
+  workflowIndexesPromise ??= Promise.all([
+    notifications.createIndex({ createdAt: 1 }, { name: 'notifications_ttl', expireAfterSeconds: ttlHours * 3600 }).catch(() => db.command({ collMod: 'notifications', index: { name: 'notifications_ttl', expireAfterSeconds: ttlHours * 3600 } })),
+    notifications.createIndex({ recipientId: 1, createdAt: -1 }, { name: 'notifications_recipient_created' }),
+  ]).then(() => undefined).catch(error => { workflowIndexesPromise = undefined; throw error; });
+  await workflowIndexesPromise;
+  const hospitalRequests = await getHospitalRequestsCollection();
   return {
-    hospitalRequests: db.collection<HospitalAdmissionRequest>("hospitalAdmissionRequests"),
+    hospitalRequests,
     hospitalAdmissions: db.collection<HospitalAdmission>("hospitalAdmissions"),
-    notifications: db.collection<CareNotification>("notifications"),
+    notifications,
   };
 }
 
@@ -240,30 +276,47 @@ export function distanceKm(a: Coordinates, b: Coordinates) {
   return 6371 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
 }
 
-/** Expire unanswered offers and atomically offer each SOS to its next nearest available driver. */
-export async function expireAndReofferDriverOffers() {
-  const { requests, drivers } = await sosCollections();
+/** Lazily expire offers and idempotently fan each round out to its nearest available batch. */
+export async function advanceDispatch(requestId: string) {
+  const { requests, drivers, offers } = await sosCollections();
   const now = new Date();
-  const expired = await requests.find({ status: 'searching', assignedDriverId: { $exists: true }, assignmentExpiresAt: { $lte: now } }).limit(100).toArray();
-  for (const request of expired) {
-    const previousDriverId = request.assignedDriverId;
-    if (!previousDriverId) continue;
-    const releasedRequest = await requests.updateOne({ _id: request._id, status: 'searching', assignedDriverId: previousDriverId, assignmentExpiresAt: { $lte: now } }, { $addToSet: { rejectedDriverIds: previousDriverId }, $unset: { assignedDriverId: '', assignmentExpiresAt: '' } });
-    if (!releasedRequest.modifiedCount) continue;
-    await drivers.updateOne({ userId: previousDriverId, pendingOfferRequestId: request._id }, { $unset: { pendingOfferRequestId: '', pendingOfferExpiresAt: '' }, $set: { updatedAt: now } });
-    const excluded = [...(request.rejectedDriverIds ?? []), previousDriverId];
-    const candidates = await drivers.find({ available: true, activeRequestId: { $exists: false }, pendingOfferRequestId: { $exists: false }, location: { $exists: true }, userId: { $nin: excluded } }).toArray();
-    const nearest = candidates.filter((driver) => validCoordinates(driver.location)).sort((a, b) => distanceKm(request.location, a.location!) - distanceKm(request.location, b.location!));
-    for (const candidate of nearest) {
-      const expiresAt = new Date(now.getTime() + 15_000);
-      const reservation = await drivers.updateOne({ userId: candidate.userId, available: true, activeRequestId: { $exists: false }, pendingOfferRequestId: { $exists: false } }, { $set: { pendingOfferRequestId: request._id, pendingOfferExpiresAt: expiresAt, updatedAt: now } });
-      if (!reservation.modifiedCount) continue;
-      const reoffered = await requests.updateOne({ _id: request._id, status: 'searching', assignedDriverId: { $exists: false }, rejectedDriverIds: { $ne: candidate.userId } }, { $set: { assignedDriverId: candidate.userId, assignmentExpiresAt: expiresAt, assignmentOfferedAt: now } });
-      if (reoffered.modifiedCount) break;
-      await drivers.updateOne({ userId: candidate.userId, pendingOfferRequestId: request._id }, { $unset: { pendingOfferRequestId: '', pendingOfferExpiresAt: '' } });
-      break;
-    }
+  const request = await requests.findOne({ _id: requestId, status: "searching" });
+  if (!request) return;
+  await offers.updateMany({ requestId, status: "offered", expiresAt: { $lte: now } }, { $set: { status: "expired" } });
+  const round = request.dispatchRound ?? 0;
+  const currentRoundFilter = round === 0 ? { $or: [{ dispatchRound: 0 }, { dispatchRound: { $exists: false } }] } : { dispatchRound: round };
+  const stillOpen = await offers.countDocuments({ requestId, round, status: "offered", expiresAt: { $gt: now } });
+  if (stillOpen) return;
+  const complete = await offers.countDocuments({ requestId, round, status: { $in: ["rejected", "expired", "taken"] } });
+  const roundOfferCount = await offers.countDocuments({ requestId, round });
+  if (round > 0 && complete === 0 && roundOfferCount > 0) return;
+  const nextRound = round + 1;
+  if (nextRound > DISPATCH_MAX_ROUNDS) {
+    await requests.updateOne({ _id: requestId, status: "searching", dispatchRound: round }, { $set: { status: "no_driver_found", noDriverFoundAt: now, dispatchRound: nextRound } });
+    return;
   }
+  const alreadyOffered = await offers.find({ requestId }).project({ driverId: 1 }).toArray();
+  const excluded = alreadyOffered.map((offer) => offer.driverId);
+  const candidates = await drivers.find({ available: true, activeRequestId: { $exists: false }, location: { $exists: true }, userId: { $nin: excluded } }).toArray();
+  const radius = DISPATCH_BASE_RADIUS_KM * nextRound;
+  const nearest = candidates.filter((driver) => validCoordinates(driver.location) && distanceKm(request.location, driver.location) <= radius)
+    .sort((a, b) => distanceKm(request.location, a.location!) - distanceKm(request.location, b.location!)).slice(0, DISPATCH_BATCH_SIZE);
+  // Guard the round transition; concurrent pollers can only win this CAS once.
+  const advanced = await requests.updateOne({ _id: requestId, status: "searching", ...currentRoundFilter }, { $set: { dispatchRound: nextRound, dispatchRoundAt: now } });
+  if (!advanced.modifiedCount) return;
+  if (!nearest.length) {
+    if (nextRound >= DISPATCH_MAX_ROUNDS) await requests.updateOne({ _id: requestId, status: "searching", dispatchRound: nextRound }, { $set: { status: "no_driver_found", noDriverFoundAt: now } });
+    else await advanceDispatch(requestId);
+    return;
+  }
+  const expiresAt = new Date(now.getTime() + OFFER_DURATION_MS);
+  await offers.insertMany(nearest.map((driver) => ({ _id: `${requestId}:${nextRound}:${driver.userId}`, requestId, driverId: driver.userId, round: nextRound, createdAt: now, expiresAt, status: "offered" as const })), { ordered: false }).catch(() => undefined);
+}
+
+export async function expireAndReofferDriverOffers() {
+  const { requests } = await sosCollections();
+  const open = await requests.find({ status: "searching" }).project({ _id: 1 }).limit(100).toArray();
+  await Promise.all(open.map((request) => advanceDispatch(request._id)));
 }
 
 export function createRequestId() { return randomUUID(); }

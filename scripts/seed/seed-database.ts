@@ -1,179 +1,37 @@
-import {
-  getHospitalsCollection,
-  getResourcesCollection,
-  getHoldsCollection,
-  initializeIndexes,
-} from "@/lib/models";
+import { getHospitalsCollection, getResourcesCollection, getHoldsCollection, initializeIndexes, getDb } from '@/lib/models';
 
-export async function seedDatabase() {
+/** Create a disposable demo network around the presenter instead of a fixed city. */
+export async function seedDatabase(lat: number, lng: number) {
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lng) || lng < -180 || lng > 180) throw new Error('Valid lat and lng are required.');
   await initializeIndexes();
-
-  const hospitalsCol = await getHospitalsCollection();
-  const resourcesCol = await getResourcesCollection();
-  const holdsCol = await getHoldsCollection();
-
-  // Clear existing sample seed data
-  await hospitalsCol.deleteMany({});
-  await resourcesCol.deleteMany({});
-  await holdsCol.deleteMany({});
-
-  // 1. Insert Sample Hospitals
-  const sampleHospitals = [
-    {
-      name: "City General Hospital",
-      code: "CGH-001",
-      address: {
-        street: "100 Medical Center Way",
-        city: "Metropolis",
-        state: "NY",
-        zipCode: "10001",
-        country: "USA",
-      },
-      location: {
-        type: "Point" as const,
-        coordinates: [-73.98513, 40.748817] as [number, number],
-      },
-      contact: {
-        phone: "+1-555-0199",
-        email: "emergency@citygeneral.org",
-        emergencyHotline: "+1-555-9110",
-      },
-      capacitySummary: {
-        totalBeds: 150,
-        availableBeds: 24,
-        totalVentilators: 20,
-        availableVentilators: 5,
-      },
-      status: "active" as const,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      name: "St. Jude Trauma Center",
-      code: "STJ-002",
-      address: {
-        street: "450 Health Parkway",
-        city: "Metropolis",
-        state: "NY",
-        zipCode: "10002",
-        country: "USA",
-      },
-      location: {
-        type: "Point" as const,
-        coordinates: [-73.99123, 40.752101] as [number, number],
-      },
-      contact: {
-        phone: "+1-555-0288",
-        email: "trauma@stjude.org",
-        emergencyHotline: "+1-555-9112",
-      },
-      capacitySummary: {
-        totalBeds: 200,
-        availableBeds: 8,
-        totalVentilators: 30,
-        availableVentilators: 2,
-      },
-      status: "busy" as const,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  ];
-
-  const hospitalRes = await hospitalsCol.insertMany(sampleHospitals);
-  const hospital1Id = hospitalRes.insertedIds[0].toString();
-  const hospital2Id = hospitalRes.insertedIds[1].toString();
-
-  // 2. Insert Sample Resources (Beds, Equipment, Specialists)
-  const sampleResources = [
-    // Hospital 1 Resources
-    {
-      hospitalId: hospital1Id,
-      type: "bed" as const,
-      category: "icu",
-      name: "ICU Bed Unit A",
-      description: "Negative pressure intensive care bed with continuous telemetry monitor",
-      totalQuantity: 15,
-      availableQuantity: 3,
-      heldQuantity: 1,
-      status: "available" as const,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      hospitalId: hospital1Id,
-      type: "equipment" as const,
-      category: "ventilator",
-      name: "Advanced ICU Ventilator v4",
-      description: "High-frequency oscillatory ventilator",
-      totalQuantity: 10,
-      availableQuantity: 2,
-      heldQuantity: 1,
-      status: "available" as const,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      hospitalId: hospital1Id,
-      type: "specialist" as const,
-      category: "trauma_surgeon",
-      name: "On-Call Trauma Surgeons",
-      description: "Level 1 Trauma Surgical Team on active duty",
-      totalQuantity: 4,
-      availableQuantity: 2,
-      heldQuantity: 0,
-      status: "available" as const,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    // Hospital 2 Resources
-    {
-      hospitalId: hospital2Id,
-      type: "bed" as const,
-      category: "emergency",
-      name: "Emergency Triage Bed",
-      description: "Rapid admission acute trauma bed",
-      totalQuantity: 25,
-      availableQuantity: 5,
-      heldQuantity: 2,
-      status: "available" as const,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  ];
-
-  const resourceRes = await resourcesCol.insertMany(sampleResources);
-  const resource1Id = resourceRes.insertedIds[0].toString();
-
-  // 3. Insert Sample Holds / Reservations
-  const sampleHolds = [
-    {
-      hospitalId: hospital1Id,
-      resourceId: resource1Id,
-      requestedByUserId: "dispatcher-demo-user-id",
-      patientDetails: {
-        name: "John Doe",
-        age: 45,
-        gender: "Male",
-        conditionSummary: "Acute respiratory distress following MVA",
-        priority: "critical" as const,
-        etaMinutes: 12,
-      },
-      quantity: 1,
-      status: "pending" as const,
-      expiresAt: new Date(Date.now() + 20 * 60 * 1000), // 20 min hold window
-      notes: "Ambulance Unit 44 en route",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  ];
-
-  await holdsCol.insertMany(sampleHolds);
-
-  return {
-    success: true,
-    message: "Database successfully seeded with Hospitals, Resources, and Holds!",
-    hospitalsInserted: sampleHospitals.length,
-    resourcesInserted: sampleResources.length,
-    holdsInserted: sampleHolds.length,
-  };
+  const [hospitals, resources, holds, db] = await Promise.all([getHospitalsCollection(), getResourcesCollection(), getHoldsCollection(), getDb()]);
+  const demoDoctors = db.collection('doctors');
+  await db.collection('pharmacies').deleteMany({ isDemo: true, seedBatch: 'location-demo' });
+  const previous = await hospitals.find({ isDemo: true, seedBatch: 'location-demo' }).project({ _id: 1 }).toArray();
+  const previousIds = previous.map((item) => item._id?.toString()).filter((id): id is string => Boolean(id));
+  if (previousIds.length) {
+    await Promise.all([
+      hospitals.deleteMany({ _id: { $in: previous.map((item) => item._id) } }),
+      resources.deleteMany({ hospitalId: { $in: previousIds } }),
+      holds.deleteMany({ hospitalId: { $in: previousIds } }),
+      demoDoctors.deleteMany({ hospitalId: { $in: previousIds } }),
+    ]);
+  }
+  const now = new Date();
+  const offsets = [[0.012, 0.006], [-0.018, 0.013], [0.009, -0.021]] as const;
+  const inserted = await hospitals.insertMany(offsets.map(([dLat, dLng], index) => ({
+    name: `CareLink Demo Hospital ${index + 1}`, code: `DEMO-LOC-${Date.now()}-${index + 1}`,
+    isDemo: true, seedBatch: 'location-demo', address: { street: 'Demo location', city: 'Local area', state: '', zipCode: '', country: '' },
+    location: { type: 'Point' as const, coordinates: [lng + dLng, lat + dLat] as [number, number] },
+    contact: { phone: '', email: '', emergencyHotline: '' }, specialties: ['Emergency', 'General Medicine'],
+    capacitySummary: { totalBeds: 60 + index * 10, availableBeds: 12 + index, totalVentilators: 5, availableVentilators: 2 },
+    status: 'active' as const, createdAt: now, updatedAt: now,
+  })));
+  const ids = Object.values(inserted.insertedIds).map((id) => id.toString());
+  await resources.insertMany(ids.map((hospitalId, index) => ({ hospitalId, type: 'bed' as const, category: index === 1 ? 'icu' : 'emergency', name: 'Demo beds', totalQuantity: 30, availableQuantity: 8 + index, heldQuantity: 0, status: 'available' as const, isDemo: true, createdAt: now, updatedAt: now })));
+  await demoDoctors.insertMany(ids.map((hospitalId, index) => ({ hospitalId, name: `Demo Doctor ${index + 1}`, qualification: 'MD', specialization: index === 1 ? 'Cardiology' : 'Emergency Medicine', availability: 'available', createdAt: now, updatedAt: now })));
+  const pharmacies = db.collection('pharmacies');
+  const pharmacyDocs = offsets.slice(0, 2).map(([dLat, dLng], index) => ({ name: `CareLink Demo Pharmacy ${index + 1}`, isDemo: true, seedBatch: 'location-demo', location: { type: 'Point', coordinates: [lng - dLng, lat - dLat] }, address: { street: 'Demo location', city: 'Local area' }, createdAt: now, updatedAt: now }));
+  await pharmacies.insertMany(pharmacyDocs);
+  return { success: true, message: 'Demo facilities created around the submitted coordinates.', hospitalsInserted: ids.length, pharmaciesInserted: pharmacyDocs.length, doctorsInserted: ids.length, resourcesInserted: ids.length, holdsInserted: 0 };
 }

@@ -11,7 +11,7 @@ import {
   HeartHandshake,
   Bell,
   Car,
-  Sparkles,
+  HeartPulse,
 } from '../icons';
 
 export const Sidebar: React.FC = () => {
@@ -63,10 +63,8 @@ export const Sidebar: React.FC = () => {
     },
     {
       id: 'triage',
-      label: 'Symptom Triage',
-      icon: <Sparkles className="w-5 h-5 text-amber-400" />,
-      badge: 'SOS AI',
-      badgeColor: 'bg-rose-500 text-white',
+      label: 'Symptom check',
+      icon: <HeartPulse className="w-5 h-5" />,
     },
     {
       id: 'notifications',
@@ -106,6 +104,7 @@ export const Sidebar: React.FC = () => {
         </div>
         {navItems
           .filter((item) => {
+            if (item.id === 'recommendations' && !['patient', 'dispatcher'].includes(role)) return false;
             if (role === 'patient') {
               if (['hospital-portal', 'handoff'].includes(item.id)) return false;
             } else {

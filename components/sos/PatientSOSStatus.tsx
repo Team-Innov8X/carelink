@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Ambulance, Clock, Siren, X } from '@/components/icons';
 import { useCareLink } from '../../context/CareLinkContext';
+import { fetchPatientSosRequests } from '@/lib/client-sos';
 
 type PatientSOS = { id: string; status: 'searching' | 'accepted' | 'completed' | 'cancelled'; requestType?: 'emergency' | 'routine'; incidentType: string; createdAt: string; driverAssigned: boolean; driver?: { name: string; vehicleNumber?: string | null; ambulanceType?: string | null } | null; tripStage?: string; destination?: { name: string; status: string; bedCategory?: string } | null; vitalsUpdate?: { bp: string; heartRate: number; spO2: number } | null };
 
@@ -19,10 +20,8 @@ export function PatientSOSStatus({ transientNoticeVisible = false }: { transient
   const [dismissedId, setDismissedId] = useState<string | null>(null);
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch('/api/sos', { cache: 'no-store' });
-      if (!response.ok) return;
-      const result = await response.json();
-      const latest = (result.requests as PatientSOS[] | undefined)?.[0];
+      const requests = await fetchPatientSosRequests();
+      const latest = requests[0] as PatientSOS | undefined;
       setRequest(latest ?? null);
     } catch { /* Keep the most recent status visible if the network is temporarily unavailable. */ }
   }, []);

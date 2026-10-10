@@ -47,10 +47,6 @@ const MainAppContent: React.FC = () => {
     }
   };
 
-  useEffect(() => () => {
-    if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current);
-  }, []);
-
   const handleSOS = (incidentType = 'Emergency assistance requested') => {
     if (role !== 'patient') {
       setIsNewEmergencyOpen(true);
@@ -165,7 +161,7 @@ const MainAppContent: React.FC = () => {
                 <CheckCircle2 className="h-5 w-5" />
               </span>
               <div>
-                <p className="font-bold text-slate-900 text-sm">Emergency SOS Transmitted</p>
+                <p className="font-bold text-slate-900 text-sm">Emergency request status</p>
                 <p className="mt-1 text-xs text-slate-600 leading-relaxed">{sosMessage}</p>
                 <p className="mt-2 text-[11px] font-medium text-slate-400">Track live driver status under &quot;Your Emergency Requests&quot; · Closes in 6.5s</p>
                 {sosRequestId && <button type="button" onClick={() => { setActiveTab('requests'); if (sosToastTimer.current !== null) window.clearTimeout(sosToastTimer.current); setSosMessage(''); setSosRequestId(null); }} className="mt-2 text-xs font-bold text-sky-800 underline underline-offset-2">View emergency request details</button>}

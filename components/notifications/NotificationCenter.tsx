@@ -77,7 +77,7 @@ export function NotificationCenter() {
     const readAt = new Date().toISOString();
     setNotifications((items) => items.map((item) => item.readAt ? item : { ...item, readAt }));
     try {
-      const response = await fetch('/api/notifications', { method: 'PATCH' });
+      const response = await fetch('/api/notifications/read-all', { method: 'PATCH' });
       if (!response.ok) throw new Error();
     } catch {
       setNotifications((items) => items.map((item) => unread.some((old) => old._id === item._id) ? { ...item, readAt: undefined } : item));

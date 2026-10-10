@@ -2,6 +2,8 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
+import { DelayedSkeleton, RequestListSkeleton } from '../common/Skeletons';
+import { fetchPatientSosRequests } from '../../lib/client-sos';
 import {
   Siren,
   Search,
@@ -24,7 +26,7 @@ export type PatientRequest = {
   arrivedAt?: string | null;
   completedAt?: string;
   driverAssigned?: boolean;
-  driver?: { name: string; vehicleNumber?: string | null; ambulanceType?: string | null } | null;
+  tripStage?: string;
   requestType?: 'emergency' | 'routine';
   patientPhone?: string;
   passengerName?: string;
@@ -32,6 +34,7 @@ export type PatientRequest = {
   notes?: string;
   rejectionReason?: string;
   requiredEquipment?: string[];
+  driver?: { name?: string; vehicleNumber?: string; ambulanceType?: string | null; location?: { latitude: number; longitude: number } | null } | null;
   hospitalRequest: null | {
     status: string;
     hospitalName: string;
@@ -49,6 +52,8 @@ export const PatientEmergencyRequestsView: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const requestInFlight = useRef(false);
+  const [cancellingId, setCancellingId] = useState('');
+  const [cancelMessage, setCancelMessage] = useState('');
 
   const fetchRequests = useCallback(async () => {
     if (requestInFlight.current) return;
@@ -66,6 +71,24 @@ export const PatientEmergencyRequestsView: React.FC = () => {
       setLoading(false);
     }
   }, []);
+
+  const cancelRequest = async (requestId: string) => {
+    if (!window.confirm('Cancel this SOS request? The request will remain in your history.')) return;
+    setCancellingId(requestId);
+    setCancelMessage('');
+    try {
+      const response = await fetch(`/api/sos/${encodeURIComponent(requestId)}/cancel`, { method: 'POST' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not cancel this SOS request.');
+      setCancelMessage('SOS request cancelled. It remains in your request history.');
+      window.dispatchEvent(new Event('carelink-sos-updated'));
+      await fetchRequests();
+    } catch (cause) {
+      setCancelMessage(cause instanceof Error ? cause.message : 'Could not cancel this SOS request.');
+    } finally {
+      setCancellingId('');
+    }
+  };
 
   useEffect(() => {
     const initial = window.setTimeout(() => void fetchRequests(), 0);
@@ -139,6 +162,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
       </div>
 
       {/* Filter and Search Bar */}
+      {cancelMessage && <p role="status" className="text-sm text-slate-700">{cancelMessage}</p>}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
         {/* Status Filter Tabs */}
         <div className="flex items-center gap-1.5 w-full sm:w-auto">
@@ -203,7 +227,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
       )}
 
       {/* Requests List */}
-      {filtered.length === 0 ? (
+      {loading ? <DelayedSkeleton><RequestListSkeleton /></DelayedSkeleton> : filtered.length === 0 ? (
         <div className="text-center py-16 px-4 bg-white rounded-3xl border border-slate-200 shadow-xs">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 mb-3">
             <Siren className="h-7 w-7" />
@@ -235,8 +259,10 @@ export const PatientEmergencyRequestsView: React.FC = () => {
             const driverAccepted = request.status === 'accepted' && request.driverAssigned !== false;
             const driverCompleted = request.status === 'completed';
             const requestCancelled = request.status === 'cancelled';
-            const requestRejected = request.status === 'rejected';
+            const requestRejected = request.status === 'rejected' || request.status === 'no_driver_found';
             const driverArrived = Boolean(request.arrivedAt);
+            const pickupStarted = ['patient_on_board', 'en_route_hospital', 'arrived_hospital', 'handover_complete'].includes(request.tripStage || '');
+            const canCancel = !isRoutine && ['searching', 'accepted'].includes(request.status.toLowerCase()) && !pickupStarted;
 
             const driverStatus = driverCompleted
               ? 'Driver response completed'
@@ -317,7 +343,7 @@ export const PatientEmergencyRequestsView: React.FC = () => {
                     </div>
                     <p className="text-xs text-slate-700 leading-relaxed">
                       {requestRejected
-                        ? request.rejectionReason || 'Request rejected: Any driver did not accept the request within 1 minute.'
+              ? request.status === 'no_driver_found' ? 'No nearby driver accepted this request.' : request.rejectionReason || 'No driver accepted the request.'
                         : driverAccepted
                         ? `An emergency driver accepted your request${request.acceptedAt ? ` at ${new Date(request.acceptedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}.`
                         : driverCompleted
@@ -400,6 +426,14 @@ export const PatientEmergencyRequestsView: React.FC = () => {
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+                {canCancel && (
+                  <div className="mt-4 flex justify-end">
+                    <button type="button" onClick={() => void cancelRequest(request.id)} disabled={cancellingId === request.id}
+                      className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50">
+                      {cancellingId === request.id ? 'Cancelling…' : 'Cancel SOS'}
+                    </button>
                   </div>
                 )}
               </article>

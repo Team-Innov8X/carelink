@@ -1,21 +1,43 @@
 import { requireRole } from "@/lib/auth-utils";
-import { createRequestId, ensureHospitalRequestForSos, sosCollections, validCoordinates, workflowCollections } from "@/lib/sos";
+import { advanceDispatch, createRequestId, ensureHospitalRequestForSos, getHospitalRequestsCollection, sosCollections, validCoordinates } from "@/lib/sos";
+import { getUsersCollection } from "@/lib/models/db";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  const startedAt = performance.now();
+  const authStartedAt = performance.now();
   const auth = await requireRole(["patient", "dispatcher"]);
+  const authMs = performance.now() - authStartedAt;
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
-  const { requests, drivers } = await sosCollections();
+  const collectionStartedAt = performance.now();
+  const [collections, hospitalRequests] = await Promise.all([sosCollections(), getHospitalRequestsCollection()]);
+  const { requests, drivers } = collections;
+  const collectionMs = performance.now() - collectionStartedAt;
   const role = (auth.user as { role?: string }).role;
   const query = role === "dispatcher" ? {} : { patientId: auth.user.id };
-  const items = await requests.find(query).sort({ createdAt: -1 }).limit(50).toArray();
-  const { hospitalRequests } = await workflowCollections();
-  const linkedHospitalRequests = items.length ? await hospitalRequests.find({ sosRequestId: { $in: items.map((item) => item._id) } }).toArray() : [];
+  const requestQueryStartedAt = performance.now();
+  const patientProjection = role === "dispatcher" ? undefined : {
+    _id: 1, patientId: 1, patientName: 1, patientPhone: 1, status: 1, incidentType: 1,
+    createdAt: 1, acceptedAt: 1, arrivedAt: 1, completedAt: 1, driverId: 1,
+    requiredEquipment: 1, tripStage: 1, tripTimestamps: 1, vitalsUpdate: 1, issue: 1,
+  };
+  const items = await requests.find(query, patientProjection ? { projection: patientProjection } : undefined).sort({ createdAt: -1 }).limit(50).toArray();
+  await Promise.all(items.filter((item) => item.status === "searching").map((item) => advanceDispatch(item._id)));
+  const requestQueryMs = performance.now() - requestQueryStartedAt;
+  const hospitalQueryStartedAt = performance.now();
+  const linkedHospitalRequests = items.length ? await hospitalRequests.find(
+    { sosRequestId: { $in: items.map((item) => item._id) } },
+    { projection: { sosRequestId: 1, hospitalName: 1, status: 1, bedCategory: 1, rejectionReason: 1 } },
+  ).toArray() : [];
+  const hospitalQueryMs = performance.now() - hospitalQueryStartedAt;
+  if (process.env.CARELINK_PERF_LOGS === "1") console.info(JSON.stringify({ event: "carelink.perf", name: "sos_get", authMs: Math.round(authMs * 100) / 100, collectionAndIndexMs: Math.round(collectionMs * 100) / 100, sosQueryMs: Math.round(requestQueryMs * 100) / 100, hospitalRequestQueryMs: Math.round(hospitalQueryMs * 100) / 100, totalMs: Math.round((performance.now() - startedAt) * 100) / 100, requestCount: items.length, role }));
   const hospitalBySosId = new Map(linkedHospitalRequests.map((item) => [item.sosRequestId, item]));
   const driverIds = items.map((item) => item.driverId).filter((id): id is string => Boolean(id));
-  const driverRows = driverIds.length ? await drivers.find({ userId: { $in: driverIds } }).toArray() : [];
+  const driverRows = driverIds.length ? await drivers.find({ userId: { $in: driverIds } }).project({ userId: 1, location: 1, vehicleNumber: 1, ambulanceId: 1, ambulanceType: 1 }).toArray() : [];
+  const userRows = driverIds.length ? await (await getUsersCollection()).find({ id: { $in: driverIds } }).project({ id: 1, name: 1, vehicleNumber: 1 }).toArray() : [];
   const driverById = new Map(driverRows.map((driver) => [driver.userId, driver]));
+  const driverProfileById = new Map(userRows.map((user) => [user.id, user]));
   return Response.json({ requests: items.map((item) => ({
     id: item._id,
     status: item.status,
@@ -37,7 +59,7 @@ export async function GET() {
     destination: (() => { const target = hospitalBySosId.get(item._id); return target ? { name: target.hospitalName, status: target.status, bedCategory: target.bedCategory, rejectionReason: target.rejectionReason } : null; })(),
     hospitalRequest: (() => { const target = hospitalBySosId.get(item._id); return target ? { status: target.status, hospitalName: target.hospitalName, acceptedAt: target.acceptedAt, bedCategory: target.bedCategory } : null; })(),
     driverAssigned: Boolean(item.driverId),
-    driver: item.driverId ? (() => { const driver = driverById.get(item.driverId); return driver ? { name: driver.name ?? 'Assigned driver', vehicleNumber: driver.vehicleNumber ?? driver.ambulanceId ?? null, ambulanceType: driver.ambulanceType ?? null } : null; })() : null,
+    driver: item.driverId ? (() => { const driver = driverById.get(item.driverId); const profile = driverProfileById.get(item.driverId); return driver ? { name: profile?.name ?? 'Assigned driver', vehicleNumber: profile?.vehicleNumber ?? driver.vehicleNumber ?? driver.ambulanceId ?? null, ambulanceType: driver.ambulanceType ?? null, location: driver.location ?? null } : null; })() : null,
   })) });
 }
 
@@ -84,9 +106,10 @@ export async function POST(request: Request) {
     preferredTime: typeof body.preferredTime === 'string' ? body.preferredTime.trim() : undefined,
     notes: typeof body.notes === 'string' ? body.notes.trim() : undefined,
     requiredEquipment: [...new Set(((body.requiredEquipment ?? []) as string[]).map((item) => item.trim()).filter(Boolean))],
-    status: "searching" as const, driverId: null, createdAt: new Date(),
+    status: "searching" as const, driverId: null, dispatchRound: 0, createdAt: new Date(),
   };
   await requests.insertOne(sos);
+  await advanceDispatch(sos._id);
 
   const hospitalRequest = requestType === 'routine' ? null : await ensureHospitalRequestForSos(sos).catch(() => null);
   const hospitalRequestId = hospitalRequest?._id ?? null;

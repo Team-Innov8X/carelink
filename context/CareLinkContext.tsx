@@ -87,6 +87,17 @@ const mergeInitialRecords = <T extends { id: string }>(saved: T[] | undefined, i
   return Array.from(records.values());
 };
 
+async function loadHospitalsFromBackend(savedHospitals: Hospital[] | undefined) {
+  try {
+    const response = await fetch('/api/hospitals', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Hospital directory unavailable');
+    const registeredHospitals = await response.json() as Hospital[];
+    return mergeInitialRecords([...(Array.isArray(registeredHospitals) ? registeredHospitals : []), ...(Array.isArray(savedHospitals) ? savedHospitals : [])], INITIAL_HOSPITALS);
+  } catch {
+    return mergeInitialRecords(savedHospitals, INITIAL_HOSPITALS);
+  }
+}
+
 export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole?: Role }> = ({ children, initialRole }) => {
   const hydrated = useRef(false);
   const [role, setRole] = useState<Role>(initialRole ?? 'dispatcher');
@@ -106,6 +117,7 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
   // Restore a fast local copy, then reconcile with the shared MongoDB snapshot.
   useEffect(() => {
     let cancelled = false;
+    let localHospitals: Hospital[] | undefined;
     try {
       const savedHospitals = localStorage.getItem('carelink_hospitals');
       const savedEmergencies = localStorage.getItem('carelink_emergencies');
@@ -114,9 +126,10 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
       const savedAmbulances = localStorage.getItem('carelink_ambulances');
       const savedDrivers = localStorage.getItem('carelink_drivers');
       const savedOrders = localStorage.getItem('carelink_orders');
+      if (savedHospitals) localHospitals = JSON.parse(savedHospitals);
       queueMicrotask(() => {
         if (cancelled) return;
-        if (savedHospitals) setHospitals(mergeInitialRecords(JSON.parse(savedHospitals), INITIAL_HOSPITALS));
+        if (localHospitals) setHospitals(mergeInitialRecords(localHospitals, INITIAL_HOSPITALS));
         if (savedEmergencies) setEmergencies(mergeInitialRecords(JSON.parse(savedEmergencies), INITIAL_EMERGENCIES));
         if (savedPharmacies) setPharmacies(mergeInitialRecords(JSON.parse(savedPharmacies), INITIAL_PHARMACIES));
         if (savedMedicines) setMedicines(mergeInitialRecords(JSON.parse(savedMedicines), INITIAL_MEDICINES));
@@ -128,15 +141,15 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
       // Ignore localStorage read errors
     }
 
-    fetch('/api/data', { cache: 'no-store' })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Database is unavailable');
-        return response.json();
-      })
-      .then(({ state }) => {
+    const sharedStateRequest = fetch('/api/data', { cache: 'no-store' })
+      .then(async (response) => response.ok ? await response.json() : null)
+      .catch(() => null);
+    Promise.all([sharedStateRequest, loadHospitalsFromBackend(undefined)])
+      .then(([shared, backendHospitals]) => {
         if (cancelled) return;
+        const state = shared?.state;
+        setHospitals(mergeInitialRecords([...backendHospitals, ...(localHospitals ?? []), ...(Array.isArray(state?.hospitals) ? state.hospitals : [])], INITIAL_HOSPITALS));
         if (state) {
-          setHospitals(mergeInitialRecords(state.hospitals, INITIAL_HOSPITALS));
           setEmergencies(mergeInitialRecords(state.emergencies, INITIAL_EMERGENCIES));
           setPharmacies(mergeInitialRecords(state.pharmacies, INITIAL_PHARMACIES));
           setMedicines(mergeInitialRecords(state.medicines, INITIAL_MEDICINES));
@@ -144,9 +157,6 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
           setDrivers(mergeInitialRecords(state.drivers, INITIAL_DRIVERS));
           setMedicineOrders(state.medicineOrders ?? []);
         }
-      })
-      .catch(() => {
-        // The app remains usable with the browser's saved copy when MongoDB is not configured.
       })
       .finally(() => {
         if (!cancelled) hydrated.current = true;
@@ -161,9 +171,9 @@ export const CareLinkProvider: React.FC<{ children: React.ReactNode; initialRole
           if (!response.ok) throw new Error('Shared state unavailable');
           return response.json();
         })
-        .then(({ state }) => {
+        .then(async ({ state }) => {
           if (!state) return;
-          setHospitals(mergeInitialRecords(state.hospitals, INITIAL_HOSPITALS));
+          setHospitals(await loadHospitalsFromBackend(state.hospitals));
           setEmergencies(mergeInitialRecords(state.emergencies, INITIAL_EMERGENCIES));
           setPharmacies(mergeInitialRecords(state.pharmacies, INITIAL_PHARMACIES));
           setMedicines(mergeInitialRecords(state.medicines, INITIAL_MEDICINES));

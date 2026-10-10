@@ -1,15 +1,21 @@
 import { headers } from "next/headers";
 import { auth, UserRole } from "./auth";
 import { getHospitalsCollection } from "./models";
+import { normalizeRole } from "./roles";
 
 /**
  * Retrieve current user & session on the server side.
  */
 export async function getServerSession() {
+  const startedAt = performance.now();
   const reqHeaders = await headers();
-  return await auth.api.getSession({
+  const session = await auth.api.getSession({
     headers: reqHeaders,
   });
+  if (process.env.CARELINK_PERF_LOGS === "1") {
+    console.info(JSON.stringify({ event: "carelink.perf", name: "session_lookup", durationMs: Math.round((performance.now() - startedAt) * 100) / 100, authenticated: Boolean(session?.user) }));
+  }
+  return session;
 }
 
 /** Resolve legacy hospital staff profiles that stored only the facility name. */
@@ -39,15 +45,16 @@ export async function requireRole(
   }
 
   if (allowedRoles) {
-    const rolesArray = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
-    const userRole = (session.user as { role?: UserRole }).role || "patient";
+    const rolesArray = (Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles]).map((role) => normalizeRole(role) || role);
+    const storedRole = (session.user as { role?: UserRole }).role || "patient";
+    const userRole = normalizeRole(storedRole) || storedRole;
 
     if (!rolesArray.includes(userRole as UserRole)) {
       return {
         authorized: false,
         reason: "FORBIDDEN" as const,
         user: session.user,
-        role: userRole,
+        role: storedRole,
       };
     }
   }
