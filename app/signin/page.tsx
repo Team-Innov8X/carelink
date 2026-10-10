@@ -22,17 +22,17 @@ export default function SignInPage() {
     setError('');
     setSubmitting(true);
     try {
+      const authStartedAt = performance.now();
       const normalizedIdentifier = identifier.trim();
       const result = normalizedIdentifier.includes('@')
         ? await authClient.signIn.email({ email: normalizedIdentifier.toLowerCase(), password })
         : await authClient.signIn.username({ username: normalizedIdentifier, password });
+      if (process.env.NEXT_PUBLIC_CARELINK_PERF_LOGS === '1') console.info(JSON.stringify({ event: 'carelink.perf', name: 'password_signin', durationMs: Math.round((performance.now() - authStartedAt) * 100) / 100 }));
 
       if (result.error) throw new Error(result.error.message || 'Sign in failed. Check your credentials.');
-      // Read the role from the persisted session after authentication. The
-      // sign-in response can omit additional user fields for existing accounts.
-      const sessionResult = await authClient.getSession();
-      const sessionRole = (sessionResult.data?.user as { role?: string } | undefined)?.role;
-      const signedInRole = sessionRole || (result.data?.user as (typeof result.data.user & { role?: string }) | undefined)?.role || 'patient';
+      // Better Auth returns custom user fields in the sign-in response, so do
+      // not wait for another session round trip before navigating.
+      const signedInRole = (result.data?.user as (typeof result.data.user & { role?: string }) | undefined)?.role || 'patient';
       router.replace(routeForRole(signedInRole));
       router.refresh();
     } catch (signInError) {
@@ -46,10 +46,12 @@ export default function SignInPage() {
     setError('');
     setSubmitting(true);
     try {
+      const oauthStartedAt = performance.now();
       const result = await authClient.signIn.social({
         provider: 'google',
         callbackURL: routeForRole('patient'),
       });
+      if (process.env.NEXT_PUBLIC_CARELINK_PERF_LOGS === '1') console.info(JSON.stringify({ event: 'carelink.perf', name: 'google_oauth_start', durationMs: Math.round((performance.now() - oauthStartedAt) * 100) / 100 }));
       if (result.error) throw new Error(result.error.message || 'Google sign in is unavailable.');
       if (result.data?.url) window.location.assign(result.data.url);
     } catch (googleError) {
@@ -65,6 +67,7 @@ export default function SignInPage() {
           <div className="mb-6 flex items-center gap-2 text-lg font-bold text-slate-900"><Heart className="h-5 w-5 fill-rose-600 text-rose-600" />Care<span className="-ml-2 text-rose-600">Link</span></div>
           <header className="mb-6"><h2 className="text-2xl font-bold text-slate-900">Sign in</h2><p className="mt-1 text-sm text-slate-500">Access your care workspace</p></header>
           <form onSubmit={handleSignIn} className="space-y-4">
+            <div className="text-right"><Link href="/forgot-password" className="text-xs font-semibold text-sky-700 underline">Forgot password?</Link></div>
             <div><label className={labelClass} htmlFor="signin-identifier">Username or email</label><div className="relative"><UserRound className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signin-identifier" className={inputClass} required autoComplete="username" value={identifier} onChange={event => setIdentifier(event.target.value)} placeholder="Your username or email" /></div></div>
             <div><label className={labelClass} htmlFor="signin-password">Password</label><div className="relative"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signin-password" className={inputClass} type="password" required autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" /></div></div>
             {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}

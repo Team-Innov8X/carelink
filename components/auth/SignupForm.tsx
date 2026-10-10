@@ -72,20 +72,25 @@ export default function SignupForm({ role }: { role: string }) {
 
   const handleGoogleSignup = async () => {
     setError('');
-    const missingDetails = roleDetailsValid();
-    if (missingDetails) { setError(missingDetails); return; }
+    const isOrganization = role === 'hospital_staff' || role === 'pharmacy';
+    if (!isOrganization) {
+      const missingDetails = roleDetailsValid();
+      if (missingDetails) { setError(missingDetails); return; }
+    }
     try {
       setSubmitting(true);
+      const oauthStartedAt = performance.now();
       const result = await authClient.signIn.social({
         provider: 'google',
-        callbackURL: routeForRole(role),
-        additionalData: {
+        callbackURL: isOrganization ? `/onboarding/${role === 'hospital_staff' ? 'hospital' : 'pharmacy'}` : routeForRole(role),
+        additionalData: isOrganization ? { role } : {
           role, name: name.trim(), username: username.trim(), phone: phone.trim(),
           ...(role === 'hospital_staff' ? { hospitalName: hospitalName.trim(), hospitalAddress: hospitalAddress.trim(), hospitalRegistrationNumber: hospitalRegistrationNumber.trim(), hospitalSpecialties: hospitalSpecialties.trim() } : {}),
           ...(role === 'pharmacy' ? { pharmacyName: pharmacyName.trim(), pharmacyAddress: pharmacyAddress.trim(), pharmacyLicenseNumber: pharmacyLicenseNumber.trim(), pharmacyType } : {}),
           ...(role === 'driver' ? { licenseNumber: licenseNumber.trim(), vehicleNumber: vehicleNumber.trim(), driverQualification } : {}),
         },
       });
+      if (process.env.NEXT_PUBLIC_CARELINK_PERF_LOGS === '1') console.info(JSON.stringify({ event: 'carelink.perf', name: 'google_signup_oauth_start', durationMs: Math.round((performance.now() - oauthStartedAt) * 100) / 100 }));
       if (result.error) throw new Error(result.error.message || 'Google sign-in is unavailable.');
       if (result.data?.url) window.location.assign(result.data.url);
       else throw new Error('Google sign-in did not return a redirect URL.');

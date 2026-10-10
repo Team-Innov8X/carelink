@@ -33,6 +33,8 @@ export interface ICreateHoldParams {
   notes?: string;
 }
 
+export const HOLD_DURATION_MS = 5 * 60 * 1000;
+
 export interface INextRankedHospitalResult {
   hospital: IHospital;
   availableResource: IResource;
@@ -51,7 +53,7 @@ export async function createHold(params: ICreateHoldParams) {
   const resourcesCol = await getResourcesCollection();
   const holdsCol = await getHoldsCollection();
   const quantityToHold = params.quantity ?? 1;
-  const timeoutMinutes = params.holdTimeoutMinutes || 15;
+  const timeoutMinutes = params.holdTimeoutMinutes || HOLD_DURATION_MS / 60_000;
 
   // Atomic reservation check: resource exists at hospital AND availableQuantity - heldQuantity >= quantityToHold
   const resourceId = params.resourceId && ObjectId.isValid(params.resourceId) ? new ObjectId(params.resourceId) : params.resourceId;
@@ -470,7 +472,7 @@ export async function ensureBedResource(hospitalId: string, resourceId?: string)
  * Request a bed at a hospital:
  * Rule A: One active request (queued, pending, confirmed) per patient per hospital. Return 409 on duplicate.
  * Rule B: Atomic claim (total beds - confirmed - active unexpired pending holds > 0).
- * If bed is available: sets pending with expiresAt (now + 90s).
+ * If bed is available: sets pending with the configured five-minute hold.
  * If no bed free: sets queued with queuePosition.
  */
 export async function requestBedHold(params: {
@@ -537,7 +539,7 @@ export async function requestBedHold(params: {
   const now = new Date();
 
   if (claimed) {
-    const expiresAt = new Date(now.getTime() + 90 * 1000);
+    const expiresAt = new Date(now.getTime() + HOLD_DURATION_MS);
     const holdDoc: IHold = {
       patientId,
       requestedByUserId: patientId,
@@ -656,7 +658,7 @@ export async function promoteNext(hospitalId: string): Promise<IHold | null> {
   if (!claimed) return null;
 
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 90 * 1000);
+  const expiresAt = new Date(now.getTime() + HOLD_DURATION_MS);
 
   const promoted = await holdsCol.findOneAndUpdate(
     {
@@ -716,6 +718,7 @@ export async function cancelPatientBedHold(
   }
 
   const wasPending = hold.status === "pending";
+  const wasConfirmed = hold.status === "confirmed";
   const now = new Date();
 
   await holdsCol.updateOne(
@@ -729,7 +732,16 @@ export async function cancelPatientBedHold(
   if (wasPending) {
     await resourcesCol.updateOne(
       { hospitalId: hold.hospitalId, type: "bed" },
-      { $inc: { heldQuantity: -1 } },
+      { $inc: { heldQuantity: -(hold.quantity || 1) } },
+    );
+  } else if (wasConfirmed) {
+    await resourcesCol.updateOne(
+      { hospitalId: hold.hospitalId, type: "bed", confirmedQuantity: { $gte: hold.quantity || 1 } },
+      { $inc: { confirmedQuantity: -(hold.quantity || 1), availableQuantity: hold.quantity || 1 }, $set: { updatedAt: now } },
+    );
+    await resourcesCol.updateOne(
+      { hospitalId: hold.hospitalId, type: "bed", availableQuantity: { $gt: 0 }, status: "unavailable" },
+      { $set: { status: "available", updatedAt: now } },
     );
   }
 
@@ -920,7 +932,7 @@ export async function getHospitalPendingBedHolds(hospitalId: string) {
   const formattedHolds = pendingHolds.map((h) => {
     const secondsRemaining = h.expiresAt
       ? Math.max(0, Math.floor((new Date(h.expiresAt).getTime() - Date.now()) / 1000))
-      : 90;
+      : Math.floor(HOLD_DURATION_MS / 1000);
     return {
       ...h,
       id: h._id?.toString() ?? h.id,

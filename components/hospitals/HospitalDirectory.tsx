@@ -3,6 +3,7 @@ import { useCareLink } from '../../context/CareLinkContext';
 import { submitBedRequest } from '../../utils/hospitalRequests';
 import { StaleDataWarning } from '../common/AlertBanner';
 import { hospitalSpecialties } from '../../data/hospitalSpecialties';
+import { NearbyFacilitiesPanel } from './NearbyFacilitiesPanel';
 import {
   Search,
   RotateCcw,
@@ -11,6 +12,7 @@ import {
 
 export const HospitalDirectory: React.FC = () => {
   const {
+    role,
     hospitals,
     emergencies,
     selectedEmergencyId,
@@ -30,6 +32,7 @@ export const HospitalDirectory: React.FC = () => {
   const [sortBest, setSortBest] = useState(true);
   const [confirmations, setConfirmations] = useState<Record<string, string>>({});
   const [staleThresholdMinutes, setStaleThresholdMinutes] = useState(10);
+  if (role === 'patient') return <NearbyFacilitiesPanel />;
   React.useEffect(() => { fetch('/api/settings', { cache: 'no-store' }).then((response) => response.ok ? response.json() : null).then((result) => { if (result?.settings?.staleThresholdMinutes) setStaleThresholdMinutes(result.settings.staleThresholdMinutes); }).catch(() => {}); }, []);
 
   // Filter logic
@@ -124,6 +127,8 @@ export const HospitalDirectory: React.FC = () => {
           <span>Patient Smart Match</span>
         </button>
       </div>
+
+      <NearbyFacilitiesPanel />
 
       {requestMessage && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900">{requestMessage}</p>}
 

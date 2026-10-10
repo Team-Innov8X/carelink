@@ -12,6 +12,7 @@ export interface IUser {
   phone?: string;
   vehicleNumber?: string; // For ambulance drivers
   status?: "available" | "busy" | "offline"; // Real-time operational status for drivers/staff
+  onboardingCompleted?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

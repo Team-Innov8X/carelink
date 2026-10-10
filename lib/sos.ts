@@ -41,7 +41,7 @@ export type HospitalAdmissionRequest = {
   location: Coordinates;
   incidentType: string;
   requiredEquipment: string[];
-  status: "pending" | "accepting" | "accepted" | "expiring" | "rerouting" | "rejected";
+  status: "pending" | "accepting" | "accepted" | "expiring" | "rerouting" | "rejected" | "cancelled";
   requestType?: "sos" | "bed";
   inventorySource?: "app-state";
   bedCategory?: "general" | "icu" | "trauma" | "ventilators";
@@ -198,20 +198,44 @@ export type CareNotification = {
   createdAt: Date;
 };
 
+let sosIndexesPromise: Promise<void> | undefined;
 export async function sosCollections() {
   const db = (await clientPromise).db();
   const requests = db.collection<SosRequest>("sosRequests");
   const drivers = db.collection<Document & { userId: string; available: boolean; location?: Coordinates }>("drivers");
   const hospitals = db.collection<Document & { name: string; location: Coordinates; equipment: string[] }>("hospitals");
+  sosIndexesPromise ??= Promise.all([
+    requests.createIndex({ patientId: 1, status: 1, createdAt: -1 }, { name: 'sos_patient_status_created' }),
+    requests.createIndex({ status: 1, createdAt: -1 }, { name: 'sos_status_created' }),
+  ]).then(() => undefined).catch(error => { sosIndexesPromise = undefined; throw error; });
+  await sosIndexesPromise;
   return { requests, drivers, hospitals };
+}
+
+let workflowIndexesPromise: Promise<void> | undefined;
+let hospitalRequestIndexesPromise: Promise<void> | undefined;
+export async function getHospitalRequestsCollection() {
+  const db = (await clientPromise).db();
+  const hospitalRequests = db.collection<HospitalAdmissionRequest>("hospitalAdmissionRequests");
+  hospitalRequestIndexesPromise ??= hospitalRequests.createIndex({ sosRequestId: 1 }, { name: 'hospital_requests_sos_id' }).then(() => undefined).catch(error => { hospitalRequestIndexesPromise = undefined; throw error; });
+  await hospitalRequestIndexesPromise;
+  return hospitalRequests;
 }
 
 export async function workflowCollections() {
   const db = (await clientPromise).db();
+  const notifications = db.collection<CareNotification>("notifications");
+  const ttlHours = Math.max(1, Number(process.env.NOTIFICATION_TTL_HOURS) || 24);
+  workflowIndexesPromise ??= Promise.all([
+    notifications.createIndex({ createdAt: 1 }, { name: 'notifications_ttl', expireAfterSeconds: ttlHours * 3600 }).catch(() => db.command({ collMod: 'notifications', index: { name: 'notifications_ttl', expireAfterSeconds: ttlHours * 3600 } })),
+    notifications.createIndex({ recipientId: 1, createdAt: -1 }, { name: 'notifications_recipient_created' }),
+  ]).then(() => undefined).catch(error => { workflowIndexesPromise = undefined; throw error; });
+  await workflowIndexesPromise;
+  const hospitalRequests = await getHospitalRequestsCollection();
   return {
-    hospitalRequests: db.collection<HospitalAdmissionRequest>("hospitalAdmissionRequests"),
+    hospitalRequests,
     hospitalAdmissions: db.collection<HospitalAdmission>("hospitalAdmissions"),
-    notifications: db.collection<CareNotification>("notifications"),
+    notifications,
   };
 }
 
