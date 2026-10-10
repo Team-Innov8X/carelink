@@ -7,7 +7,7 @@ import { HospitalRequestInbox } from '../../components/hospitalStaff/HospitalReq
 import { SearchField } from '../../components/common/SearchField';
 import { hospitalSpecialties } from '../../data/hospitalSpecialties';
 import { readApiJson } from '@/lib/client-api';
-import { dischargeHospitalAdminDemoCase, getHospitalAdminDemoAdmissions, getHospitalAdminDemoActivity } from '@/lib/hospital-admin-demo';
+import { dischargeHospitalAdminDemoCase, getHospitalAdminDemoAdmissions, getHospitalAdminDemoActivity, getHospitalAdminDemoBedCounts, getHospitalAdminDemoBedDeltas } from '@/lib/hospital-admin-demo';
 import { SettingsView } from '@/components/settings/SettingsView';
 
 const tileColors = ['text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200'];
@@ -86,13 +86,28 @@ function BedCapacityCard({ hospitalName, searchQuery }: { hospitalName: string; 
     let cancelled = false;
     fetch('/api/hospital-admin', { cache: 'no-store' }).then(async (response) => {
       const result = await response.json();
-      if (response.status === 404) { if (!cancelled) { setHospital({ ...demoHospital, name: hospitalName || demoHospital.name }); setDrafts(demoHospital.beds); setDemoMode(true); } return; }
+      if (response.status === 404) { if (!cancelled) { const counts = getHospitalAdminDemoBedCounts(); const beds = Object.fromEntries(Object.entries(demoHospital.beds).map(([key, value]) => [key, { ...value, available: counts[key as BedType] }])) as AdminHospital['beds']; setHospital({ ...demoHospital, name: hospitalName || demoHospital.name, beds }); setDrafts(beds); setDemoMode(true); } return; }
       if (!response.ok) throw new Error(result.error || 'Could not load bed availability.');
-      if (!cancelled) { setHospital(result.hospital); setDrafts(result.hospital.beds); setHasAddress(result.hasAddress !== false); }
+      if (!cancelled) {
+        const deltas = getHospitalAdminDemoBedDeltas();
+        const hospitalResult = result.hospital as AdminHospital;
+        const beds = Object.fromEntries(Object.entries(hospitalResult.beds).map(([key, value]) => [key, { ...value, available: Math.max(0, Math.min(value.total, value.available + deltas[key as BedType])) }])) as AdminHospital['beds'];
+        const adjustedHospital = { ...hospitalResult, beds };
+        setHospital(adjustedHospital); setDrafts(beds); setHasAddress(result.hasAddress !== false);
+      }
     }).catch((error: unknown) => { if (!cancelled) setMessage(error instanceof Error ? error.message : 'Could not load bed availability.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [hospitalName]);
+  useEffect(() => {
+    const refreshDemoBeds = () => {
+      const counts = getHospitalAdminDemoBedCounts();
+      setHospital((current) => current && current.id === demoHospital.id ? { ...current, beds: Object.fromEntries(Object.entries(current.beds).map(([key, value]) => [key, { ...value, available: counts[key as BedType] }])) as AdminHospital['beds'] } : current);
+      setDrafts((current) => current ? { ...current, ...Object.fromEntries(Object.entries(counts).map(([key, available]) => [key, { ...current[key as BedType], available }])) } : current);
+    };
+    window.addEventListener('hospital-admin-demo-updated', refreshDemoBeds);
+    return () => window.removeEventListener('hospital-admin-demo-updated', refreshDemoBeds);
+  }, []);
   useEffect(() => { const timer = window.setTimeout(() => setClockNow(Date.now()), 0); const interval = window.setInterval(() => setClockNow(Date.now()), 60_000); return () => { window.clearTimeout(timer); window.clearInterval(interval); }; }, []);
   const types: { key: BedType; label: string }[] = [
     { key: 'general', label: 'General beds' }, { key: 'icu', label: 'ICU beds' },

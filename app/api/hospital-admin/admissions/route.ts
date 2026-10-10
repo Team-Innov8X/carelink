@@ -33,10 +33,15 @@ async function returnReservedBed(admission: { hospitalId: string; bedCategory?: 
   const resourceId = ObjectId.isValid(String(hold.resourceId)) ? new ObjectId(String(hold.resourceId)) : hold.resourceId;
   const resources = await getResourcesCollection();
   const resource = await resources.findOne({ _id: resourceId as never });
-  if (!resource || resource.availableQuantity + hold.quantity > resource.totalQuantity) return false;
+  if (!resource) return false;
+  const wasPatientBedRequest = Boolean(hold.patientId);
+  if (wasPatientBedRequest && (resource.confirmedQuantity ?? 0) < hold.quantity) return false;
+  if (!wasPatientBedRequest && resource.availableQuantity + hold.quantity > resource.totalQuantity) return false;
   const updated = await resources.updateOne(
-    { _id: resourceId as never, availableQuantity: resource.availableQuantity, totalQuantity: resource.totalQuantity },
-    { $inc: { availableQuantity: hold.quantity }, $set: { status: 'available', updatedAt: new Date() } },
+    wasPatientBedRequest
+      ? { _id: resourceId as never, confirmedQuantity: { $gte: hold.quantity } }
+      : { _id: resourceId as never, availableQuantity: resource.availableQuantity, totalQuantity: resource.totalQuantity },
+    { $inc: wasPatientBedRequest ? { confirmedQuantity: -hold.quantity } : { availableQuantity: hold.quantity }, $set: { status: 'available', updatedAt: new Date() } },
   );
   if (!updated.modifiedCount) return false;
   await holds.updateOne({ _id: hold._id }, { $set: { status: 'discharged', updatedAt: new Date() } });

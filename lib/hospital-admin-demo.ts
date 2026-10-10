@@ -87,6 +87,16 @@ export function getHospitalAdminDemoCases() {
   return readState().cases;
 }
 
+export function getHospitalAdminDemoBedCounts() {
+  return readState().beds;
+}
+
+export function getHospitalAdminDemoBedDeltas() {
+  const baseline: DemoState['beds'] = { general: 11, icu: 4, trauma: 2, ventilators: 6 };
+  const current = readState().beds;
+  return Object.fromEntries(Object.keys(baseline).map((key) => [key, current[key as keyof DemoState['beds']] - baseline[key as keyof DemoState['beds']]])) as DemoState['beds'];
+}
+
 function appendDemoActivity(state: DemoState, action: string, details: Record<string, unknown>) {
   state.activity ??= [];
   state.activity.unshift({ _id: `demo-audit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, action: `Demo: ${action}`, actorName: 'Demo Hospital Admin', details, createdAt: new Date().toISOString(), isDemo: true });

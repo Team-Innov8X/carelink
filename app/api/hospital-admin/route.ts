@@ -1,7 +1,9 @@
-import { requireRole } from '@/lib/auth-utils';
+import { requireRole, resolveHospitalId } from '@/lib/auth-utils';
 import clientPromise from '@/lib/mongodb';
 import { workflowCollections } from '@/lib/sos';
 import { writeHospitalAudit } from '@/lib/hospital-audit';
+import { getHoldsCollection, getResourcesCollection } from '@/lib/models';
+import { ObjectId } from 'mongodb';
 
 export const runtime = 'nodejs';
 
@@ -30,18 +32,45 @@ export async function GET() {
   const hospital = await getAssignedHospital(hospitalName);
   if (hospital) {
     const { hospitalRequests, hospitalAdmissions } = await workflowCollections();
-    const requests = await hospitalRequests.find({ hospitalId: hospital.id, status: 'accepted' }).project({ _id: 1, bedCategory: 1 }).toArray();
+    const requests = await hospitalRequests.find({ hospitalId: hospital.id, status: 'accepted' }).project({ _id: 1, bedCategory: 1, holdId: 1, inventorySource: 1 }).toArray();
     const admissions = requests.length ? await hospitalAdmissions.find({ hospitalRequestId: { $in: requests.map((item) => item._id) } }).project({ hospitalRequestId: 1, dischargedAt: 1 }).toArray() : [];
     const activeIds = new Set(admissions.filter((item) => !item.dischargedAt).map((item) => item.hospitalRequestId));
     const everAdmittedIds = new Set(admissions.map((item) => item.hospitalRequestId));
     const reservedByType = new Map<string, number>();
     const occupiedByType = new Map<string, number>();
+    const mongoWorkflowCounts = new Map<string, number>();
+    const linkedHoldIds = new Set(requests.flatMap((item) => item.holdId ? [item.holdId] : []));
     for (const item of requests) if (item.bedCategory) {
       if (everAdmittedIds.has(item._id) && !activeIds.has(item._id)) continue;
       const target = activeIds.has(item._id) ? occupiedByType : reservedByType;
       target.set(item.bedCategory, (target.get(item.bedCategory) ?? 0) + 1);
+      if (item.inventorySource !== 'app-state' && item.holdId) mongoWorkflowCounts.set(item.bedCategory, (mongoWorkflowCounts.get(item.bedCategory) ?? 0) + 1);
     }
-    const enriched = { ...hospital, acceptingRequests: hospital.acceptingRequests !== false, lastCapacityUpdatedAt: hospital.lastCapacityUpdatedAt, beds: Object.fromEntries(Object.entries(hospital.beds).map(([key, bed]) => [key, { ...bed, reserved: reservedByType.get(key) ?? 0, occupied: Math.max(occupiedByType.get(key) ?? 0, Math.max(0, bed.total - bed.available - (reservedByType.get(key) ?? 0))) }])) };
+    const linkedHospitalId = await resolveHospitalId(authorization.user as typeof authorization.user & { hospitalId?: string; hospitalName?: string });
+    let acceptedHoldCounts = new Map<string, number>();
+    if (linkedHospitalId) {
+      const activeHolds = await (await getHoldsCollection()).find({ hospitalId: linkedHospitalId, status: { $in: ['confirmed', 'fulfilled'] } }).toArray();
+      const holds = activeHolds.filter((hold) => !linkedHoldIds.has(hold._id?.toString() ?? hold.id ?? ''));
+      const resources = await getResourcesCollection();
+      const resourceIds = [...new Set(holds.map((hold) => hold.resourceId))];
+      const resourceRows = resourceIds.length ? await resources.find({ _id: { $in: resourceIds.map((id) => ObjectId.isValid(id) ? new ObjectId(id) : id as never) } }).project({ category: 1 }).toArray() : [];
+      const categoryById = new Map(resourceRows.map((resource) => [String(resource._id), String(resource.category).toLowerCase()]));
+      acceptedHoldCounts = new Map();
+      for (const hold of holds) {
+        const category = categoryById.get(hold.resourceId) ?? 'general';
+        const bedType = category === 'icu' ? 'icu' : category === 'trauma' || category === 'pediatric' ? 'trauma' : category === 'ventilator' || category === 'ventilators' ? 'ventilators' : 'general';
+        acceptedHoldCounts.set(bedType, (acceptedHoldCounts.get(bedType) ?? 0) + hold.quantity);
+      }
+    }
+    const enriched = { ...hospital, acceptingRequests: hospital.acceptingRequests !== false, lastCapacityUpdatedAt: hospital.lastCapacityUpdatedAt, beds: Object.fromEntries(Object.entries(hospital.beds).map(([key, bed]) => {
+      const workflowReserved = reservedByType.get(key) ?? 0;
+      const workflowOccupied = occupiedByType.get(key) ?? 0;
+      const heldOccupancy = acceptedHoldCounts.get(key) ?? 0;
+      const available = Math.max(0, bed.available - heldOccupancy - (mongoWorkflowCounts.get(key) ?? 0));
+      const reserved = workflowReserved;
+      const occupied = workflowOccupied + heldOccupancy;
+      return [key, { ...bed, available, reserved, occupied: Math.max(occupied, Math.max(0, bed.total - available - reserved)) }];
+    })) };
     return Response.json({ hospital: enriched, hasAddress });
   }
   return hospital
