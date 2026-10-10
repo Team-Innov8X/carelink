@@ -23,7 +23,7 @@ export async function GET() {
       holds,
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to fetch requests";
-    return errorResponse(message, 500);
+    console.error("Failed to load the patient's bed requests:", error);
+    return errorResponse("Could not load bed requests.", 500);
   }
 }

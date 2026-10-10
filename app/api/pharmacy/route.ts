@@ -172,6 +172,8 @@ export async function POST(request: Request) {
         med.updatedAt = now.toISOString();
         const saved = await collection.updateOne({ _id: 'carelink', 'state.medicines': current.state.medicines, 'state.medicineOrders': current.state.medicineOrders }, { $set: { 'state.medicines': medicines, 'state.medicineOrders': [order, ...orders], pharmacyUpdatedAt: now } });
         if (!saved.modifiedCount) continue;
+        try { await db.collection('pharmacyInventoryLog').insertOne({ pharmacyId, pharmacyName: pharmacy.name, medicineId: med.id, medicineName: med.name, actorId: auth.user.id, actorName: auth.user.name, oldQuantity: available, newQuantity: available - body.quantity!, reason: 'order', createdAt: now }); }
+        catch (error) { console.error('Could not write pharmacy inventory audit row:', error); }
         return Response.json({ success: true, order, medicines, medicineOrders: [order, ...orders] });
       }
       if (body.action === 'order-status') {
@@ -183,12 +185,23 @@ export async function POST(request: Request) {
         order.status = body.status!;
         if (body.reason) order.rejectionReason = body.reason;
         order.updatedAt = now.toISOString();
+        let restoredStock: { medicine: StateMedicine; oldQuantity: number; newQuantity: number } | null = null;
         if (body.status === 'Rejected' || body.status === 'Cancelled') {
           const med = medicines.find((item) => item.id === order.medicineId);
-          if (med) med.stock = { ...med.stock, [pharmacyId]: Number(med.stock?.[pharmacyId] ?? 0) + order.quantity };
+          if (med) {
+            const oldQuantity = Number(med.stock?.[pharmacyId] ?? 0);
+            const newQuantity = oldQuantity + order.quantity;
+            med.stock = { ...med.stock, [pharmacyId]: newQuantity };
+            med.updatedAt = now.toISOString();
+            restoredStock = { medicine: med, oldQuantity, newQuantity };
+          }
         }
         const saved = await collection.updateOne({ _id: 'carelink', 'state.medicineOrders': current.state.medicineOrders, 'state.medicines': current.state.medicines }, { $set: { 'state.medicineOrders': orders, 'state.medicines': medicines, pharmacyUpdatedAt: now } });
         if (!saved.modifiedCount) continue;
+        if (restoredStock) {
+          try { await db.collection('pharmacyInventoryLog').insertOne({ pharmacyId, pharmacyName: state.pharmacies.find((item) => item.id === pharmacyId)?.name, medicineId: restoredStock.medicine.id, medicineName: restoredStock.medicine.name, actorId: auth.user.id, actorName: auth.user.name, oldQuantity: restoredStock.oldQuantity, newQuantity: restoredStock.newQuantity, reason: body.status!.toLowerCase(), createdAt: now }); }
+          catch (error) { console.error('Could not write pharmacy inventory audit row:', error); }
+        }
         return Response.json({ success: true, medicines, medicineOrders: orders });
       }
       return Response.json({ error: 'Unknown pharmacy action.' }, { status: 400 });
