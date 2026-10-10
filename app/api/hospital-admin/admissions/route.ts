@@ -1,8 +1,8 @@
-import { requireRole } from '@/lib/auth-utils';
+import { requireRole, resolveHospitalId } from '@/lib/auth-utils';
 import { workflowCollections } from '@/lib/sos';
 import { ObjectId } from 'mongodb';
 import clientPromise from '@/lib/mongodb';
-import { getHoldsCollection, getResourcesCollection } from '@/lib/models';
+import { getHoldsCollection, getResourcesCollection, getUsersCollection } from '@/lib/models';
 import { writeHospitalAudit } from '@/lib/hospital-audit';
 
 export const runtime = 'nodejs';
@@ -104,8 +104,45 @@ export async function POST(request: Request) {
   }
   const scope = hospitalScope(authorization.user as typeof authorization.user & Record<string, unknown>);
   if (!scope) return Response.json({ error: 'Your account is not linked to a hospital.' }, { status: 403 });
-  let body: { hospitalRequestId?: unknown };
+  let body: { hospitalRequestId?: unknown; holdId?: unknown };
   try { body = await request.json(); } catch { return Response.json({ error: 'Invalid JSON body.' }, { status: 400 }); }
+  if (typeof body.holdId === 'string' && body.holdId.trim()) {
+    const profile = authorization.user as typeof authorization.user & { hospitalId?: string; hospitalName?: string };
+    const hospitalId = await resolveHospitalId(profile);
+    if (!hospitalId) return Response.json({ error: 'Your account is not linked to a hospital.' }, { status: 403 });
+    const holdId = body.holdId.trim();
+    const queryId = ObjectId.isValid(holdId) ? new ObjectId(holdId) : holdId;
+    const holds = await getHoldsCollection();
+    const hold = await holds.findOne({ $or: [{ _id: queryId as never }, { id: holdId }], hospitalId, status: { $in: ['confirmed', 'fulfilled'] } });
+    if (!hold) return Response.json({ error: 'Confirmed bed request not found for this hospital.' }, { status: 404 });
+    const resources = await getResourcesCollection();
+    const resourceId = ObjectId.isValid(hold.resourceId) ? new ObjectId(hold.resourceId) : hold.resourceId;
+    const resource = await resources.findOne({ _id: resourceId as never });
+    const category = String(resource?.category ?? 'general').toLowerCase();
+    const bedCategory = category === 'icu' ? 'icu' : category === 'trauma' || category === 'pediatric' ? 'trauma' : category === 'ventilator' || category === 'ventilators' ? 'ventilators' : 'general';
+    const users = await getUsersCollection();
+    const patient = hold.patientId ? await users.findOne({ $or: [{ id: hold.patientId }, { _id: hold.patientId as never }] }) : null;
+    const admittedAt = hold.fulfilledAt ?? new Date();
+    const { hospitalAdmissions } = await workflowCollections();
+    await hospitalAdmissions.createIndex({ hospitalRequestId: 1 }, { unique: true });
+    await hospitalAdmissions.updateOne({ hospitalRequestId: holdId }, { $setOnInsert: {
+      _id: holdId,
+      hospitalRequestId: holdId,
+      hospitalId,
+      hospitalName: profile.hospitalName || 'Hospital',
+      patientId: hold.patientId || hold.requestedByUserId || '',
+      patientName: hold.patientDetails?.name || patient?.name || 'Patient',
+      patientPhone: patient?.phone,
+      incidentType: hold.patientDetails?.conditionSummary || hold.notes || 'Hospital bed request',
+      bedCategory,
+      holdId,
+      admittedAt,
+    } }, { upsert: true });
+    if (hold.status === 'confirmed') await holds.updateOne({ _id: hold._id, status: 'confirmed' }, { $set: { status: 'fulfilled', fulfilledAt: admittedAt, updatedAt: admittedAt } });
+    const admission = await hospitalAdmissions.findOne({ hospitalRequestId: holdId });
+    await writeHospitalAudit({ hospitalId, hospitalName: profile.hospitalName || 'Hospital', actorId: authorization.user.id, actorName: authorization.user.name, action: 'Patient arrival recorded · bed occupied', entityType: 'admission', entityId: holdId, details: { patientName: admission?.patientName, bedCategory }, createdAt: admittedAt });
+    return Response.json({ success: true, admission }, { status: 201 });
+  }
   if (typeof body.hospitalRequestId !== 'string' || !body.hospitalRequestId.trim()) {
     return Response.json({ error: 'hospitalRequestId is required.' }, { status: 400 });
   }

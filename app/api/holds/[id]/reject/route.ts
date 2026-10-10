@@ -4,6 +4,7 @@ import { requireRole, resolveHospitalId } from "@/lib/auth-utils";
 import { errorResponse } from "@/lib/api-response";
 import { getHoldsCollection } from "@/lib/models";
 import { rejectPatientBedHold, releaseHold } from "@/lib/services/hold-service";
+import { writeHospitalAudit } from '@/lib/hospital-audit';
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -42,6 +43,18 @@ export async function PATCH(_request: Request, { params }: Context) {
       const status = "status" in result ? result.status : 409;
       return errorResponse(message || "Failed to reject hold", status || 400);
     }
+
+    await writeHospitalAudit({
+      hospitalId: hold.hospitalId,
+      hospitalName: profile.hospitalName || 'Hospital',
+      actorId: auth.user.id,
+      actorName: auth.user.name,
+      action: 'Bed request rejected',
+      entityType: 'request',
+      entityId: id,
+      details: { resourceId: hold.resourceId, patientId: hold.patientId },
+      createdAt: new Date(),
+    });
 
     return NextResponse.json({ success: true, message: "Hold rejected and next queued patient promoted." });
   } catch (error: unknown) {

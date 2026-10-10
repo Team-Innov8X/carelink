@@ -7,12 +7,13 @@ import { HospitalRequestInbox } from '../../components/hospitalStaff/HospitalReq
 import { SearchField } from '../../components/common/SearchField';
 import { hospitalSpecialties } from '../../data/hospitalSpecialties';
 import { readApiJson } from '@/lib/client-api';
+import { dischargeHospitalAdminDemoCase, getHospitalAdminDemoAdmissions } from '@/lib/hospital-admin-demo';
 
 const tileColors = ['text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200'];
 type BedType = 'general' | 'icu' | 'trauma' | 'ventilators';
 type HospitalDoctor = { id: string; name: string; specialty: string; available: boolean; addedAt?: string; shiftStart?: string; shiftEnd?: string; onCall?: boolean };
 type AdminHospital = { id: string; name: string; beds: Record<BedType, { total: number; available: number; reserved?: number; occupied?: number; lastUpdatedAt?: string }>; specialties?: string[]; doctors?: HospitalDoctor[]; acceptingRequests?: boolean; lastCapacityUpdatedAt?: string; capacitySource?: string };
-type Admission = { _id: string; hospitalRequestId: string; patientId: string; patientName: string; patientPhone?: string; incidentType: string; bedCategory?: BedType; admittedAt: string };
+type Admission = { _id: string; hospitalRequestId: string; patientId: string; patientName: string; patientPhone?: string; incidentType: string; bedCategory?: BedType; admittedAt: string; isDemo?: boolean };
 const demoHospital: AdminHospital = { id: 'demo-hospital', name: 'City Care Hospital', beds: { general: { total: 20, available: 12 }, icu: { total: 8, available: 4 }, trauma: { total: 4, available: 2 }, ventilators: { total: 8, available: 6 } }, specialties: ['Trauma Care', 'Cardiac', 'ICU'] };
 const demoDoctors: HospitalDoctor[] = [
   { id: 'demo-doctor-1', name: 'Dr. Asha Mehta', specialty: 'Cardiac', available: true },
@@ -35,17 +36,26 @@ function PatientsAdmitted({ searchQuery }: { searchQuery: string }) {
         const response = await fetch('/api/hospital-admin/admissions', { cache: 'no-store' });
         const result = await readApiJson<{ admissions?: Admission[]; error?: string }>(response, 'Could not load admissions.');
         if (!response.ok) throw new Error(result.error || 'Could not load admissions.');
-        if (!cancelled) { setAdmissions(result.admissions ?? []); setMessage(''); }
+        if (!cancelled) { setAdmissions([...getHospitalAdminDemoAdmissions(), ...(result.admissions ?? [])]); setMessage(''); }
       } catch (error) { if (!cancelled) setMessage(error instanceof Error ? error.message : 'Could not load admissions.'); }
       finally { if (!cancelled) setLoading(false); }
     };
+    const onDemoUpdated = () => void refresh();
     const initial = window.setTimeout(() => void refresh(), 0);
     const timer = window.setInterval(() => void refresh(), 10000);
-    return () => { cancelled = true; window.clearTimeout(initial); window.clearInterval(timer); };
+    window.addEventListener('hospital-admin-demo-updated', onDemoUpdated);
+    return () => { cancelled = true; window.clearTimeout(initial); window.clearInterval(timer); window.removeEventListener('hospital-admin-demo-updated', onDemoUpdated); };
   }, []);
   const discharge = async (admissionId: string) => {
     if (!window.confirm('Discharge this patient and return the bed to available inventory?')) return;
     setBusyId(admissionId); setMessage('');
+    if (admissionId.startsWith('demo-case-')) {
+      dischargeHospitalAdminDemoCase(admissionId);
+      setAdmissions((current) => current.filter((item) => item._id !== admissionId));
+      setMessage('Demo patient discharged. The demo bed is available again.');
+      setBusyId(null);
+      return;
+    }
     try {
       const response = await fetch('/api/hospital-admin/admissions', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admissionId }) });
       const result = await readApiJson<{ error?: string }>(response, 'Could not discharge patient.');

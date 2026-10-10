@@ -4,6 +4,7 @@ import { confirmHold, confirmPatientBedHold } from "@/lib/services/hold-service"
 import { requireRole, resolveHospitalId } from "@/lib/auth-utils";
 import { errorResponse } from "@/lib/api-response";
 import { getHoldsCollection } from "@/lib/models";
+import { writeHospitalAudit } from '@/lib/hospital-audit';
 
 export async function PATCH(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(["hospital", "hospital_staff", "admin"]);
@@ -40,6 +41,18 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
       const status = "status" in result ? result.status : 409;
       return errorResponse(message || "Failed to confirm hold", status || 400);
     }
+
+    await writeHospitalAudit({
+      hospitalId: ownedHold.hospitalId,
+      hospitalName: profile.hospitalName || 'Hospital',
+      actorId: auth.user.id,
+      actorName: auth.user.name,
+      action: 'Bed request accepted · bed reserved',
+      entityType: 'request',
+      entityId: id,
+      details: { resourceId: ownedHold.resourceId, patientId: ownedHold.patientId },
+      createdAt: new Date(),
+    });
 
     return NextResponse.json(result);
   } catch (error: unknown) {
