@@ -6,12 +6,13 @@ import { INITIAL_HOSPITALS } from '@/data/mockHospitals';
 import { INITIAL_EMERGENCIES } from '@/data/mockEmergencies';
 import { INITIAL_AMBULANCES } from '@/data/mockAmbulances';
 import { INITIAL_DRIVERS } from '@/data/mockDrivers';
+import type { Pharmacy } from '@/types';
 
 export const runtime = 'nodejs';
 
 type StateMedicine = { id: string; name: string; stock: Record<string, number>; [key: string]: unknown };
 type StateOrder = { id: string; medicineId: string; medicineName: string; pharmacyId: string; pharmacyName: string; requestedBy: string; quantity: number; status: string; timestamp: string; isUrgent: boolean; [key: string]: unknown };
-type State = { medicines: StateMedicine[]; medicineOrders: StateOrder[]; pharmacies: typeof INITIAL_PHARMACIES; [key: string]: unknown };
+type State = { medicines: StateMedicine[]; medicineOrders: StateOrder[]; pharmacies: Pharmacy[]; [key: string]: unknown };
 
 async function appState() {
   const db = (await clientPromise).db();
@@ -25,8 +26,8 @@ async function appState() {
   return { collection, state: current!.state, updatedAt: current!.pharmacyUpdatedAt ?? current!.updatedAt };
 }
 
-function pharmacyForUser(user: { pharmacyId?: string }) {
-  return user.pharmacyId && INITIAL_PHARMACIES.some((p) => p.id === user.pharmacyId) ? user.pharmacyId : null;
+function pharmacyForUser(user: { pharmacyId?: string }, pharmacies: Pharmacy[]) {
+  return user.pharmacyId && pharmacies.some((pharmacy) => pharmacy.id === user.pharmacyId) ? user.pharmacyId : null;
 }
 
 export async function GET() {
@@ -35,7 +36,7 @@ export async function GET() {
   try {
     const { state, updatedAt } = await appState();
     const user = auth.user as typeof auth.user & { role?: string; pharmacyId?: string };
-    const pharmacyId = pharmacyForUser(user);
+    const pharmacyId = pharmacyForUser(user, state.pharmacies ?? INITIAL_PHARMACIES);
     if (user.role === 'pharmacy' && !pharmacyId) return Response.json({ error: 'Your pharmacy account is not linked to a pharmacy.' }, { status: 403 });
     const medicineOrders = (state.medicineOrders ?? []).filter((order) =>
       user.role === 'pharmacy' ? order.pharmacyId === pharmacyId : user.role === 'patient' ? order.patientId === auth.user.id : true,
@@ -53,12 +54,23 @@ export async function POST(request: Request) {
   if (body.action === 'order' && !pharmacyRole && !['patient', 'dispatcher'].includes((auth.user as typeof auth.user & { role?: string }).role ?? '')) return Response.json({ error: 'You cannot request pharmacy orders.' }, { status: 403 });
   if (body.action !== 'order' && !pharmacyRole) return Response.json({ error: 'Only pharmacy staff can manage inventory and orders.' }, { status: 403 });
   const requestedPharmacy = body.pharmacyId;
-  const pharmacyId = pharmacyRole ? pharmacyForUser(auth.user as typeof auth.user & { pharmacyId?: string }) : requestedPharmacy && INITIAL_PHARMACIES.some((p) => p.id === requestedPharmacy) ? requestedPharmacy : null;
-  if (!pharmacyId) return Response.json({ error: pharmacyRole ? 'Your pharmacy account is not linked to a pharmacy.' : 'Choose a valid pharmacy for this order.' }, { status: 400 });
   const now = new Date();
   const db = (await clientPromise).db();
+  let collection: Awaited<ReturnType<typeof appState>>['collection'];
+  let pharmacyId: string | null = null;
   try {
-    const { collection } = await appState();
+    ({ collection } = await appState());
+    const current = await collection.findOne({ _id: 'carelink' });
+    const pharmacies = current?.state.pharmacies ?? INITIAL_PHARMACIES;
+    pharmacyId = pharmacyRole
+      ? pharmacyForUser(auth.user as typeof auth.user & { pharmacyId?: string }, pharmacies)
+      : requestedPharmacy && pharmacies.some((pharmacy) => pharmacy.id === requestedPharmacy) ? requestedPharmacy : null;
+  } catch (error) {
+    console.error('Could not resolve pharmacy inventory:', error);
+    return Response.json({ error: 'Could not load pharmacy inventory.' }, { status: 503 });
+  }
+  if (!pharmacyId) return Response.json({ error: pharmacyRole ? 'Your pharmacy account is not linked to a pharmacy.' : 'Choose a valid pharmacy for this order.' }, { status: 400 });
+  try {
     for (let attempt = 0; attempt < 6; attempt++) {
       const current = await collection.findOne({ _id: 'carelink' });
       if (!current) break;

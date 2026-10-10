@@ -2,14 +2,26 @@ import { z } from 'zod';
 import { requireRole } from '@/lib/auth-utils';
 import clientPromise from '@/lib/mongodb';
 import { ObjectId } from 'mongodb';
+import { INITIAL_HOSPITALS } from '@/data/mockHospitals';
+import { INITIAL_EMERGENCIES } from '@/data/mockEmergencies';
+import { INITIAL_PHARMACIES } from '@/data/mockPharmacies';
+import { INITIAL_MEDICINES } from '@/data/mockMedicines';
+import { INITIAL_AMBULANCES } from '@/data/mockAmbulances';
+import { INITIAL_DRIVERS } from '@/data/mockDrivers';
 
 export const runtime = 'nodejs';
 const schema = z.object({ name: z.string().trim().min(2).max(180), address: z.string().trim().min(8).max(500), city: z.string().trim().min(2).max(120), state: z.string().trim().min(2).max(120), pincode: z.string().trim().min(3).max(12), phone: z.string().trim().min(7).max(30), details: z.string().trim().max(2000).optional(), totalBeds: z.number().int().nonnegative().max(100000).optional(), openingHours: z.string().trim().max(250).optional() });
 
+function accountFilter(id: string) {
+  const ids: Record<string, unknown>[] = [{ _id: id }, { id }];
+  if (ObjectId.isValid(id)) ids.unshift({ _id: new ObjectId(id) });
+  return { $or: ids };
+}
+
 export async function GET() {
   const auth = await requireRole(['hospital', 'hospital_staff', 'pharmacy']);
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
-  const account = await (await clientPromise).db().collection('user').findOne({ _id: auth.user.id as never }, { projection: { onboardingCompleted: 1 } });
+  const account = await (await clientPromise).db().collection('user').findOne(accountFilter(auth.user.id), { projection: { onboardingCompleted: 1 } });
   return Response.json({ onboardingCompleted: account?.onboardingCompleted === true });
 }
 
@@ -50,11 +62,26 @@ export async function POST(request: Request) {
     const org = { name: input.data.name, address: { street: input.data.address, city: input.data.city, state: input.data.state, zipCode: input.data.pincode, country: 'India' }, location: { type: 'Point', coordinates: coords }, contact: { phone: input.data.phone, email: auth.user.email, emergencyHotline: input.data.phone }, status: 'active', isDemo: false, ownerUserId: accountId, services: input.data.details || '', openingHours: input.data.openingHours || '', updatedAt: now, createdAt: now };
     if (user.role === 'pharmacy') {
       await db.collection('pharmacies').updateOne({ ownerUserId: accountId }, { $set: org }, { upsert: true });
-      await db.collection('user').updateOne({ _id: accountId as never }, { $set: { pharmacyName: org.name, pharmacyAddress: address, phone: org.contact.phone, onboardingCompleted: true, updatedAt: now } });
+      const pharmacyRecord = await db.collection('pharmacies').findOne({ ownerUserId: accountId }, { projection: { _id: 1 } });
+      if (!pharmacyRecord?._id) throw new Error('Pharmacy record could not be linked to your account.');
+      const pharmacyId = String(pharmacyRecord._id);
+      const inventoryPharmacy = { id: pharmacyId, name: org.name, distanceKm: 0, address, phone: org.contact.phone, isOpen: true, location: { lat: geoPoint.lat, lng: geoPoint.lng }, rating: 5 };
+      const appStateCollection = db.collection<{ _id: string; state?: Record<string, unknown> }>('appState');
+      await appStateCollection.updateOne({ _id: 'carelink' }, { $setOnInsert: { state: { hospitals: INITIAL_HOSPITALS, emergencies: INITIAL_EMERGENCIES, pharmacies: INITIAL_PHARMACIES, medicines: INITIAL_MEDICINES, ambulances: INITIAL_AMBULANCES, drivers: INITIAL_DRIVERS, medicineOrders: [] }, updatedAt: now } }, { upsert: true });
+      const appState = await appStateCollection.findOne({ _id: 'carelink' });
+      const shared = appState?.state ?? {};
+      const pharmacies = Array.isArray(shared.pharmacies) ? shared.pharmacies as Array<{ id: string }> : INITIAL_PHARMACIES;
+      const medicines = Array.isArray(shared.medicines) ? shared.medicines as Array<{ stock?: Record<string, number>; [key: string]: unknown }> : INITIAL_MEDICINES;
+      await appStateCollection.updateOne({ _id: 'carelink' }, { $set: {
+        'state.pharmacies': [inventoryPharmacy, ...pharmacies.filter((item) => item.id !== pharmacyId)],
+        'state.medicines': medicines.map((medicine) => ({ ...medicine, stock: { ...medicine.stock, [pharmacyId]: Number(medicine.stock?.[pharmacyId] ?? 0) } })),
+        pharmacyUpdatedAt: now,
+      } });
+      await db.collection('user').updateOne(accountFilter(accountId), { $set: { pharmacyName: org.name, pharmacyAddress: address, pharmacyId, phone: org.contact.phone, onboardingCompleted: true, updatedAt: now } });
     } else {
       const code = `HOSP-${new ObjectId().toHexString().slice(-8).toUpperCase()}`;
       await db.collection('hospitals').updateOne({ ownerUserId: accountId }, { $set: { ...org, code, capacitySummary: { totalBeds: input.data.totalBeds || 0, availableBeds: input.data.totalBeds || 0, totalVentilators: 0, availableVentilators: 0 } } }, { upsert: true });
-      await db.collection('user').updateOne({ _id: accountId as never }, { $set: { hospitalName: org.name, hospitalAddress: address, phone: org.contact.phone, onboardingCompleted: true, updatedAt: now } });
+      await db.collection('user').updateOne(accountFilter(accountId), { $set: { hospitalName: org.name, hospitalAddress: address, phone: org.contact.phone, onboardingCompleted: true, updatedAt: now } });
     }
     return Response.json({ success: true, location: geoPoint });
   } catch { return Response.json({ error: 'Could not save organization details. Try again.' }, { status: 500 }); }

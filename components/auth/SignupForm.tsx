@@ -50,6 +50,7 @@ export default function SignupForm({ role }: { role: string }) {
         name: name.trim(),
         email: email.trim().toLowerCase(),
         password,
+        role,
         ...(role === 'hospital_staff' ? { hospitalName: hospitalName.trim(), hospitalAddress: hospitalAddress.trim(), hospitalRegistrationNumber: hospitalRegistrationNumber.trim(), hospitalSpecialties: hospitalSpecialties.trim() } : {}),
         ...(role === 'pharmacy' ? { pharmacyName: pharmacyName.trim(), pharmacyAddress: pharmacyAddress.trim(), pharmacyLicenseNumber: pharmacyLicenseNumber.trim(), pharmacyType } : {}),
         ...(role === 'driver' ? { licenseNumber: licenseNumber.trim(), vehicleNumber: vehicleNumber.trim(), driverQualification } : {}),

@@ -39,7 +39,7 @@ function createAuth(mongoClient: typeof client) {
         type: "string",
         defaultValue: "patient",
         required: false,
-        input: false,
+        input: true,
       },
       phone: {
         type: "string",
@@ -58,6 +58,7 @@ function createAuth(mongoClient: typeof client) {
       pharmacyAddress: { type: "string", required: false, input: true },
       pharmacyLicenseNumber: { type: "string", required: false, input: true },
       pharmacyType: { type: "string", required: false, input: true },
+      pharmacyId: { type: "string", required: false, input: false },
       licenseNumber: { type: "string", required: false, input: true },
       vehicleNumber: { type: "string", required: false, input: true },
       driverQualification: { type: "string", required: false, input: true },
