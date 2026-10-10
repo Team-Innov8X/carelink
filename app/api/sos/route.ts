@@ -23,8 +23,11 @@ export async function GET() {
     createdAt: 1, acceptedAt: 1, arrivedAt: 1, completedAt: 1, driverId: 1,
     requiredEquipment: 1, tripStage: 1, tripTimestamps: 1, vitalsUpdate: 1, issue: 1,
   };
-  const items = await requests.find(query, patientProjection ? { projection: patientProjection } : undefined).sort({ createdAt: -1 }).limit(50).toArray();
+  let items = await requests.find(query, patientProjection ? { projection: patientProjection } : undefined).sort({ createdAt: -1 }).limit(50).toArray();
   await Promise.all(items.filter((item) => item.status === "searching" && item.type !== "normal").map((item) => advanceDispatch(item._id)));
+  if (items.some((item) => item.status === "searching" && item.type !== "normal")) {
+    items = await requests.find(query, patientProjection ? { projection: patientProjection } : undefined).sort({ createdAt: -1 }).limit(50).toArray();
+  }
   const requestQueryMs = performance.now() - requestQueryStartedAt;
   const hospitalQueryStartedAt = performance.now();
   const linkedHospitalRequests = items.length ? await hospitalRequests.find(
@@ -92,7 +95,17 @@ export async function POST(request: Request) {
   if (!idempotencyKey || idempotencyKey.length > 160) return Response.json({ error: "An Idempotency-Key header is required (maximum 160 characters)." }, { status: 400 });
   const { requests } = await sosCollections();
   const requestType: 'emergency' | 'routine' = body.requestType === 'routine' ? 'routine' : 'emergency';
-  const existing = requestType === 'routine' ? null : await requests.findOne({ patientId: auth.user.id, status: { $in: ["searching", "accepted"] }, requestType: { $ne: 'routine' } });
+  // Clean stale pointers left by older dispatch code, then advance the active
+  // request before deciding that this patient already has an SOS in progress.
+  await requests.updateMany(
+    { patientId: auth.user.id, activePatientId: auth.user.id, status: { $nin: ["searching", "accepted"] } },
+    { $unset: { activePatientId: "" } },
+  );
+  let existing = requestType === 'routine' ? null : await requests.findOne({ patientId: auth.user.id, status: { $in: ["searching", "accepted"] }, requestType: { $ne: 'routine' } });
+  if (existing) {
+    await advanceDispatch(existing._id);
+    existing = await requests.findOne({ _id: existing._id, status: { $in: ["searching", "accepted"] } });
+  }
   if (existing) {
     const hospitalRequest = await ensureHospitalRequestForSos(existing).catch(() => null);
     return Response.json({
@@ -129,9 +142,10 @@ export async function POST(request: Request) {
     if (winner) return Response.json({ request: { id: winner._id, status: winner.status, createdAt: winner.createdAt }, message: "An active request already exists.", existing: true });
     throw error;
   }
-  await advanceDispatch(sos._id);
-
-  const hospitalRequest = requestType === 'routine' ? null : await ensureHospitalRequestForSos(sos).catch(() => null);
+  const [, hospitalRequest] = await Promise.all([
+    advanceDispatch(sos._id),
+    requestType === 'routine' ? Promise.resolve(null) : ensureHospitalRequestForSos(sos).catch(() => null),
+  ]);
   const hospitalRequestId = hospitalRequest?._id ?? null;
 
   return Response.json({

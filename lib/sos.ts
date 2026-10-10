@@ -6,6 +6,7 @@ import {
   SOS_MAX_ROUNDS,
   SOS_OFFER_BATCH_SIZE,
   SOS_OFFER_DURATION_MS,
+  SOS_REQUEST_TIMEOUT_MS,
   STALE_LOCATION_SECONDS,
   NORMAL_REQUEST_EXPIRY_MIN,
 } from "./dispatch/constants.ts";
@@ -240,10 +241,10 @@ export async function sosCollections() {
     requests.createIndex({ status: 1, createdAt: -1 }, { name: 'sos_status_created' }),
     requests.createIndex({ patientId: 1, idempotencyKey: 1 }, { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } }, name: "sos_patient_idempotency" }),
     requests.createIndex({ activePatientId: 1 }, { unique: true, sparse: true, name: "sos_one_active_request_per_patient" }),
+    offers.createIndex({ requestId: 1, driverId: 1 }, { unique: true, name: "dispatch_offer_request_driver" }),
+    offers.createIndex({ driverId: 1, status: 1, expiresAt: 1 }, { name: "dispatch_offer_driver_status_expiry" }),
   ]).then(() => undefined).catch(error => { sosIndexesPromise = undefined; throw error; });
   await sosIndexesPromise;
-  await offers.createIndex({ requestId:  1, driverId: 1 }, { unique: true, name: "dispatch_offer_request_driver" });
-  await offers.createIndex({ driverId: 1, status: 1, expiresAt: 1 }, { name: "dispatch_offer_driver_status_expiry" });
   return { requests, drivers, hospitals, offers };
 }
 
@@ -297,6 +298,29 @@ export async function advanceDispatch(requestId: string) {
   const now = new Date();
   const request = await requests.findOne({ _id: requestId, status: "searching" });
   if (!request) return;
+
+  // Close an SOS 30 seconds after creation even if dispatch polling was delayed.
+  // Clear activePatientId so the patient's next SOS is not blocked by the
+  // unique active-request index.
+  const timedOutBefore = new Date(now.getTime() - SOS_REQUEST_TIMEOUT_MS);
+  if (new Date(request.createdAt).getTime() <= timedOutBefore.getTime()) {
+    const timedOut = await requests.updateOne(
+      { _id: requestId, status: "searching", createdAt: { $lte: timedOutBefore } },
+      {
+        $set: { status: "no_driver_found", dispatchStatus: "no_driver_found", noDriverFoundAt: now },
+        $unset: { activePatientId: "", assignedDriverId: "", assignmentExpiresAt: "" },
+        $push: { transitionLog: { from: request.dispatchStatus ?? "offered", to: "no_driver_found", at: now, actor: { type: "system", id: "dispatch" }, reason: `No driver accepted within ${SOS_REQUEST_TIMEOUT_MS / 1000} seconds` } },
+      },
+    );
+    if (timedOut.modifiedCount) {
+      await Promise.all((['offered', 'pending'] as const).map((from) => offers.updateMany(
+        { requestId, status: from },
+        { $set: { status: "expired", respondedAt: now }, $push: { transitionLog: { from, to: "expired", at: now, actor: { type: "system", id: "dispatch" }, reason: "SOS request timed out" } } },
+      )));
+    }
+    return;
+  }
+
   await Promise.all((["offered", "pending"] as const).map((from) => offers.updateMany(
     { requestId, status: from, expiresAt: { $lte: now } },
     { $set: { status: "expired", respondedAt: now }, $push: { transitionLog: { from, to: "expired", at: now, actor: { type: "system", id: "dispatch" }, reason: "Offer expired" } } },
@@ -353,7 +377,7 @@ export async function advanceDispatch(requestId: string) {
   if (!nearest.length) {
     if (nextRound >= DISPATCH_MAX_ROUNDS) await requests.updateOne({ _id: requestId, status: "searching", dispatchRound: nextRound }, {
       $set: { status: "no_driver_found", dispatchStatus: "no_driver_found", noDriverFoundAt: now },
-      $unset: { activePatientId: "" },
+      $unset: { activePatientId: "", assignedDriverId: "", assignmentExpiresAt: "" },
       $push: { transitionLog: { from: "offered", to: "no_driver_found", at: now, actor: { type: "system", id: "dispatch" }, reason: "No eligible drivers found" } },
     });
     return;
@@ -366,7 +390,11 @@ export async function advanceDispatch(requestId: string) {
   })), { ordered: false }).catch(() => undefined);
 }
 
-export async function expireAndReofferDriverOffers() {
+const DISPATCH_MAINTENANCE_INTERVAL_MS = 5_000;
+let dispatchMaintenanceCompletedAt = 0;
+let dispatchMaintenancePromise: Promise<void> | null = null;
+
+async function runDispatchMaintenance() {
   const { requests, offers } = await sosCollections();
   const now = new Date();
   const expired = await requests.find({ type: "normal", status: "searching", expiresAt: { $lte: now } }).project({ _id: 1, dispatchStatus: 1, transitionLog: 1 }).limit(100).toArray();
@@ -384,6 +412,16 @@ export async function expireAndReofferDriverOffers() {
   }
   const open = await requests.find({ status: "searching", type: { $ne: "normal" } }).project({ _id: 1 }).limit(100).toArray();
   await Promise.all(open.map((request) => advanceDispatch(request._id)));
+}
+
+export function expireAndReofferDriverOffers() {
+  if (dispatchMaintenancePromise) return dispatchMaintenancePromise;
+  if (Date.now() - dispatchMaintenanceCompletedAt < DISPATCH_MAINTENANCE_INTERVAL_MS) return Promise.resolve();
+
+  dispatchMaintenancePromise = runDispatchMaintenance()
+    .then(() => { dispatchMaintenanceCompletedAt = Date.now(); })
+    .finally(() => { dispatchMaintenancePromise = null; });
+  return dispatchMaintenancePromise;
 }
 
 export function createRequestId() { return randomUUID(); }

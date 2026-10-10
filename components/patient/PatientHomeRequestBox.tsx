@@ -21,6 +21,7 @@ type CurrentRequest = {
   tripStage?: string | null;
   tripTimestamps?: Record<string, string>;
   fallbackInstruction?: string | null;
+  nearbyAvailableDriverCount?: number;
   estimatedEtaMinutes?: number | null;
   distanceKm?: number | null;
   serverTime: string;
@@ -139,6 +140,7 @@ export const PatientHomeRequestBox: React.FC = () => {
     <p className="mt-3 text-sm font-semibold">{request.incidentType}</p>
     {request.location.address && <p className="mt-1 flex items-center gap-1 text-xs text-slate-600"><MapPin className="h-3.5 w-3.5" />Pickup: {request.location.address}</p>}
     <ol className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7" aria-label="Emergency request status timeline">{patientTimeline.map(([key, label], index) => <li key={key} className={`rounded-lg border px-2 py-2 text-xs ${index <= stage ? 'border-emerald-200 bg-emerald-50 font-semibold text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span className="mr-1">{index <= stage ? '✓' : '○'}</span>{label}{request.tripTimestamps?.[request.tripStage || ''] && request.tripStage === key && <span className="mt-1 block text-[10px] font-normal">{new Date(request.tripTimestamps[request.tripStage]).toLocaleTimeString()}</span>}</li>)}</ol>
+    {request.status === 'searching' && <p role="status" className={`mt-3 rounded-lg px-3 py-2.5 text-sm ${request.nearbyAvailableDriverCount ? 'bg-sky-50 text-sky-900' : 'bg-amber-50 text-amber-900'}`}>{request.nearbyAvailableDriverCount ? `${request.nearbyAvailableDriverCount} nearby driver${request.nearbyAvailableDriverCount === 1 ? ' is' : 's are'} available in the response area. We’re offering your SOS; driver details will appear here after one accepts.` : 'No available driver with a fresh location is within the response area right now. We’re continuing to search; a driver will appear here after accepting.'}</p>}
     {request.status === 'no_driver_found' && <div role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900"><p className="font-bold">No driver was found</p><p className="mt-1">{request.fallbackInstruction || 'No driver accepted this request. Please contact your local emergency services.'}</p></div>}
     {request.status === 'cancelled' && <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">This request was cancelled.</p>}
     {cancelMessage && <p role="status" className="mt-3 text-sm text-slate-700">{cancelMessage}</p>}

@@ -69,7 +69,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const [mapError, setMapError] = useState('');
   const [hasPanned, setHasPanned] = useState(false);
   const fittedBoundsKeyRef = useRef<string | null>(null);
-  const [routedPath, setRoutedPath] = useState<{ key: string; path: [number, number][] } | null>(null);
+  const [routedPath, setRoutedPath] = useState<{ key: string; driver: [number, number]; path: [number, number][] } | null>(null);
   const [routeConfig, setRouteConfig] = useState<{ routeRefreshSeconds: number; routeDeviationM: number; maxRouteAccuracyM: number } | null>(null);
   const lastRouteRequestRef = useRef<{ at: number; driver: [number, number] } | null>(null);
   const [fetchedFacilities, setFetchedFacilities] = useState<MapFacility[]>([]);
@@ -91,6 +91,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const routeKey = patientLocation && driverLocation
     ? [driverLocation, patientLocation, ...(hospitalLocation ? [hospitalLocation] : [])].map(([lat, lng]) => `${lat},${lng}`).join('|')
     : '';
+  const routeAccuracyPoor = Boolean(routeConfig && typeof driverAccuracyM === 'number' && driverAccuracyM > routeConfig.maxRouteAccuracyM);
 
   useEffect(() => {
     if (!routeKey || routeConfig) return;
@@ -106,7 +107,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
   useEffect(() => {
     if (!routeKey || !routeConfig) return;
-    if (typeof driverAccuracyM === 'number' && driverAccuracyM > routeConfig.maxRouteAccuracyM) return;
+    if (routeAccuracyPoor) return;
     const routePoints = routeKey.split('|').map((point) => point.split(',').map(Number) as [number, number]);
     const latestDriver = routePoints[0];
     const lastRoute = lastRouteRequestRef.current;
@@ -126,7 +127,7 @@ export const MapView: React.FC<MapViewProps> = ({
       })
       .then((result: { code?: string; routes?: { geometry?: { coordinates?: [number, number][] } }[] }) => {
         const coordinates = result.code === 'Ok' ? result.routes?.[0]?.geometry?.coordinates : undefined;
-        if (coordinates?.length) setRoutedPath({ key: routeKey, path: coordinates.map(([lng, lat]) => [lat, lng]) });
+        if (coordinates?.length) setRoutedPath({ key: routeKey, driver: latestDriver, path: coordinates.map(([lng, lat]) => [lat, lng]) });
       })
       .catch((error: unknown) => {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -136,8 +137,21 @@ export const MapView: React.FC<MapViewProps> = ({
 
     // Do not abort a valid route lookup on the next GPS poll. Route requests are
     // already throttled below; old results are ignored unless their key matches.
-  }, [routeKey, driverAccuracyM, routeConfig]);
-  const currentRoutedPath = routeKey && routedPath?.key === routeKey ? routedPath.path : null;
+  }, [routeKey, routeAccuracyPoor, routeConfig]);
+  const currentRoutedPath = (() => {
+    if (!routeKey || !routedPath) return null;
+    if (routedPath.key === routeKey) return routedPath.path;
+    const requestedPoints = routeKey.split('|');
+    const routedPoints = routedPath.key.split('|');
+    if (requestedPoints.length !== routedPoints.length || !requestedPoints.slice(1).every((point, index) => point === routedPoints[index + 1])) return null;
+    const currentDriver = requestedPoints[0].split(',').map(Number);
+    const movedMeters = Math.hypot(
+      (currentDriver[0] - routedPath.driver[0]) * 111_000,
+      (currentDriver[1] - routedPath.driver[1]) * 111_000 * Math.cos(currentDriver[0] * Math.PI / 180),
+    );
+    const maxMovement = routeConfig?.routeDeviationM ?? 200;
+    return movedMeters <= maxMovement ? routedPath.path : null;
+  })();
 
   useEffect(() => {
     // Driver and trip maps disable network markers, so they should not call
@@ -356,12 +370,13 @@ export const MapView: React.FC<MapViewProps> = ({
     });
 
     const sosRoute = patientLocation && driverLocation ? [driverLocation, patientLocation, ...(hospitalLocation ? [hospitalLocation] : [])] as [number, number][] : null;
-    if (sosRoute && !(routeConfig && typeof driverAccuracyM === 'number' && driverAccuracyM > routeConfig.maxRouteAccuracyM)) {
-      routeRef.current = L.polyline(currentRoutedPath ?? sosRoute, {
+    if (sosRoute) {
+      const roadRoute = currentRoutedPath && !routeAccuracyPoor;
+      routeRef.current = L.polyline(roadRoute ? currentRoutedPath : sosRoute, {
         color: '#e11d48',
-        weight: currentRoutedPath ? 5 : 4,
+        weight: roadRoute ? 5 : 4,
         opacity: 0.9,
-        ...(currentRoutedPath ? {} : { dashArray: '8 8' }),
+        ...(roadRoute ? {} : { dashArray: '8 8' }),
       }).addTo(map);
     }
 
@@ -386,7 +401,7 @@ export const MapView: React.FC<MapViewProps> = ({
       fittedBoundsKeyRef.current = boundsKey;
       setHasPanned(false);
     }
-  }, [mapReady, mapCenter, zoom, ambulances, hospitals, emergencies, hospital, showNetworkMarkers, showRouteLine, ambulance, patientLocation, patientName, driverLocation, driverAccuracyM, hospitalLocation, driverLocations, currentRoutedPath, setSelectedEmergencyId, activeFacilities, fitBoundsKey, routeKey, routeConfig]);
+  }, [mapReady, mapCenter, zoom, ambulances, hospitals, emergencies, hospital, showNetworkMarkers, showRouteLine, ambulance, patientLocation, patientName, driverLocation, driverAccuracyM, routeAccuracyPoor, hospitalLocation, driverLocations, currentRoutedPath, setSelectedEmergencyId, activeFacilities, fitBoundsKey, routeKey, routeConfig]);
 
   if (!mapCenter) {
     return <div className="flex items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-500" style={{ height }}>No location records to show.</div>;
@@ -397,9 +412,7 @@ export const MapView: React.FC<MapViewProps> = ({
       <div ref={containerRef} className="h-full w-full" aria-label="Map showing ambulances, hospitals, and emergency requests" />
       {showDriverLocationControl && driverLocation && <button type="button" onClick={() => { const map = mapRef.current; if (!map) return; map.setView(driverLocation, Math.max(map.getZoom(), zoom), { animate: true }); setHasPanned(false); }} className="absolute right-3 top-3 z-[1000] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow">My location</button>}
       {hasPanned && <button type="button" onClick={() => { const L = leafletRef.current; const map = mapRef.current; if (!L || !map) return; const points = [driverLocation, patientLocation, hospitalLocation].filter((point): point is [number, number] => Boolean(point)); if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 14 }); setHasPanned(false); }} className={`absolute right-3 z-[1000] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 shadow ${showDriverLocationControl ? 'top-14' : 'top-3'}`}>Recenter</button>}
-      {showRouteLine && patientLocation && driverLocation && (routeConfig && typeof driverAccuracyM === 'number' && driverAccuracyM > routeConfig.maxRouteAccuracyM
-        ? <div className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-amber-800 shadow">Driver GPS accuracy is low; route is hidden until a better fix arrives.</div>
-        : <div className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-slate-700 shadow">{currentRoutedPath ? 'Road route' : 'Route approximate while directions load'}</div>)}
+      {showRouteLine && patientLocation && driverLocation && <div className={`absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium shadow ${routeAccuracyPoor ? 'text-amber-800' : 'text-slate-700'}`}>{routeAccuracyPoor ? `Approximate path shown · GPS accuracy ±${Math.round(driverAccuracyM ?? 0)} m` : currentRoutedPath ? 'Road route' : 'Approximate path while road directions load'}</div>}
       {mapError && <div role="status" className="absolute inset-x-3 top-3 z-[1000] rounded-lg bg-white/95 px-3 py-2 text-xs font-medium text-rose-700 shadow">{mapError}</div>}
       {!showDriverLocationControl && <div className="absolute bottom-3 left-3 z-[1000] flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white/95 px-3.5 py-2 text-xs font-medium text-slate-700 shadow-md backdrop-blur-sm">
         {patientLocation ? <span><b className="text-rose-600">P</b> You / patient</span> : <span>🚑 Ambulance</span>}

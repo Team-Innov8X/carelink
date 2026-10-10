@@ -85,7 +85,7 @@ normal request: created → expired   (nobody accepted in NORMAL_REQUEST_EXPIRY_
 
 ## 3. Dispatch rules
 
-- **SOS:** offer to the `SOS_OFFER_BATCH_SIZE` nearest eligible drivers **at the same time**. Eligible means online, not on a trip, recent location (not stale), within `SOS_SEARCH_RADIUS_KM`. Each offer expires `SOS_OFFER_SECONDS` (10) after creation. On expiry with no accept, start the next round with the next nearest drivers who have not been offered. Stop after `SOS_MAX_ROUNDS`, then `no_driver_found`.
+- **SOS:** offer to the `SOS_OFFER_BATCH_SIZE` nearest eligible drivers **at the same time**. Eligible means online, not on a trip, recent location (not stale), within `SOS_SEARCH_RADIUS_KM`. Each offer expires `SOS_OFFER_SECONDS` (minimum 40 seconds) after creation. On expiry with no accept, start the next round with the next nearest drivers who have not been offered. Stop after `SOS_MAX_ROUNDS`, then `no_driver_found`.
 - **Normal request:** visible to all eligible online drivers in the Requests tab, nearest first. No popup. Expires after `NORMAL_REQUEST_EXPIRY_MIN`.
 - **Accept:** one atomic conditional update. The loser gets a clear "already taken" message and the card disappears.
 - **Expiry** is driven by the server (`expiresAt`). The client countdown is computed from server time with a clock offset, so a wrong device clock cannot keep a popup alive.
@@ -215,7 +215,7 @@ Tabs: **Overview**, **Requests**, **Current Trip**, **Task History**.
 
 ## 11. Config constants (`lib/dispatch/constants.ts`)
 
-`SOS_OFFER_SECONDS = 10`, `SOS_OFFER_BATCH_SIZE = 3`, `SOS_MAX_ROUNDS = 3`, `SOS_SEARCH_RADIUS_KM`, `NORMAL_REQUEST_EXPIRY_MIN = 15`, `POLL_SECONDS = 3`, `LOCATION_PING_SECONDS = 5`, `STALE_LOCATION_SECONDS = 30`, `ROUTE_REFRESH_SECONDS = 30`, `ROUTE_DEVIATION_M = 200`, `LOCATION_RETENTION_DAYS`, `EMERGENCY_FALLBACK_TEXT`. Choose sensible defaults where unset and report them.
+`SOS_OFFER_SECONDS = 40` (minimum), `SOS_REQUEST_TIMEOUT_SECONDS >= SOS_OFFER_SECONDS + 5`, `SOS_OFFER_BATCH_SIZE = 3`, `SOS_MAX_ROUNDS = 3`, `SOS_SEARCH_RADIUS_KM`, `NORMAL_REQUEST_EXPIRY_MIN = 15`, `POLL_SECONDS = 3`, `LOCATION_PING_SECONDS = 5`, `STALE_LOCATION_SECONDS = 30`, `ROUTE_REFRESH_SECONDS = 30`, `ROUTE_DEVIATION_M = 200`, `LOCATION_RETENTION_DAYS`, `EMERGENCY_FALLBACK_TEXT`. Choose sensible defaults where unset and report them.
 
 ---
 
