@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Driver / dispatcher hold request
-    const parsed = createHoldSchema.safeParse(bodyJson);
+    const parsed = createHoldSchema.safeParse({ ...(bodyJson as Record<string, unknown>), requestedByUserId: auth.user.id });
     if (!parsed.success) return validationError(parsed.error);
 
     const resources = await getResourcesCollection();

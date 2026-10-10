@@ -106,6 +106,7 @@ export const Sidebar: React.FC = () => {
         </div>
         {navItems
           .filter((item) => {
+            if (item.id === 'recommendations' && !['patient', 'dispatcher'].includes(role)) return false;
             if (role === 'patient') {
               if (['hospital-portal', 'handoff'].includes(item.id)) return false;
             } else {

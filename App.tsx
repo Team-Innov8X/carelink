@@ -188,7 +188,7 @@ const MainAppContent: React.FC = () => {
           {activeTab === 'hospitals' && <HospitalDirectory />}
           {activeTab === 'hospital-view' && <HospitalDetailsView />}
           {activeTab === 'hospital-portal' && <HospitalStaffView />}
-          {activeTab === 'recommendations' && (role === 'patient' ? <section className="mx-auto mt-10 max-w-xl rounded-3xl border border-sky-100 bg-white p-10 text-center shadow-sm"><div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-50 text-sky-700"><Siren className="h-7 w-7" /></div><h1 className="text-2xl font-black text-slate-900">Feature coming soon</h1><p className="mt-2 text-sm text-slate-500">Smart Match is being prepared and will be available here soon.</p></section> : <SmartRecommendations />)}
+          {activeTab === 'recommendations' && <SmartRecommendations />}
           {activeTab === 'handoff' && <PatientHandoffView />}
           {activeTab === 'pharmacy' && <MedicineSearch mode="patient" />}
           {activeTab === 'reports' && <ReportsView />}
