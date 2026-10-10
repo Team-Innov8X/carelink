@@ -10,10 +10,10 @@ const legacyOfferDurationMs = Number(process.env.OFFER_DURATION_MS);
 const legacyOfferSeconds = Number.isFinite(legacyOfferDurationMs) && legacyOfferDurationMs >= 1000
   ? legacyOfferDurationMs / 1000
   : undefined;
-export const SOS_OFFER_SECONDS = readNumber("SOS_OFFER_SECONDS", legacyOfferSeconds ?? 10, 1, "OFFER_DURATION_SECONDS");
+export const SOS_OFFER_SECONDS = Math.max(40, readNumber("SOS_OFFER_SECONDS", legacyOfferSeconds ?? 40, 1, "OFFER_DURATION_SECONDS"));
 export const SOS_OFFER_BATCH_SIZE = readNumber("SOS_OFFER_BATCH_SIZE", 3, 1, "DISPATCH_BATCH_SIZE");
 export const SOS_MAX_ROUNDS = readNumber("SOS_MAX_ROUNDS", 3, 1, "DISPATCH_MAX_ROUNDS");
-export const SOS_REQUEST_TIMEOUT_SECONDS = readNumber("SOS_REQUEST_TIMEOUT_SECONDS", 30, 1);
+export const SOS_REQUEST_TIMEOUT_SECONDS = Math.max(SOS_OFFER_SECONDS + 5, readNumber("SOS_REQUEST_TIMEOUT_SECONDS", 45, 1));
 export const SOS_REQUEST_TIMEOUT_MS = SOS_REQUEST_TIMEOUT_SECONDS * 1000;
 export const SOS_SEARCH_RADIUS_KM = readNumber("SOS_SEARCH_RADIUS_KM", 10, 1, "DISPATCH_RADIUS_KM");
 export const NORMAL_REQUEST_EXPIRY_MIN = readNumber("NORMAL_REQUEST_EXPIRY_MIN", 15, 1);

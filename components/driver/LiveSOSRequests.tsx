@@ -69,6 +69,7 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient?: [numb
   const [historyError, setHistoryError] = useState('');
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const [pollSeconds, setPollSeconds] = useState(3);
+  const [offerDurationSeconds, setOfferDurationSeconds] = useState(40);
   const [locationState, setLocationState] = useState<'off' | 'sharing' | 'blocked' | 'unavailable'>('off');
   const rerouteAttempted = useRef<string | null>(null);
   const seenRequestIds = useRef(new Set<string>());
@@ -98,6 +99,7 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient?: [numb
       if (!response.ok) throw new Error(readError(result, 'Could not load live SOS requests.'));
       if (result.serverTime) setServerOffsetMs(new Date(result.serverTime).getTime() - Date.now());
       if (Number.isFinite(result.pollSeconds) && result.pollSeconds > 0) setPollSeconds(result.pollSeconds);
+      if (Number.isFinite(result.offerDurationSeconds) && result.offerDurationSeconds > 0) setOfferDurationSeconds(result.offerDurationSeconds);
       if (Number.isFinite(result.locationPingSeconds) && result.locationPingSeconds > 0) pingSecondsRef.current = result.locationPingSeconds;
       setLoadError(false);
       const freshRequests = (result.requests ?? []) as LiveSOS[];
@@ -108,7 +110,7 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient?: [numb
       if (nextActive?.id && !previousActiveRequestId.current) changeView('overview');
       previousActiveRequestId.current = nextActive?.id ?? null;
       setAvailable(Boolean(result.available));
-      setLocationState(result.available ? result.driverLocation ? 'sharing' : 'unavailable' : 'off');
+      setLocationState(result.available || nextActive ? result.driverLocationFresh ? 'sharing' : 'unavailable' : 'off');
       setDriver(result.driver ?? {});
       setAvailableSince(result.availableSince ?? null);
       if (!nextActive && result.driverLocation) {
@@ -162,20 +164,42 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient?: [numb
     if (!available && !activeRequestRef.current) return;
     if (!navigator.geolocation) { window.setTimeout(() => setLocationState('unavailable'), 0); return; }
     let lastSentAt = 0;
-    const watchId = navigator.geolocation.watchPosition(async ({ coords }) => {
+    let updateInFlight = false;
+    let disposed = false;
+    const updateLocation = async (position: GeolocationPosition) => {
       const now = Date.now();
-      if (now - lastSentAt < pingSecondsRef.current * 1000) return;
+      if (disposed || updateInFlight || now - lastSentAt < pingSecondsRef.current * 1000) return;
+      updateInFlight = true;
       lastSentAt = now;
+      const { coords } = position;
       const location = { latitude: coords.latitude, longitude: coords.longitude };
       try {
         const response = await fetch('/api/sos/available', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location, accuracyM: coords.accuracy, heading: coords.heading, speed: coords.speed }) });
         if (!response.ok) throw new Error('Location update was rejected');
         setLocationState('sharing');
       } catch { setLocationState('unavailable'); }
-    }, (error) => {
-      const locationError = error as GeolocationPositionError; setLocationState(locationError.code === locationError.PERMISSION_DENIED ? 'blocked' : 'unavailable');
-    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
-    return () => navigator.geolocation.clearWatch(watchId);
+      finally { updateInFlight = false; }
+    };
+    const onLocationError = (error: GeolocationPositionError) => {
+      if (disposed) return;
+      setLocationState(error.code === error.PERMISSION_DENIED ? 'blocked' : 'unavailable');
+    };
+    const options: PositionOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 };
+    const watchId = navigator.geolocation.watchPosition((position) => { void updateLocation(position); }, (error) => {
+      onLocationError(error);
+    }, options);
+    // Some browsers do not fire watchPosition again when the vehicle is parked.
+    // Refresh the GPS fix on the same heartbeat interval so a stationary but
+    // online driver does not become ineligible after the stale-location window.
+    const heartbeat = window.setInterval(() => {
+      if (disposed || updateInFlight || Date.now() - lastSentAt < pingSecondsRef.current * 1000) return;
+      navigator.geolocation.getCurrentPosition((position) => { void updateLocation(position); }, onLocationError, options);
+    }, pingSecondsRef.current * 1000);
+    return () => {
+      disposed = true;
+      window.clearInterval(heartbeat);
+      navigator.geolocation.clearWatch(watchId);
+    };
   }, [available, activeRequest?.id]);
 
   useEffect(() => {
@@ -351,7 +375,7 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient?: [numb
 
   const remainingSeconds = alertRequest?.assignmentExpiresAt
     ? Math.max(0, Math.ceil((new Date(alertRequest.assignmentExpiresAt).getTime() - (clockNow + serverOffsetMs)) / 1000))
-    : alertRequest ? Math.max(0, 10 - Math.floor((clockNow - new Date(alertRequest.createdAt).getTime()) / 1000)) : 0;
+    : alertRequest ? Math.max(0, offerDurationSeconds - Math.floor((clockNow - new Date(alertRequest.createdAt).getTime()) / 1000)) : 0;
   const cancelTrip = async () => {
     if (!activeRequest) return;
     if (!window.confirm('Cancel this active trip? Dispatch and the patient will be notified.')) return;
@@ -415,6 +439,6 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient?: [numb
     </article>)}</div> : <p className="flex items-center gap-2 rounded-xl bg-slate-50 p-4 text-sm text-slate-500"><Activity className="h-4 w-4" />No normal requests right now. New requests will appear here automatically.</p>)}
     {!available && requests.length > 0 && <p className="mt-3 text-xs text-slate-500">Accept a request to go available using your current GPS location.</p>}
     </>}
-    {alertRequest && alertPortalRoot && createPortal(<div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm"><section role="alertdialog" aria-modal="true" aria-labelledby="live-sos-alert-title" className="w-full max-w-md overflow-hidden rounded-2xl border border-rose-200 bg-white shadow-2xl"><header className="flex items-start justify-between bg-rose-700 px-5 py-4 text-white"><div className="flex items-center gap-3"><Siren className="h-6 w-6 animate-pulse" /><div><p className="text-xs font-bold uppercase tracking-widest text-rose-100">Emergency SOS · {remainingSeconds}s remaining</p><h2 id="live-sos-alert-title" className="mt-1 text-lg font-black">SOS request received</h2></div></div><div className="relative grid h-11 w-11 shrink-0 place-items-center"><svg className="absolute inset-0 -rotate-90" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,.3)" strokeWidth="4"/><circle cx="22" cy="22" r="18" fill="none" stroke="white" strokeWidth="4" strokeDasharray="113.1" strokeDashoffset={`${113.1 * (1 - remainingSeconds / 10)}`} strokeLinecap="round"/></svg><span className="text-xs font-black">{remainingSeconds}</span></div></header><div className="space-y-2 p-5"><p className="font-bold text-slate-900">{alertRequest.patientName} · {alertRequest.urgency || priorityOf(alertRequest)}</p><p className="text-sm text-slate-600">{alertRequest.incidentType}</p><p className="flex items-center gap-1 text-sm text-rose-800"><MapPin className="h-4 w-4" />{alertRequest.distanceKm != null ? `${alertRequest.distanceKm} km away · ` : ''}approximate area {alertRequest.location.latitude.toFixed(2)}, {alertRequest.location.longitude.toFixed(2)}</p><div className="mt-4 grid grid-cols-2 gap-2"><button type="button" disabled={busy || Boolean(activeRequest)} onClick={() => void accept(alertRequest.id)} className="rounded-lg bg-rose-700 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-50">Accept</button><button type="button" disabled={busy} onClick={() => void reject(alertRequest.id)} className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Decline</button></div></div></section></div>, alertPortalRoot)}
+    {alertRequest && alertPortalRoot && createPortal(<div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm"><section role="alertdialog" aria-modal="true" aria-labelledby="live-sos-alert-title" className="w-full max-w-md overflow-hidden rounded-2xl border border-rose-200 bg-white shadow-2xl"><header className="flex items-start justify-between bg-rose-700 px-5 py-4 text-white"><div className="flex items-center gap-3"><Siren className="h-6 w-6 animate-pulse" /><div><p className="text-xs font-bold uppercase tracking-widest text-rose-100">Emergency SOS · {remainingSeconds}s remaining</p><h2 id="live-sos-alert-title" className="mt-1 text-lg font-black">SOS request received</h2></div></div><div className="relative grid h-11 w-11 shrink-0 place-items-center"><svg className="absolute inset-0 -rotate-90" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,.3)" strokeWidth="4"/><circle cx="22" cy="22" r="18" fill="none" stroke="white" strokeWidth="4" strokeDasharray="113.1" strokeDashoffset={`${113.1 * (1 - Math.min(remainingSeconds / offerDurationSeconds, 1))}`} strokeLinecap="round"/></svg><span className="text-xs font-black">{remainingSeconds}</span></div></header><div className="space-y-2 p-5"><p className="font-bold text-slate-900">{alertRequest.patientName} · {alertRequest.urgency || priorityOf(alertRequest)}</p><p className="text-sm text-slate-600">{alertRequest.incidentType}</p><p className="flex items-center gap-1 text-sm text-rose-800"><MapPin className="h-4 w-4" />{alertRequest.distanceKm != null ? `${alertRequest.distanceKm} km away · ` : ''}approximate area {alertRequest.location.latitude.toFixed(2)}, {alertRequest.location.longitude.toFixed(2)}</p><div className="mt-4 grid grid-cols-2 gap-2"><button type="button" disabled={busy || Boolean(activeRequest)} onClick={() => void accept(alertRequest.id)} className="rounded-lg bg-rose-700 px-3 py-2.5 text-sm font-bold text-white disabled:opacity-50">Accept</button><button type="button" disabled={busy} onClick={() => void reject(alertRequest.id)} className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Decline</button></div></div></section></div>, alertPortalRoot)}
   </section>;
 }

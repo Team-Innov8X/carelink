@@ -142,9 +142,10 @@ export async function POST(request: Request) {
     if (winner) return Response.json({ request: { id: winner._id, status: winner.status, createdAt: winner.createdAt }, message: "An active request already exists.", existing: true });
     throw error;
   }
-  await advanceDispatch(sos._id);
-
-  const hospitalRequest = requestType === 'routine' ? null : await ensureHospitalRequestForSos(sos).catch(() => null);
+  const [, hospitalRequest] = await Promise.all([
+    advanceDispatch(sos._id),
+    requestType === 'routine' ? Promise.resolve(null) : ensureHospitalRequestForSos(sos).catch(() => null),
+  ]);
   const hospitalRequestId = hospitalRequest?._id ?? null;
 
   return Response.json({

@@ -241,10 +241,10 @@ export async function sosCollections() {
     requests.createIndex({ status: 1, createdAt: -1 }, { name: 'sos_status_created' }),
     requests.createIndex({ patientId: 1, idempotencyKey: 1 }, { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } }, name: "sos_patient_idempotency" }),
     requests.createIndex({ activePatientId: 1 }, { unique: true, sparse: true, name: "sos_one_active_request_per_patient" }),
+    offers.createIndex({ requestId: 1, driverId: 1 }, { unique: true, name: "dispatch_offer_request_driver" }),
+    offers.createIndex({ driverId: 1, status: 1, expiresAt: 1 }, { name: "dispatch_offer_driver_status_expiry" }),
   ]).then(() => undefined).catch(error => { sosIndexesPromise = undefined; throw error; });
   await sosIndexesPromise;
-  await offers.createIndex({ requestId:  1, driverId: 1 }, { unique: true, name: "dispatch_offer_request_driver" });
-  await offers.createIndex({ driverId: 1, status: 1, expiresAt: 1 }, { name: "dispatch_offer_driver_status_expiry" });
   return { requests, drivers, hospitals, offers };
 }
 
@@ -390,7 +390,11 @@ export async function advanceDispatch(requestId: string) {
   })), { ordered: false }).catch(() => undefined);
 }
 
-export async function expireAndReofferDriverOffers() {
+const DISPATCH_MAINTENANCE_INTERVAL_MS = 5_000;
+let dispatchMaintenanceCompletedAt = 0;
+let dispatchMaintenancePromise: Promise<void> | null = null;
+
+async function runDispatchMaintenance() {
   const { requests, offers } = await sosCollections();
   const now = new Date();
   const expired = await requests.find({ type: "normal", status: "searching", expiresAt: { $lte: now } }).project({ _id: 1, dispatchStatus: 1, transitionLog: 1 }).limit(100).toArray();
@@ -408,6 +412,16 @@ export async function expireAndReofferDriverOffers() {
   }
   const open = await requests.find({ status: "searching", type: { $ne: "normal" } }).project({ _id: 1 }).limit(100).toArray();
   await Promise.all(open.map((request) => advanceDispatch(request._id)));
+}
+
+export function expireAndReofferDriverOffers() {
+  if (dispatchMaintenancePromise) return dispatchMaintenancePromise;
+  if (Date.now() - dispatchMaintenanceCompletedAt < DISPATCH_MAINTENANCE_INTERVAL_MS) return Promise.resolve();
+
+  dispatchMaintenancePromise = runDispatchMaintenance()
+    .then(() => { dispatchMaintenanceCompletedAt = Date.now(); })
+    .finally(() => { dispatchMaintenancePromise = null; });
+  return dispatchMaintenancePromise;
 }
 
 export function createRequestId() { return randomUUID(); }
