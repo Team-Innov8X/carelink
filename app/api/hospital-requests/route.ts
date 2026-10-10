@@ -3,6 +3,10 @@ import { chooseBedCategory, createRequestId, distanceKm, sosCollections, validCo
 import clientPromise from "@/lib/mongodb";
 import { expireHospitalReservations } from '@/lib/hospital-reservations';
 import { writeHospitalAudit } from '@/lib/hospital-audit';
+import { getHoldsCollection, getResourcesCollection, getUsersCollection } from '@/lib/models';
+import { resolveHospitalId } from '@/lib/auth-utils';
+import { expirePendingHolds } from '@/lib/services/hold-service';
+import { ObjectId } from 'mongodb';
 
 export const runtime = "nodejs";
 
@@ -11,13 +15,14 @@ export async function GET() {
   if (!auth.authorized || !auth.user) {
     return Response.json({ error: auth.reason }, { status: auth.reason === "UNAUTHENTICATED" ? 401 : 403 });
   }
-
+  try {
   const profile = auth.user as typeof auth.user & { hospitalId?: string; hospitalName?: string };
   await expireHospitalReservations({ hospitalId: profile.hospitalId, hospitalName: profile.hospitalName });
-  const query: Record<string, unknown> = { status: { $in: ["pending", "accepting", "accepted", "rejected"] } };
-  if (profile.hospitalId) query.hospitalId = profile.hospitalId;
-  else if (profile.hospitalName) query.hospitalName = profile.hospitalName;
-  else return Response.json({ error: "Your account is not linked to a hospital." }, { status: 403 });
+  const hospitalScope: Record<string, string>[] = [];
+  if (profile.hospitalId) hospitalScope.push({ hospitalId: profile.hospitalId });
+  if (profile.hospitalName) hospitalScope.push({ hospitalName: profile.hospitalName });
+  if (!hospitalScope.length) return Response.json({ error: "Your account is not linked to a hospital." }, { status: 403 });
+  const query: Record<string, unknown> = { status: { $in: ["pending", "accepting", "accepted", "rejected"] }, $or: hospitalScope };
 
   const { hospitalRequests } = await workflowCollections();
   // Older SOS requests may have been saved before the hospital inbox integration.
@@ -44,15 +49,68 @@ export async function GET() {
     const driversFound = await drivers.find({ userId: { $in: driverIds } }).project({ userId: 1, location: 1 }).toArray();
     for (const driver of driversFound) driverById.set(driver.userId, driver);
   }
-  const sharedState = await (await clientPromise).db().collection<{ _id: string; state?: { hospitals?: Array<{ id: string; name?: string; location?: { lat?: number; lng?: number } }> } }>('appState').findOne({ _id: 'carelink' });
-  const hospitalPoint = sharedState?.state?.hospitals?.find((item) => profile.hospitalId ? item.id === profile.hospitalId : item.name === profile.hospitalName)?.location;
+  const sharedState = await (await clientPromise).db().collection<{ _id: string; state?: { hospitals?: Array<{ id: string; name?: string; acceptingRequests?: boolean; location?: { lat?: number; lng?: number } }> } }>('appState').findOne({ _id: 'carelink' });
+  const linkedHospital = sharedState?.state?.hospitals?.find((item) => (profile.hospitalId && item.id === profile.hospitalId) || (profile.hospitalName && item.name?.toLocaleLowerCase() === profile.hospitalName.toLocaleLowerCase()));
+  const hospitalPoint = linkedHospital?.location;
   const destination = hospitalPoint && typeof hospitalPoint.lat === 'number' && typeof hospitalPoint.lng === 'number' ? { latitude: hospitalPoint.lat, longitude: hospitalPoint.lng } : null;
-  return Response.json({ requests: requests.map((item) => {
+  const formattedRequests = requests.map((item) => {
     const sos = sosById.get(item.sosRequestId);
     const driverLocation = sos?.driverId ? driverById.get(sos.driverId)?.location : undefined;
     const etaMinutes = driverLocation && destination ? Math.max(1, Math.ceil(distanceKm(driverLocation, destination) * 2.5)) : undefined;
     return { ...item, etaMinutes, admitted: admittedIds.has(item._id), admittedAt: admittedAtById.get(item._id), sosStatus: sos?.status, driverAssigned: Boolean(sos?.driverId), driverAcceptedAt: sos?.acceptedAt, driverTripStage: sos?.tripStage ?? item.driverTripStage, driverTripTimestamps: sos?.tripTimestamps, driverVitalsUpdate: sos?.vitalsUpdate ?? item.driverVitalsUpdate, driverIssue: sos?.issue ?? item.driverIssue, location: sos?.location ?? item.location };
-  }) });
+  });
+
+  const linkedHospitalId = await resolveHospitalId(profile);
+  let bedHoldRequests: Record<string, unknown>[] = [];
+  if (linkedHospitalId) {
+    await expirePendingHolds(linkedHospitalId);
+    const holds = await (await getHoldsCollection()).find({ hospitalId: linkedHospitalId, status: { $in: ['pending', 'queued', 'confirmed', 'fulfilled'] } }).sort({ createdAt: -1 }).limit(100).toArray();
+    const patientIds = [...new Set(holds.map((hold) => hold.patientId || hold.requestedByUserId).filter((id): id is string => Boolean(id)))];
+    const resourceIds = [...new Set(holds.map((hold) => hold.resourceId))];
+    const [users, resources, admissionsForHolds] = await Promise.all([
+      patientIds.length ? (await getUsersCollection()).find({ $or: [{ id: { $in: patientIds } }, { _id: { $in: patientIds as never[] } }] }).project({ id: 1, name: 1, phone: 1 }).toArray() : [],
+      resourceIds.length ? (await getResourcesCollection()).find({ _id: { $in: resourceIds.map((id) => ObjectId.isValid(id) ? new ObjectId(id) : id as never) } }).project({ category: 1, name: 1 }).toArray() : [],
+      holds.length ? hospitalAdmissions.find({ hospitalRequestId: { $in: holds.map((hold) => hold._id?.toString() ?? hold.id) } }).project({ hospitalRequestId: 1, admittedAt: 1 }).toArray() : [],
+    ]);
+    const userById = new Map(users.flatMap((user) => [[user.id, user], [String(user._id), user]]));
+    const resourceById = new Map(resources.map((resource) => [String(resource._id), resource]));
+    const admissionById = new Map(admissionsForHolds.map((admission) => [admission.hospitalRequestId, admission]));
+    bedHoldRequests = holds.map((hold) => {
+      const id = hold._id?.toString() ?? hold.id ?? '';
+      const patientId = hold.patientId || hold.requestedByUserId || '';
+      const patient = userById.get(patientId);
+      const resource = resourceById.get(hold.resourceId);
+      const category = String(resource?.category ?? 'general').toLowerCase();
+      const bedCategory = category === 'icu' ? 'icu' : category === 'trauma' || category === 'pediatric' ? 'trauma' : category === 'ventilator' || category === 'ventilators' ? 'ventilators' : 'general';
+      const admission = admissionById.get(id);
+      return {
+        _id: id,
+        sosRequestId: `BED-${id.slice(-8)}`,
+        holdId: id,
+        requestType: 'bed',
+        hospitalId: hold.hospitalId,
+        hospitalName: profile.hospitalName ?? '',
+        patientId,
+        patientName: hold.patientDetails?.name ?? patient?.name ?? 'Patient',
+        patientPhone: patient?.phone,
+        incidentType: hold.patientDetails?.conditionSummary ?? 'Hospital bed request',
+        requiredEquipment: [resource?.name ?? category.replaceAll('_', ' ')],
+        bedCategory,
+        status: hold.status === 'confirmed' || hold.status === 'fulfilled' ? 'accepted' : hold.status === 'queued' ? 'queued' : 'pending',
+        createdAt: hold.createdAt,
+        admitted: Boolean(admission) || hold.status === 'fulfilled',
+        admittedAt: admission?.admittedAt ?? hold.fulfilledAt,
+        queuePosition: hold.queuePosition,
+        reservationExpiresAt: hold.expiresAt,
+      };
+    });
+  }
+
+  return Response.json({ requests: [...bedHoldRequests, ...formattedRequests], acceptingRequests: linkedHospital ? linkedHospital.acceptingRequests !== false : null });
+  } catch (error) {
+    console.error('Could not load hospital requests:', error);
+    return Response.json({ error: 'Could not load incoming cases. Please refresh and try again.' }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {

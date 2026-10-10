@@ -64,7 +64,7 @@ export type HospitalAdmissionRequest = {
   updatedAt: Date;
   acceptedAt?: Date;
   reservationExpiresAt?: Date;
-  rejectionReason?: 'no_icu_bed' | 'specialist_unavailable' | 'diverted' | 'other' | 'reservation_timeout';
+  rejectionReason?: 'no_bed' | 'no_icu_bed' | 'specialist_unavailable' | 'diverted' | 'other' | 'reservation_timeout';
   reroutedHospitalIds?: string[];
   reroutedToRequestId?: string;
   reroutedHospitalName?: string;

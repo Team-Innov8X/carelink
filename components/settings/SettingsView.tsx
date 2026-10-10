@@ -4,6 +4,7 @@ import { useCareLink } from '../../context/CareLinkContext';
 import { LogOut } from '@/components/icons';
 import { authClient } from '../../lib/auth-client';
 import { AccountPreferences } from './AccountPreferences';
+import { resetHospitalAdminDemoData } from '@/lib/hospital-admin-demo';
 
 export const SettingsView: React.FC = () => {
   const { resetAllData, role } = useCareLink();
@@ -63,20 +64,21 @@ export const SettingsView: React.FC = () => {
 
         <div className="flex items-center justify-between pt-2">
           <div>
-            <h3 className="font-bold text-sm text-rose-700">Restore Demo Data</h3>
+            <h3 className="font-bold text-sm text-rose-700">Reset demo data</h3>
             <p className="text-xs text-slate-500">
-              Replace current local data with the built-in sample records
+              Restore this browser’s sample records, including hospital-admin demo cases and activity.
             </p>
           </div>
           <button
             onClick={() => {
-              if (confirm('Replace current local data with the built-in sample records?')) {
+              if (confirm('Reset this browser’s demo records and restore the built-in samples? Live hospital records will not be changed.')) {
                 resetAllData();
+                resetHospitalAdminDemoData();
               }
             }}
             className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl border border-rose-200 transition-colors"
-          >
-            Restore Samples
+            >
+            Reset demo data
           </button>
         </div>
       </div>

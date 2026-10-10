@@ -849,8 +849,9 @@ export async function confirmPatientBedHold(
   }
   if (!confirmed) return { success: false, status: 409, error: "Pending hold was already processed" };
 
+  const resourceId = ObjectId.isValid(hold.resourceId) ? new ObjectId(hold.resourceId) : hold.resourceId;
   await resourcesCol.updateOne(
-    { hospitalId: hold.hospitalId, type: "bed" },
+    { _id: resourceId as ObjectId, hospitalId: hold.hospitalId, type: "bed" },
     {
       $inc: { heldQuantity: -1, confirmedQuantity: 1 },
       $set: { updatedAt: now },
@@ -881,9 +882,10 @@ export async function confirmPatientBedHold(
           { $inc: { heldQuantity: -1 } },
         );
       } else if (other.status === "confirmed") {
+        const otherResourceId = ObjectId.isValid(other.resourceId) ? new ObjectId(other.resourceId) : other.resourceId;
         await resourcesCol.updateOne(
-          { hospitalId: other.hospitalId, type: "bed", confirmedQuantity: { $gte: other.quantity || 1 } },
-          { $inc: { confirmedQuantity: -(other.quantity || 1), availableQuantity: other.quantity || 1 } },
+          { _id: otherResourceId as ObjectId, hospitalId: other.hospitalId, type: "bed", confirmedQuantity: { $gte: other.quantity || 1 } },
+          { $inc: { confirmedQuantity: -(other.quantity || 1) } },
         );
       }
       await promoteNext(other.hospitalId);
