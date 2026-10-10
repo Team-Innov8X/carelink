@@ -9,8 +9,8 @@ import { connectMongoClient } from "./mongodb";
  */
 export async function getServerSession() {
   const startedAt = performance.now();
-  await connectMongoClient();
   const reqHeaders = await headers();
+  await connectMongoClient();
   const session = await auth.api.getSession({
     headers: reqHeaders,
   });
