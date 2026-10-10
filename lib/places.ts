@@ -1,4 +1,4 @@
-import { getHospitalsCollection, getDb } from './models/db.ts';
+import { getHospitalsCollection, getDb, initializeIndexes } from './models/db.ts';
 import { distanceKm } from './sos.ts';
 import { ObjectId } from 'mongodb';
 
@@ -26,6 +26,8 @@ export interface NearbyFacility {
   };
   status?: string;
   isDemo?: boolean;
+  specialties?: string[];
+  phone?: string;
 }
 
 export interface GooglePlaceResult {
@@ -67,7 +69,7 @@ export function clearPlacesCache(): void {
 }
 
 /**
- * Fetches nearby facilities from OpenStreetMap's public Overpass API.
+ * Fetches Google Places Nearby Search results when configured, with OSM fallback.
  * Checks the 10-minute rounded-location cache first.
  */
 export async function fetchPlacesNearby(
@@ -76,7 +78,7 @@ export async function fetchPlacesNearby(
   type: 'hospital' | 'pharmacy',
   radiusMeters = 5000,
 ): Promise<GooglePlaceResult[]> {
-  const cellKey = getCellKey(lat, lng, type);
+  const cellKey = getCellKey(lat, lng, `${type}_${Math.ceil(radiusMeters / 1000)}`);
   const cached = placesCache.get(cellKey);
   const now = Date.now();
 
@@ -85,6 +87,24 @@ export async function fetchPlacesNearby(
   }
 
   try {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (apiKey) {
+      const startedAt = performance.now();
+      const response = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': 'places.id,places.displayName,places.location,places.formattedAddress,places.types' },
+        body: JSON.stringify({ includedTypes: [type], maxResultCount: 20, locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } } }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (process.env.CARELINK_PERF_LOGS === '1') console.info(JSON.stringify({ event: 'carelink.perf', name: 'google_places_nearby', type, durationMs: Math.round((performance.now() - startedAt) * 100) / 100, status: response.status }));
+      if (response.ok) {
+        const data = await response.json() as { places?: Array<{ id: string; displayName?: { text?: string }; location?: { latitude?: number; longitude?: number }; formattedAddress?: string; types?: string[] }> };
+        const results = (data.places ?? []).flatMap((place) => place.id && place.displayName?.text && typeof place.location?.latitude === 'number' && typeof place.location.longitude === 'number' ? [{ place_id: place.id, name: place.displayName.text, geometry: { location: { lat: place.location.latitude, lng: place.location.longitude } }, vicinity: place.formattedAddress, types: place.types ?? [type] }] : []);
+        placesCache.set(cellKey, { timestamp: now, results });
+        return results;
+      }
+      console.warn(`Google Places Nearby Search returned HTTP ${response.status}`);
+    }
     const tag = type === 'hospital' ? 'hospital' : 'pharmacy';
     const query = `[out:json][timeout:8];(node[amenity=${tag}](around:${radiusMeters},${lat},${lng});way[amenity=${tag}](around:${radiusMeters},${lat},${lng});relation[amenity=${tag}](around:${radiusMeters},${lat},${lng}););out center tags;`;
     const externalStartedAt = performance.now();
@@ -130,13 +150,14 @@ export async function getNearbyFacilities({
   unregistered: NearbyFacility[];
   all: NearbyFacility[];
 }> {
+  await initializeIndexes();
   // Overpass and the registered hospital query are independent; start them together.
   const hospitalsQueryPromise = (async () => {
     const [db, hospitalsCol] = await Promise.all([getDb(), getHospitalsCollection()]);
     const hospitalsQueryStartedAt = performance.now();
     const dbHospitals = await hospitalsCol.find(
-      { status: { $ne: 'inactive' }, location: { $exists: true } },
-      { projection: { _id: 1, name: 1, location: 1, status: 1, address: 1, placeId: 1, isDemo: 1, capacitySummary: 1 } },
+      { status: { $ne: 'inactive' }, location: { $near: { $geometry: { type: 'Point', coordinates: [lng, lat] }, $maxDistance: radiusMeters } } },
+      { projection: { _id: 1, name: 1, location: 1, status: 1, address: 1, placeId: 1, isDemo: 1, capacitySummary: 1, specialties: 1, contact: 1 } },
     ).toArray();
     if (process.env.CARELINK_PERF_LOGS === '1') console.info(JSON.stringify({ event: 'carelink.perf', name: 'nearby_hospitals_query', durationMs: Math.round((performance.now() - hospitalsQueryStartedAt) * 100) / 100, resultCount: dbHospitals.length }));
     return { db, dbHospitals };
@@ -223,6 +244,8 @@ export async function getNearbyFacilities({
       registered: !isDemo,
       isDemo,
       label: isDemo ? 'Demo' : 'Registered',
+      specialties: Array.isArray(hosp.specialties) ? hosp.specialties.filter((value): value is string => typeof value === 'string') : [],
+      ...(!isDemo && hosp.contact?.phone ? { phone: hosp.contact.phone } : {}),
       ...(!isDemo ? { beds: {
         total: totalBeds,
         available: availableBeds,
@@ -236,7 +259,7 @@ export async function getNearbyFacilities({
 
   const pharmacyQueryStartedAt = performance.now();
   const dbPharmacies = await db.collection<{ _id?: ObjectId; ownerUserId?: string; name: string; location?: { coordinates?: [number, number] }; address?: { street?: string; city?: string }; contact?: { phone?: string }; isDemo?: boolean; placeId?: string }>('pharmacies').find(
-    { location: { $exists: true } },
+    { location: { $near: { $geometry: { type: 'Point', coordinates: [lng, lat] }, $maxDistance: radiusMeters } } },
     { projection: { _id: 1, ownerUserId: 1, name: 1, location: 1, address: 1, contact: 1, isDemo: 1, placeId: 1 } },
   ).toArray();
   if (process.env.CARELINK_PERF_LOGS === '1') console.info(JSON.stringify({ event: 'carelink.perf', name: 'nearby_pharmacies_query', durationMs: Math.round((performance.now() - pharmacyQueryStartedAt) * 100) / 100, resultCount: dbPharmacies.length }));
@@ -246,7 +269,7 @@ export async function getNearbyFacilities({
     const distance = distanceKm({ latitude: lat, longitude: lng }, { latitude: pharmacyLat, longitude: pharmacyLng });
     if (distance * 1000 > radiusMeters) continue;
     const pharmacyId = String(pharmacy._id ?? pharmacy.ownerUserId ?? pharmacy.name);
-    registeredFacilities.push({ id: pharmacyId, placeId: pharmacy.placeId, name: pharmacy.name, type: 'pharmacy', location: { lat: pharmacyLat, lng: pharmacyLng, address: [pharmacy.address?.street, pharmacy.address?.city].filter(Boolean).join(', ') || null }, distanceKm: Number(distance.toFixed(1)), registered: !pharmacy.isDemo, isDemo: Boolean(pharmacy.isDemo), label: pharmacy.isDemo ? 'Demo' : 'Registered' });
+    registeredFacilities.push({ id: pharmacyId, placeId: pharmacy.placeId, name: pharmacy.name, type: 'pharmacy', location: { lat: pharmacyLat, lng: pharmacyLng, address: [pharmacy.address?.street, pharmacy.address?.city].filter(Boolean).join(', ') || null }, distanceKm: Number(distance.toFixed(1)), registered: !pharmacy.isDemo, isDemo: Boolean(pharmacy.isDemo), label: pharmacy.isDemo ? 'Demo' : 'Live data', ...(!pharmacy.isDemo && pharmacy.contact?.phone ? { phone: pharmacy.contact.phone } : {}) });
   }
 
   // 3. Process unregistered facilities from Google Places
@@ -274,7 +297,7 @@ export async function getNearbyFacilities({
       },
       distanceKm: Number(dist.toFixed(1)),
       registered: false,
-      label: 'Not registered — availability unknown',
+      label: 'Not registered — availability unknown, call to confirm',
     });
   }
 

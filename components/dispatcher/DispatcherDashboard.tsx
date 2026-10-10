@@ -79,12 +79,6 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
       }
     };
 
-    if (process.env.NODE_ENV === 'development') {
-      // The local demo uses the signed-in profile at Connaught Place, New Delhi.
-      void loadNearby([28.6328, 77.2195]);
-      return;
-    }
-
     if (!navigator.geolocation) {
       setLocationMessage('This browser does not support GPS location.');
       return;

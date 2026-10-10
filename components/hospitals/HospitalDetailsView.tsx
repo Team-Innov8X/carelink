@@ -11,9 +11,7 @@ import {
   ExternalLink,
   ShieldCheck,
   UserCheck,
-  Clock,
   MapPin,
-  Mail,
   AlertCircle,
 } from '../icons';
 import { useCareLink } from '../../context/CareLinkContext';
@@ -22,6 +20,9 @@ type DoctorInfo = {
   id: string;
   name: string;
   specialization: string;
+  qualification?: string;
+  availability?: string;
+  experienceYears?: number;
   description?: string;
   available: boolean;
   status: string;
@@ -36,7 +37,7 @@ type HospitalDetail = {
   contact?: { phone?: string; emergencyHotline?: string; email?: string };
   coordinates?: { latitude: number; longitude: number };
   distanceKm?: number | null;
-  directionsUrl: string;
+  directionsUrl: string | null;
   doctors: DoctorInfo[];
   beds: {
     general: { available: number; total: number };
@@ -58,17 +59,19 @@ export function HospitalDetailsView() {
     if (typeof navigator !== 'undefined' && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setPatientCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => setPatientCoords({ lat: 28.6139, lng: 77.209 }),
+      () => { window.setTimeout(() => { try { const saved = localStorage.getItem('carelink_last_location'); if (saved) setPatientCoords(JSON.parse(saved) as { lat: number; lng: number }); } catch { /* no saved location */ } }, 0); },
         { timeout: 8000 }
       );
     } else {
-      setPatientCoords({ lat: 28.6139, lng: 77.209 });
+      window.setTimeout(() => { try { const saved = localStorage.getItem('carelink_last_location'); if (saved) setPatientCoords(JSON.parse(saved) as { lat: number; lng: number }); } catch { /* no saved location */ } }, 0);
     }
   }, []);
 
   useEffect(() => {
     if (!selectedHospitalId) return;
     let cancelled = false;
+    // Data loading starts from this effect; keep the existing detail card stable while the request refreshes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError('');
 
@@ -78,15 +81,17 @@ export function HospitalDetailsView() {
       query.set('lng', String(patientCoords.lng));
     }
 
-    fetch(`/api/hospitals/${encodeURIComponent(selectedHospitalId)}?${query.toString()}`, { cache: 'no-store' })
-      .then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to load hospital details.');
-        return data;
+    Promise.all([
+      fetch(`/api/hospitals/${encodeURIComponent(selectedHospitalId)}?${query.toString()}`, { cache: 'no-store' }),
+      fetch(`/api/hospitals/${encodeURIComponent(selectedHospitalId)}/doctors`, { cache: 'no-store' }),
+    ])
+      .then(async ([hospitalResponse, doctorResponse]) => {
+        const [data, doctorData] = await Promise.all([hospitalResponse.json(), doctorResponse.json()]);
+        if (!hospitalResponse.ok) throw new Error(data.error || 'Failed to load hospital details.');
+        if (!doctorResponse.ok) throw new Error(doctorData.error || 'Failed to load hospital doctors.');
+        return { ...data, doctors: doctorData.doctors ?? [] } as HospitalDetail;
       })
-      .then((data: HospitalDetail) => {
-        if (!cancelled) setHospital(data);
-      })
+      .then((data) => { if (!cancelled) setHospital(data); })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load hospital details.');
       })
@@ -100,7 +105,7 @@ export function HospitalDetailsView() {
   }, [selectedHospitalId, patientCoords]);
 
   const formatAddress = (addr?: HospitalDetail['address']) => {
-    if (!addr) return 'New Delhi, India';
+    if (!addr) return 'Address not provided';
     if (typeof addr === 'string') return addr;
     return [addr.street, addr.city, addr.state, addr.zipCode, addr.country].filter(Boolean).join(', ');
   };
@@ -174,6 +179,7 @@ export function HospitalDetailsView() {
 
               {/* Get Directions Action Button */}
               <div className="flex flex-col sm:flex-row gap-3 shrink-0">
+                {hospital.directionsUrl && (
                 <a
                   href={hospital.directionsUrl}
                   target="_blank"
@@ -184,6 +190,7 @@ export function HospitalDetailsView() {
                   <span>Get Directions</span>
                   <ExternalLink className="h-3.5 w-3.5 opacity-80" />
                 </a>
+                )}
 
                 {hospital.contact?.emergencyHotline && (
                   <a
@@ -210,22 +217,22 @@ export function HospitalDetailsView() {
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between items-center py-1 border-b border-slate-50">
                   <span className="text-slate-500">Emergency Hotline</span>
-                  <a
-                    href={`tel:${hospital.contact?.emergencyHotline || '+91-11-2345-6790'}`}
+                  {hospital.contact?.emergencyHotline && <a
+                    href={`tel:${hospital.contact.emergencyHotline}`}
                     className="font-bold text-rose-600 hover:underline"
                   >
-                    {hospital.contact?.emergencyHotline || '+91-11-2345-6790'}
-                  </a>
+                    {hospital.contact.emergencyHotline}
+                  </a>}
                 </div>
 
                 <div className="flex justify-between items-center py-1 border-b border-slate-50">
                   <span className="text-slate-500">Main Reception / Hospital Phone</span>
-                  <a
-                    href={`tel:${hospital.contact?.phone || '+91-11-2345-6789'}`}
+                  {hospital.contact?.phone && <a
+                    href={`tel:${hospital.contact.phone}`}
                     className="font-semibold text-slate-800 hover:underline"
                   >
-                    {hospital.contact?.phone || '+91-11-2345-6789'}
-                  </a>
+                    {hospital.contact.phone}
+                  </a>}
                 </div>
 
                 {hospital.contact?.email && (
@@ -301,7 +308,7 @@ export function HospitalDetailsView() {
                   <span>On-Duty Doctors & Specialists</span>
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Verified clinical faculty and on-call specialist physicians currently affiliated with {hospital.name}
+                  Doctor information provided by {hospital.name}
                 </p>
               </div>
               <span className="text-xs font-semibold text-slate-500">
@@ -323,11 +330,12 @@ export function HospitalDetailsView() {
                           doc.available ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
                         }`}>
                           <span className={`h-1.5 w-1.5 rounded-full ${doc.available ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                          {doc.available ? 'Available' : 'On Call'}
+                          {doc.availability ? doc.availability.replace('_', ' ') : doc.available ? 'Available' : 'On call'}
                         </span>
                       </div>
 
                       <div className="mt-2">
+                        {doc.qualification && <p className="mb-1 text-xs text-slate-600">{doc.qualification}{doc.experienceYears !== undefined ? ` · ${doc.experienceYears} years` : ''}</p>}
                         <span className="inline-block rounded-lg bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">
                           {doc.specialization}
                         </span>
@@ -344,7 +352,7 @@ export function HospitalDetailsView() {
               </div>
             ) : (
               <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500">
-                Doctor roster is currently being updated for this hospital. Emergency physicians remain on 24/7 active triage.
+                No doctor information added by this hospital yet.
               </div>
             )}
           </article>

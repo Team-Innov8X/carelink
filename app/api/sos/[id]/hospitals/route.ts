@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/auth-utils";
 import { distanceKm, mapsUrl, sosCollections, type Coordinates } from "@/lib/sos";
-import { getResourcesCollection } from "@/lib/models";
+import { getResourcesCollection, initializeIndexes } from "@/lib/models";
 import { fetchPlacesNearby } from "@/lib/places";
 
 export const runtime = "nodejs";
@@ -18,6 +18,7 @@ export async function GET(
   }
 
   const { id } = await params;
+  await initializeIndexes();
   const { requests, drivers, hospitals } = await sosCollections();
   const sos = await requests.findOne({ _id: id, driverId: auth.user.id, status: "accepted" });
   if (!sos) {
@@ -32,7 +33,7 @@ export async function GET(
 
   // 1. Fetch real registered hospitals and live resources from MongoDB (deterministic ranking, no dummy data)
   const [allHospitals, resources] = await Promise.all([
-    hospitals.find({ status: { $ne: "inactive" } }).toArray(),
+    hospitals.find({ status: { $ne: "inactive" }, isDemo: { $ne: true }, location: { $near: { $geometry: { type: "Point", coordinates: [origin.longitude, origin.latitude] }, $maxDistance: 100_000 } } }).project({ name: 1, address: 1, location: 1, status: 1, equipment: 1, placeId: 1 }).toArray(),
     (await getResourcesCollection()).find({ type: "equipment", status: { $ne: "unavailable" } }).toArray(),
   ]);
 
@@ -54,7 +55,7 @@ export async function GET(
     if (!location) return [];
 
     const equipment = new Set([
-      ...(hospital.equipment ?? []).map((item) => item.toLowerCase()),
+      ...(hospital.equipment ?? []).map((item: string) => item.toLowerCase()),
       ...(equipmentByHospital.get(String(hospital._id)) ?? []),
     ]);
 

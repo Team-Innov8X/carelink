@@ -6,6 +6,7 @@ import { ProfileMenu } from '../../components/common/ProfileMenu';
 import { HospitalRequestInbox } from '../../components/hospitalStaff/HospitalRequestInbox';
 import { SearchField } from '../../components/common/SearchField';
 import { hospitalSpecialties } from '../../data/hospitalSpecialties';
+import { ClinicalDoctorsManager } from '@/components/hospitalAdmin/ClinicalDoctorsManager';
 
 const tileColors = ['text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200', 'text-slate-800 bg-slate-50 border-slate-200'];
 type BedType = 'general' | 'icu' | 'trauma' | 'ventilators';
@@ -69,6 +70,7 @@ function PatientsAdmitted({ searchQuery }: { searchQuery: string }) {
 
 function BedCapacityCard({ hospitalName, searchQuery }: { hospitalName: string; searchQuery: string }) {
   const [hospital, setHospital] = useState<AdminHospital | null>(null);
+  const [hasAddress, setHasAddress] = useState(true);
   const [drafts, setDrafts] = useState<Record<BedType, { total: number; available: number }> | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyBed, setBusyBed] = useState<BedType | null>(null);
@@ -82,7 +84,7 @@ function BedCapacityCard({ hospitalName, searchQuery }: { hospitalName: string; 
       const result = await response.json();
       if (response.status === 404) { if (!cancelled) { setHospital({ ...demoHospital, name: hospitalName || demoHospital.name }); setDrafts(demoHospital.beds); setDemoMode(true); } return; }
       if (!response.ok) throw new Error(result.error || 'Could not load bed availability.');
-      if (!cancelled) { setHospital(result.hospital); setDrafts(result.hospital.beds); }
+      if (!cancelled) { setHospital(result.hospital); setDrafts(result.hospital.beds); setHasAddress(result.hasAddress !== false); }
     }).catch((error: unknown) => { if (!cancelled) setMessage(error instanceof Error ? error.message : 'Could not load bed availability.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -145,6 +147,7 @@ function BedCapacityCard({ hospitalName, searchQuery }: { hospitalName: string; 
   if (loading) return <section className="rounded-xl bg-white p-6 text-sm text-slate-500">Loading bed availability…</section>;
   if (!hospital || !drafts) return <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950"><h2 className="font-bold">Bed management is not linked yet</h2><p className="mt-1">{message || `No bed record matches “${hospitalName || 'this account'}”. Link this account to its hospital record before editing availability, capacity, or specialties. No hospital data has been changed.`}</p></section>;
   return <section className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-xs sm:p-5">
+    {!hasAddress && !demoMode && <p role="status" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-950">Add your address so patients can find you.</p>}
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold">Current bed availability</h2><p className="mt-1 text-xs text-slate-500">Live inventory split into available, reserved, and occupied beds.</p></div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${hospital.lastCapacityUpdatedAt && clockNow - new Date(hospital.lastCapacityUpdatedAt).getTime() < 10 * 60_000 ? 'bg-emerald-50 text-emerald-700' : hospital.lastCapacityUpdatedAt && clockNow - new Date(hospital.lastCapacityUpdatedAt).getTime() < 30 * 60_000 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}`}>{hospital.lastCapacityUpdatedAt ? `Updated ${Math.max(0, Math.floor((clockNow - new Date(hospital.lastCapacityUpdatedAt).getTime()) / 60000))} min ago` : 'Unconfirmed'}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{hospital.capacitySource || (demoMode ? 'Demo values' : 'Unconfirmed')}</span><button type="button" onClick={() => void hospitalAction('reconfirm')} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold">Re-confirm</button><button type="button" onClick={() => void hospitalAction('accepting', hospital.acceptingRequests === false)} className={`rounded-lg px-3 py-1.5 text-xs font-bold ${hospital.acceptingRequests === false ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}`}>{hospital.acceptingRequests === false ? 'Diverted · Resume' : 'Accepting · Divert'}</button><span className="rounded-full border px-2.5 py-1 text-[11px] font-semibold text-slate-600">{demoMode ? 'DEMO · local only' : 'Live sync'}</span></div></div>
     {message && <p role="status" className="mb-3 rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-900">{message}</p>}
     <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">{types.map(({ key, label }, index) => { const bed = hospital.beds[key]; const occupied = bed.occupied ?? Math.max(0, bed.total - bed.available - (bed.reserved ?? 0)); const reserved = bed.reserved ?? 0; const percent = bed.total ? Math.round(((occupied + reserved) / bed.total) * 100) : 0; const bedUpdated = bed.lastUpdatedAt || hospital.lastCapacityUpdatedAt; const minutesOld = bedUpdated && clockNow ? Math.max(0, Math.floor((clockNow - new Date(bedUpdated).getTime()) / 60000)) : null; return <article key={key} className={`rounded-xl border p-3.5 ${tileColors[index]}`}><p className="text-xs font-bold uppercase tracking-wide">{key === 'general' ? 'General / OPD beds' : label}</p><p className={`mt-1 text-[10px] font-semibold ${minutesOld === null ? 'text-rose-700' : minutesOld < 10 ? 'text-emerald-700' : minutesOld < 30 ? 'text-amber-700' : 'text-rose-700'}`}>{minutesOld === null ? 'Unconfirmed' : `Updated ${minutesOld} min ago`}</p><div className="mt-2 flex items-baseline justify-center gap-1"><strong className="text-4xl font-extrabold">{bed.available}</strong><span className="text-sm font-medium opacity-60">available / {bed.total}</span></div><p className="mt-1.5 text-center text-xs text-slate-600">{reserved} reserved · {occupied} occupied</p><div className="my-2.5 flex items-center justify-center gap-2"><button type="button" aria-label={`Reduce available ${label}`} disabled={busyBed === key || bed.available <= 0} onClick={() => void adjustAvailable(key, -1)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-lg leading-none text-slate-700 disabled:opacity-40">−</button><span className="text-xs font-semibold">Adjust</span><button type="button" aria-label={`Increase available ${label}`} disabled={busyBed === key || bed.available >= bed.total - reserved - occupied} onClick={() => void adjustAvailable(key, 1)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-lg leading-none text-slate-700 disabled:opacity-40">+</button></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-slate-500" style={{ width: `${percent}%` }} /></div><p className="mt-1 text-right text-[11px]">Occupied + reserved · {percent}%</p></article>; })}</div>
@@ -289,7 +292,7 @@ function HospitalAdminContent({ hospitalName }: { hospitalName: string }) {
           </nav>
           <div className="min-w-0">
             {section === 'beds' && <BedCapacityCard hospitalName={hospitalName} searchQuery={searchQuery} />}
-            {section === 'doctors' && <DoctorRoster searchQuery={searchQuery} />}
+            {section === 'doctors' && <><ClinicalDoctorsManager /><DoctorRoster searchQuery={searchQuery} /></>}
             {section === 'patients' && <PatientsAdmitted searchQuery={searchQuery} />}
             {section === 'cases' && <HospitalRequestInbox searchQuery={searchQuery} />}
             {section === 'activity' && <ActivityLog />}

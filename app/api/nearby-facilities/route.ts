@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   if (!Number.isFinite(latParam) || latParam < -90 || latParam > 90 || !Number.isFinite(lngParam) || lngParam < -180 || lngParam > 180) return Response.json({ error: 'Valid latitude and longitude are required.' }, { status: 400 });
   const lat = latParam;
   const lng = lngParam;
-  const radius = Number.isFinite(radiusParam) ? Math.max(1000, Math.min(30000, radiusParam)) : 7000;
+  const radius = Number.isFinite(radiusParam) ? Math.max(1000, Math.min(50000, radiusParam)) : 7000;
 
   try {
     const { registered, unregistered, all } = await getNearbyFacilities({

@@ -63,7 +63,6 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient: [numbe
   const seenOfferIds = useRef(new Set<string>());
   const hasLoadedOnce = useRef(false);
   const mappedActiveRequestId = useRef<string | null>(null);
-  const mapCallback = useRef(onShowOnMap);
   const priorityOf = (request: LiveSOS) => request.priority || (/cardiac|respir|stroke|unconscious|trauma|critical/i.test(`${request.incidentType} ${request.requiredEquipment.join(' ')}`) ? 'Critical' : 'Urgent');
   const visibleRequests = [...requests].sort((a, b) => (priorityOf(a) === 'Critical' ? 0 : 1) - (priorityOf(b) === 'Critical' ? 0 : 1) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
@@ -276,13 +275,6 @@ export function LiveSOSRequests({ onShowOnMap }: { onShowOnMap: (patient: [numbe
   const currentStep = activeRequest ? Math.max(0, tripSteps.findIndex(([stage]) => stage === activeRequest.tripStage)) : 0;
   const nextStep = tripSteps[currentStep + 1];
   const demoSteps = ['Accepted', 'Arrived at patient', 'Patient on board', 'En route to hospital', 'Arrived at hospital', 'Handover complete'];
-
-  useEffect(() => { mapCallback.current = onShowOnMap; }, [onShowOnMap]);
-  const activeRequestId = activeRequest?.id;
-  useEffect(() => {
-    if (process.env.NODE_ENV !== 'development' || activeRequestId) return;
-    mapCallback.current([28.6328, 77.2195], [28.6352, 77.2168], [28.618, 77.212]);
-  }, [activeRequestId]);
 
   const showHistory = async () => {
     setView('history');
