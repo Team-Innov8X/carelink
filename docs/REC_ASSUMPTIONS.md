@@ -19,3 +19,9 @@ Every allocation must first pass existing resource, capability, open, current co
 Defaults live in `lib/recommend/constants.ts`: maximum travel 60 minutes, reroute penalty 25 minutes, rejection penalty 20 minutes, experience bonus 3 minutes, maximum two reroutes, and hospital response timeout 90 seconds. Fallback text is an unconfigured generic operational suggestion and must be replaced for the deployment region.
 
 Acceptance training and runtime ranking are decision support only. The model cannot override capacity, closure, resource type, capability, or driver choice. The driver remains responsible for the destination decision.
+
+## Acceptance model evidence
+
+The custom L2 logistic regression was trained from scratch in TypeScript on 5,760 synthetic training decisions and tuned on 1,920 validation decisions. Lambda `0.001` was selected by validation Brier score. Validation Brier was `0.1324` for the model and `0.1630` for the nearest-feasible hard 0/1 baseline. Runtime parity error on 20 saved vectors was zero.
+
+The test split was evaluated once, after `rec-pre-test` at `951d2b29527ab320eed6994b2dc8fff13177a91a`. On 1,920 test decisions, model Brier was `0.1433` and baseline Brier was `0.1771`; paired Brier difference (model minus baseline) was `-0.0337`, 95% CI `[-0.0403, -0.0271]`, using 1,000 seeded bootstrap samples. These are synthetic results under the declared assumptions, not real-world accuracy.

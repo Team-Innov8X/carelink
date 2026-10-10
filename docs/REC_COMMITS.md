@@ -20,5 +20,5 @@
 |---|---|---|
 | 0 | `7acb8fdffaf406952e055ff5bbf05a3956b904f1` | Audit and setup; tag `rec-start` |
 | 1 | `f94ba5a3fb723c1ec1c3854a6c5fe43b4716a94f` | Placeholder condition config, synthetic profiles, acceptance simulator/data and assumptions |
-| 2 | pending | Custom L2 acceptance model; freeze before test |
+| 2 | `951d2b29527ab320eed6994b2dc8fff13177a91a` | Custom L2 logistic model frozen as `rec-pre-test`; one-shot test report: `evidence/rec/accept-test-evaluated.json` |
 
