@@ -1,0 +1,60 @@
+{
+  "split": "test",
+  "days": [
+    41,
+    50
+  ],
+  "episodes": 300,
+  "methodology": "Groups frozen test decisions by day, condition and hour (at least three hospital observations); candidate feasibility requires positive free_now and capability_match. Baseline orders by each candidate's ETA. Model-aware ordering minimizes ETA + (1 - p_accept) * configured reject penalty, then runs sequential acceptance decisions using the simulator's raw ground-truth outcomes, with at most MAX_REROUTES. This is a synthetic replay proxy: availability forecasting, production ledger contention, real response-time distributions and travel route geometry are not simulated here.",
+  "metrics": {
+    "nearest": {
+      "firstChoiceAcceptance": 0.7066666666666667,
+      "meanReroutes": 0.08666666666666667,
+      "meanMinutesToConfirmed": 25.846666666666668,
+      "unservedByReason": {
+        "rejected_no_alternative": 9,
+        "capacity_exhausted": 63
+      },
+      "urgencyOneFailures": 60
+    },
+    "modelAware": {
+      "firstChoiceAcceptance": 0.7033333333333334,
+      "meanReroutes": 0.09,
+      "meanMinutesToConfirmed": 25.98,
+      "unservedByReason": {
+        "rejected_no_alternative": 9,
+        "capacity_exhausted": 63
+      },
+      "urgencyOneFailures": 60
+    },
+    "pairedConfirmedRateDifference": {
+      "estimate": 0,
+      "lower95": 0,
+      "upper95": 0,
+      "resamples": 1000,
+      "seed": 20261021
+    },
+    "incompatible_allocations": 0,
+    "double_counted_reservations": 0
+  },
+  "worseCase": {
+    "episodeKey": "45:major_trauma:21",
+    "nearest": {
+      "firstChoiceAccepted": true,
+      "reroutes": 0,
+      "minutesToConfirm": 44,
+      "unservedReason": null,
+      "urgencyOneFailed": false,
+      "winner": "central"
+    },
+    "modelAware": {
+      "firstChoiceAccepted": false,
+      "reroutes": 1,
+      "minutesToConfirm": 84,
+      "unservedReason": null,
+      "urgencyOneFailed": false,
+      "winner": "central"
+    }
+  },
+  "note": "The paired interval is for confirmed-vs-unserved rate (model-aware minus nearest), not Brier score. The proxy's zero constraint counters reflect its single-resource, single-request episode construction; they do not establish production concurrency safety."
+}

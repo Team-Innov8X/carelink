@@ -84,6 +84,7 @@ export function initializeIndexes(): Promise<void> {
     await ensureNotificationIndexes(notifications);
 
     const holds = await getHoldsCollection();
+    await holds.createIndex({ recommendationRequestKey: 1 }, { unique: true, sparse: true, name: "recommendation_request_idempotency" });
     await holds.createIndex({ hospitalId: 1, status: 1 });
     // Expiry must release resource inventory before a hold can disappear.
     await holds.dropIndex("expiresAt_1").catch(() => undefined);

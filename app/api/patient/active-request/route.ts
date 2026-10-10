@@ -67,16 +67,18 @@ export async function GET() {
     ? await (await clientPromise).db().collection<{ _id: string | ObjectId; location?: unknown }>("hospitals").findOne({ _id: ObjectId.isValid(hospitalRequest.hospitalId) ? new ObjectId(hospitalRequest.hospitalId) : hospitalRequest.hospitalId })
     : null;
   const rawHospitalLocation = hospitalDirectory?.location as { latitude?: unknown; longitude?: unknown; coordinates?: unknown } | undefined;
-  const hospitalLocation = rawHospitalLocation && typeof rawHospitalLocation.latitude === "number" && typeof rawHospitalLocation.longitude === "number"
+  const hospitalLocation = item.recommendation?.selectedHospitalLocation ?? (rawHospitalLocation && typeof rawHospitalLocation.latitude === "number" && typeof rawHospitalLocation.longitude === "number"
     ? { latitude: rawHospitalLocation.latitude, longitude: rawHospitalLocation.longitude }
     : rawHospitalLocation && Array.isArray(rawHospitalLocation.coordinates) && typeof rawHospitalLocation.coordinates[0] === "number" && typeof rawHospitalLocation.coordinates[1] === "number"
       ? { latitude: rawHospitalLocation.coordinates[1], longitude: rawHospitalLocation.coordinates[0] }
-      : undefined;
+      : undefined);
   const tripStage = accepted ? item.tripStage ?? "accepted" : null;
   const target = tripStage === "patient_on_board" || tripStage === "en_route_hospital" || tripStage === "arrived_hospital" ? hospitalLocation ?? item.location : item.location;
   const etaDistance = driverLocation && target ? distanceKm(driverLocation, target) : null;
   const etaMinutes = etaDistance === null ? null : Math.max(1, Math.ceil(etaDistance * 2.5)) + (item.issue?.etaDelayMinutes ?? 0);
-  const destination = hospitalRequest
+  const destination = item.recommendation?.selectedHospitalId
+    ? { name: item.recommendation.selectedHospitalName ?? "Recommended hospital", status: item.recommendation.status === "confirmed" ? "accepted" : item.recommendation.status === "unserved" ? "rejected" : "pending", bedCategory: item.recommendation.conditionId ? "bed" : undefined, location: hospitalLocation }
+    : hospitalRequest
     ? { name: hospitalRequest.hospitalName, status: hospitalRequest.status, bedCategory: hospitalRequest.bedCategory, location: hospitalLocation }
     : destinationRequest ? { name: destinationRequest.name ?? "Destination", status: "pending", location: validCoordinates(destinationRequest) ? destinationRequest : undefined } : null;
   return Response.json({ request: {
@@ -86,6 +88,7 @@ export async function GET() {
     incidentType: item.incidentType,
     location: item.location,
     destination,
+    recommendation: item.recommendation ?? null,
     urgency: item.urgency ?? null,
     notes: item.notes ?? null,
     createdAt: item.createdAt,

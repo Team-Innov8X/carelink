@@ -1,0 +1,1 @@
+{"id":"H5","name":"Driver override","description":"Driver chooses another feasible hospital and records a reason.","steps":["Driver reviews ranked alternatives","Driver chooses a different feasible hospital and enters a reason","Server validates hard constraints and records override","Chosen hospital receives the bed request"],"outcome":"override","reason":"driver_override"}

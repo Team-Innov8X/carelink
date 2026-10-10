@@ -47,6 +47,12 @@ export interface IHold {
   confirmedByUserId?: string;
   fulfilledAt?: Date;
   notes?: string;
+  recommendationRequestKey?: string;
+  recommendationTripId?: string;
+  recommendationConditionId?: string;
+  recommendationResponseDeadline?: Date;
+  recommendationRespondedAt?: Date;
+  recommendationRejectionReason?: string;
   originLocation?: [number, number];
   createdAt: Date;
   updatedAt: Date;
