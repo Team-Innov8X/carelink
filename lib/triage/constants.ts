@@ -9,4 +9,5 @@ export const QUICK_START_CHIPS = [
   { label: 'Stomach pain', message: 'I have stomach pain' },
   { label: 'Chest pain', message: 'I have chest pain' },
 ];
-export { EMERGENCY_FALLBACK_TEXT } from '../dispatch/constants.ts';
+export const EMERGENCY_FALLBACK_TEXT = process.env.EMERGENCY_FALLBACK_TEXT?.trim()
+  || 'Please seek emergency care now or contact your local emergency services.';
