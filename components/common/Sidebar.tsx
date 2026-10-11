@@ -13,6 +13,7 @@ import {
   Car,
   HeartPulse,
 } from '../icons';
+import { isDemoFeatureVisible } from '@/lib/demo-config';
 
 export const Sidebar: React.FC = () => {
   const { activeTab, setActiveTab, medicines, emergencies, role } = useCareLink();
@@ -107,7 +108,8 @@ export const Sidebar: React.FC = () => {
           Navigation
         </div>
         {navItems
-          .filter((item) => {
+        .filter((item) => {
+            if (!isDemoFeatureVisible(item.id)) return false;
             if (role === 'pharmacy' && item.id === 'requests') return false;
             if (item.id === 'recommendations' && !['patient', 'dispatcher'].includes(role)) return false;
             if (role === 'patient') {
