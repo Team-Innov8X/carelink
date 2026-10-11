@@ -19,6 +19,16 @@ export default function OrganizationOnboardingPage() {
     else if (role === 'hospital' && accountRole !== 'hospital' && accountRole !== 'hospital_staff') router.replace('/');
     else if (role === 'pharmacy' && accountRole !== 'pharmacy' && !(profile.pharmacyName && profile.pharmacyLicenseNumber)) router.replace('/');
   }, [isPending, role, router, session]);
+  useEffect(() => {
+    if (isPending || !session) return;
+    let cancelled = false;
+    fetch('/api/onboarding', { cache: 'no-store' }).then(async response => {
+      if (!response.ok) return;
+      const result = await response.json();
+      if (!cancelled && result.profile) setForm(current => ({ ...current, ...result.profile }));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [isPending, session]);
   const submit = async (event: FormEvent) => { event.preventDefault(); setBusy(true); setError('');
     try { const response = await fetch('/api/onboarding', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) }); const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Could not save details.'); router.replace(role === 'hospital' ? '/hospital-admin' : '/pharmacy-dashboard'); router.refresh(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save details.'); setBusy(false); }

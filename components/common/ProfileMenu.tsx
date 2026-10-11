@@ -6,7 +6,7 @@ import { Check, Pencil, UserRound, X, KeyRound, LogOut } from '@/components/icon
 import { authClient } from '../../lib/auth-client';
 import { useCareLink } from '../../context/CareLinkContext';
 
-type ProfileFields = { name?: string; username?: string; phone?: string; hospitalName?: string };
+type ProfileFields = { name?: string; username?: string; phone?: string; organizationName?: string; organizationAddress?: string };
 
 export function ProfileMenu() {
   const router = useRouter();
@@ -18,28 +18,44 @@ export function ProfileMenu() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [isSigningOut, setIsSigningOut] = useState(false);
-  type ProfileUser = NonNullable<typeof session>['user'] & ProfileFields & { role?: string };
+  type ProfileUser = NonNullable<typeof session>['user'] & ProfileFields & { role?: string; hospitalName?: string; hospitalAddress?: string; pharmacyName?: string; pharmacyAddress?: string };
   const user = session?.user as ProfileUser | undefined;
   const role = user?.role || 'patient';
-  const isHospital = role === 'hospital' || role === 'hospital_staff';
+  const isHospital = role === 'hospital' || role === 'hospital_staff' || role === 'hospital_admin';
+  const isOrganization = isHospital || role === 'pharmacy';
   const displayName = user?.name || user?.email || 'My profile';
   const initials = displayName.split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join('') || 'U';
-  const hospitalName = user?.hospitalName || hospitals[0]?.name || 'Not provided';
+  const organizationName = user?.hospitalName || user?.pharmacyName || (isHospital ? hospitals[0]?.name : '') || 'Not provided';
+  const organizationAddress = user?.hospitalAddress || user?.pharmacyAddress || '';
 
   const showProfile = () => {
-    setFields({ name: user?.name || '', username: user?.username || '', phone: user?.phone || '', hospitalName: user?.hospitalName || hospitals[0]?.name || '' });
+    const opening = !open;
+    setFields({ name: user?.name || '', username: user?.username || '', phone: user?.phone || '', organizationName: organizationName === 'Not provided' ? '' : organizationName, organizationAddress });
     setEditing(false);
     setMessage('');
-    setOpen((value) => !value);
+    setOpen(opening);
+    if (opening) {
+      fetch('/api/me/profile', { cache: 'no-store' }).then(async response => {
+        if (!response.ok) return;
+        const data = await response.json() as ProfileFields;
+        setFields({ name: data.name || '', username: data.username || '', phone: data.phone || '', organizationName: data.organizationName || '', organizationAddress: data.organizationAddress || '' });
+      }).catch(() => {});
+    }
   };
   const save = async () => {
     if (!fields.name?.trim() || !fields.username?.trim() || !fields.phone?.trim()) return;
     setSaving(true);
     try {
-      const updateUser = authClient.updateUser as (data: ProfileFields) => Promise<{ error?: { message?: string } | null }>;
-      const result = await updateUser({ ...fields, name: fields.name.trim(), username: fields.username.trim(), phone: fields.phone.trim(), ...(isHospital ? { hospitalName: fields.hospitalName?.trim() } : {}) });
-      setMessage(result.error ? result.error.message || 'Could not update profile.' : 'Profile updated.');
-      if (!result.error) setEditing(false);
+      const response = await fetch('/api/me/profile', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        ...fields,
+        name: fields.name.trim(), username: fields.username.trim(), phone: fields.phone.trim(),
+        ...(isOrganization ? { organizationName: fields.organizationName?.trim(), organizationAddress: fields.organizationAddress?.trim() } : {}),
+      }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not update profile.');
+      setFields(result.profile);
+      setMessage('Profile updated.');
+      setEditing(false);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not update profile.');
     } finally {
@@ -70,12 +86,15 @@ export function ProfileMenu() {
         <label className="block text-xs font-semibold text-slate-600">Name<input value={fields.name || ''} onChange={(event) => setFields((old) => ({ ...old, name: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal text-slate-900 outline-none focus:border-sky-500" /></label>
         <label className="block text-xs font-semibold text-slate-600">Phone number<input type="tel" value={fields.phone || ''} onChange={(event) => setFields((old) => ({ ...old, phone: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal text-slate-900 outline-none focus:border-sky-500" /></label>
         <label className="block text-xs font-semibold text-slate-600">Username<input value={fields.username || ''} onChange={(event) => setFields((old) => ({ ...old, username: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal text-slate-900 outline-none focus:border-sky-500" /></label>
-        {isHospital && <label className="block text-xs font-semibold text-slate-600">Hospital name<input value={fields.hospitalName || ''} onChange={(event) => setFields((old) => ({ ...old, hospitalName: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal text-slate-900 outline-none focus:border-sky-500" /></label>}
+        {isOrganization && <>
+          <label className="block text-xs font-semibold text-slate-600">{isHospital ? 'Hospital name' : 'Pharmacy name'}<input value={fields.organizationName || ''} onChange={(event) => setFields((old) => ({ ...old, organizationName: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal text-slate-900 outline-none focus:border-sky-500" /></label>
+          <label className="block text-xs font-semibold text-slate-600">Address<input value={fields.organizationAddress || ''} onChange={(event) => setFields((old) => ({ ...old, organizationAddress: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal text-slate-900 outline-none focus:border-sky-500" /></label>
+        </>}
         <p className="text-xs text-slate-500">Email · {user?.email || 'Not provided'}</p>
         <div className="flex gap-2"><button type="button" onClick={() => setEditing(false)} className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">Cancel</button><button type="button" disabled={saving || !fields.name?.trim() || !fields.username?.trim() || !fields.phone?.trim()} onClick={save} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"><Check className="h-4 w-4" />{saving ? 'Saving…' : 'Save details'}</button></div>
       </div> : <>
         <dl className="divide-y divide-slate-100">{[
-          ['Name', user?.name || 'Not provided'], ['Phone number', user?.phone || 'Not provided'], ['Username', user?.username ? `@${user.username}` : 'Not provided'], ...(isHospital ? [['Hospital name', hospitalName]] : []), ['Email', user?.email || 'Not provided'],
+          ['Name', fields.name || user?.name || 'Not provided'], ['Phone number', fields.phone || user?.phone || 'Not provided'], ['Username', fields.username ? `@${fields.username}` : user?.username ? `@${user.username}` : 'Not provided'], ...(isOrganization ? [[isHospital ? 'Hospital name' : 'Pharmacy name', fields.organizationName || organizationName]] : []), ...(isOrganization ? [['Address', fields.organizationAddress || organizationAddress || 'Not provided']] : []), ['Email', user?.email || 'Not provided'],
         ].map(([label, value]) => <div key={label} className="flex items-start justify-between gap-4 py-2.5 text-sm"><dt className="text-slate-500">{label}</dt><dd className="max-w-56 break-words text-right font-medium text-slate-800">{value}</dd></div>)}</dl>
         <button type="button" onClick={() => { setEditing(true); setMessage(''); }} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-sky-700 px-3 py-2 text-sm font-semibold text-white"><Pencil className="h-4 w-4" />Edit details</button>
       </>}

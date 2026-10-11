@@ -10,7 +10,9 @@ import { routeForRole } from '../../lib/role-route';
 export default function SignupForm({ role }: { role: string }) {
   const router = useRouter();
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [hospitalName, setHospitalName] = useState('');
@@ -31,7 +33,7 @@ export default function SignupForm({ role }: { role: string }) {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const roleDetailsValid = () => {
-    if (!name.trim() || !email.trim() || !password) return 'Enter your name, email, and password first.';
+    if (!name.trim() || !username.trim() || !email.trim() || (role !== 'pharmacy' && !phone.trim()) || !password) return 'Enter your name, username, email, phone number, and password first.';
     if (role === 'hospital_staff' && [hospitalName, hospitalAddress, hospitalRegistrationNumber, hospitalSpecialties].some((value) => !value.trim())) return 'Complete all hospital details before continuing.';
     if (role === 'pharmacy' && [pharmacyName, pharmacyAddress, pharmacyCity, pharmacyState, pharmacyPincode, pharmacyPhone, pharmacyLicenseNumber].some((value) => !value.trim())) return 'Complete all pharmacy details before continuing.';
     if (role === 'driver' && [licenseNumber, vehicleNumber, driverQualification].some((value) => !value.trim())) return 'Complete all driver details before continuing.';
@@ -52,20 +54,49 @@ export default function SignupForm({ role }: { role: string }) {
     try {
       const result = await authClient.signUp.email({
         name: name.trim(),
+        username: username.trim(),
         email: email.trim().toLowerCase(),
+        phone: role === 'pharmacy' ? pharmacyPhone.trim() : phone.trim(),
         password,
         role,
         ...(role === 'hospital_staff' ? { hospitalName: hospitalName.trim(), hospitalAddress: hospitalAddress.trim(), hospitalRegistrationNumber: hospitalRegistrationNumber.trim(), hospitalSpecialties: hospitalSpecialties.trim() } : {}),
         ...(role === 'pharmacy' ? { phone: pharmacyPhone.trim(), pharmacyName: pharmacyName.trim(), pharmacyAddress: pharmacyAddress.trim(), pharmacyCity: pharmacyCity.trim(), pharmacyState: pharmacyState.trim(), pharmacyPincode: pharmacyPincode.trim(), pharmacyLicenseNumber: pharmacyLicenseNumber.trim(), pharmacyType } : {}),
         ...(role === 'driver' ? { licenseNumber: licenseNumber.trim(), vehicleNumber: vehicleNumber.trim(), driverQualification } : {}),
       });
-      if (result.error) throw new Error(result.error.message || 'Unable to create your account.');
-      if (!result.data?.user) throw new Error('Your account was created, but we could not start your session. Please sign in.');
+      let authenticatedUser = result.data?.user;
+      const duplicateAccount = Boolean(result.error && /already exists|already registered|duplicate/i.test(result.error.message || ''));
+      if (result.error && duplicateAccount) {
+        // Account creation may have succeeded before organization setup failed.
+        // Re-authenticate with the supplied credentials so the user can resume.
+        const signInResult = await authClient.signIn.email({ email: email.trim().toLowerCase(), password });
+        if (signInResult.error) throw new Error('An account with this email already exists. Sign in with that account to continue.');
+        authenticatedUser = signInResult.data?.user;
+      }
+      if (result.error && !duplicateAccount) throw new Error(result.error.message || 'Unable to create your account.');
+      if (!authenticatedUser) throw new Error('Your account was created, but we could not start your session. Please sign in.');
       const roleResult = await fetch('/api/me/role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }) });
       if (!roleResult.ok) throw new Error('Account created, but we could not set the selected role. Please sign in and contact support.');
-      if (role === 'pharmacy') {
-        const setupResult = await fetch('/api/onboarding', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: pharmacyName.trim(), address: pharmacyAddress.trim(), city: pharmacyCity.trim(), state: pharmacyState.trim(), pincode: pharmacyPincode.trim(), phone: pharmacyPhone.trim() }) });
-        if (!setupResult.ok) { const setupError = await setupResult.json().catch(() => ({})); throw new Error(setupError.error || 'Account created, but pharmacy setup could not be completed. Please sign in again.'); }
+      if (role === 'pharmacy' || role === 'hospital_staff') {
+        const statusResponse = await fetch('/api/onboarding', { cache: 'no-store' });
+        const status = statusResponse.ok ? await statusResponse.json() : { onboardingCompleted: false };
+        if (!status.onboardingCompleted) {
+          const setupPayload = role === 'pharmacy'
+            ? { name: pharmacyName.trim(), address: pharmacyAddress.trim(), city: pharmacyCity.trim(), state: pharmacyState.trim(), pincode: pharmacyPincode.trim(), phone: pharmacyPhone.trim() }
+            : { name: hospitalName.trim(), address: hospitalAddress.trim(), city: '', state: '', pincode: '', phone: phone.trim(), details: hospitalSpecialties.trim() };
+          if (role === 'pharmacy') {
+            const setupResult = await fetch('/api/onboarding', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(setupPayload) });
+            if (setupResult.ok) {
+              router.replace('/pharmacy-dashboard');
+              router.refresh();
+              return;
+            }
+          }
+          // Keep the new account usable even if geocoding or organization setup
+          // is temporarily unavailable. The onboarding form is prefilled.
+          router.replace(role === 'pharmacy' ? '/onboarding/pharmacy' : '/onboarding/hospital');
+          router.refresh();
+          return;
+        }
       }
       router.replace(routeForRole(role));
       router.refresh();
@@ -105,7 +136,9 @@ export default function SignupForm({ role }: { role: string }) {
           <header className="mb-6"><h2 className="text-2xl font-bold text-slate-900">Create your account</h2><p className="mt-1 text-sm text-slate-500">Join CareLink to coordinate better care</p></header>
           <form onSubmit={handleSignup} className="space-y-4">
             <div><label className={labelClass} htmlFor="signup-name">Full name</label><div className="relative"><User className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-name" className={inputClass} required autoComplete="name" value={name} onChange={event => setName(event.target.value)} placeholder="Your full name" /></div></div>
+            <div><label className={labelClass} htmlFor="signup-username">Username</label><div className="relative"><User className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-username" className={inputClass} required minLength={3} maxLength={32} pattern="[a-zA-Z0-9._-]+" autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} placeholder="Choose a username" /></div><p className="mt-1 text-[11px] text-slate-500">3–32 characters: letters, numbers, dots, underscores, or hyphens.</p></div>
             <div><label className={labelClass} htmlFor="signup-email">Email</label><div className="relative"><Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-email" className={inputClass} type="email" required autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="name@example.com" /></div></div>
+            {role !== 'pharmacy' && <div><label className={labelClass} htmlFor="signup-phone">Phone number</label><input id="signup-phone" className={inputClass.replace('pl-10', 'pl-4')} type="tel" required autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="Your contact number" /></div>}
             <div><label className={labelClass} htmlFor="signup-password">Password</label><div className="relative"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-password" className={inputClass} type="password" required minLength={8} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="********" /></div></div>
             <div><label className={labelClass} htmlFor="confirm-password">Confirm password</label><div className="relative"><Lock className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="confirm-password" className={inputClass} type="password" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} placeholder="********" /></div></div>
             {role === 'hospital_staff' && <div className="space-y-4 rounded-2xl border border-sky-200 bg-sky-50/70 p-4"><p className="flex items-center gap-2 text-sm font-bold text-sky-900"><Building2 className="h-4 w-4" />Hospital details</p><div><label className={labelClass} htmlFor="hospital-name">Hospital name</label><div className="relative"><Building2 className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="hospital-name" className={inputClass} required value={hospitalName} onChange={event => setHospitalName(event.target.value)} placeholder="Registered hospital name" /></div></div><div><label className={labelClass} htmlFor="hospital-address">Hospital address</label><div className="relative"><MapPin className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="hospital-address" className={inputClass} required value={hospitalAddress} onChange={event => setHospitalAddress(event.target.value)} placeholder="Street, city, postal code" /></div></div><div><label className={labelClass} htmlFor="hospital-registration">Registration number</label><div className="relative"><FileText className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="hospital-registration" className={inputClass} required value={hospitalRegistrationNumber} onChange={event => setHospitalRegistrationNumber(event.target.value)} placeholder="Hospital registration / license" /></div></div><div><label className={labelClass} htmlFor="hospital-specialties">Specialties and services</label><div className="relative"><Stethoscope className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" /><textarea id="hospital-specialties" className={`${inputClass} min-h-20 pl-10`} required value={hospitalSpecialties} onChange={event => setHospitalSpecialties(event.target.value)} placeholder="e.g. ICU, Cardiology, Trauma Care" /></div><p className="mt-1 text-[11px] text-slate-500">Separate specialties with commas.</p></div></div>}
