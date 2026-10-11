@@ -41,6 +41,7 @@ function createAuth(mongoClient: typeof client) {
         required: false,
         input: true,
       },
+      username: { type: "string", required: false, input: true },
       phone: {
         type: "string",
         required: false,

@@ -26,14 +26,21 @@ export default function SignInPage() {
       const result = await authClient.signIn.email({ email: normalizedIdentifier.toLowerCase(), password });
 
       if (result.error) throw new Error(result.error.message || 'Sign in failed. Check your credentials.');
-      const signedInUser = result.data?.user as (typeof result.data.user & { role?: string; pharmacyName?: string; pharmacyAddress?: string; pharmacyLicenseNumber?: string }) | undefined;
+      const signedInUser = result.data?.user as (typeof result.data.user & { role?: string }) | undefined;
       let signedInRole = signedInUser?.role || 'patient';
-      if (signedInRole === 'patient' && signedInUser?.pharmacyName && signedInUser.pharmacyAddress && signedInUser.pharmacyLicenseNumber) {
+      const profileResponse = await fetch('/api/me/profile', { cache: 'no-store' });
+      const profile = profileResponse.ok ? await profileResponse.json() as { role?: string; onboardingCompleted?: boolean; pharmacyProfileComplete?: boolean } : null;
+      if (profile?.role) signedInRole = profile.role;
+      if (signedInRole === 'patient' && profile?.pharmacyProfileComplete) {
         const roleResponse = await fetch('/api/me/role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'pharmacy' }) });
         if (!roleResponse.ok) throw new Error('Your pharmacy account role could not be restored. Please contact support.');
         signedInRole = 'pharmacy';
       }
-      router.replace(routeForRole(signedInRole));
+      let destination = routeForRole(signedInRole);
+      if ((signedInRole === 'pharmacy' || signedInRole === 'hospital' || signedInRole === 'hospital_staff' || signedInRole === 'hospital_admin') && profile && !profile.onboardingCompleted) {
+        destination = signedInRole === 'pharmacy' ? '/onboarding/pharmacy' : '/onboarding/hospital';
+      }
+      router.replace(destination);
       router.refresh();
     } catch (signInError) {
       setError(signInError instanceof Error ? signInError.message : 'Unable to sign in. Please try again.');

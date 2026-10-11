@@ -21,8 +21,22 @@ function accountFilter(id: string) {
 export async function GET() {
   const auth = await requireRole(['hospital', 'hospital_staff', 'pharmacy']);
   if (!auth.authorized || !auth.user) return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
-  const account = await (await clientPromise).db().collection('user').findOne(accountFilter(auth.user.id), { projection: { onboardingCompleted: 1 } });
-  return Response.json({ onboardingCompleted: account?.onboardingCompleted === true });
+  const account = await (await clientPromise).db().collection('user').findOne(accountFilter(auth.user.id), { projection: {
+    onboardingCompleted: 1, role: 1, hospitalName: 1, hospitalAddress: 1, hospitalSpecialties: 1,
+    pharmacyName: 1, pharmacyAddress: 1, pharmacyCity: 1, pharmacyState: 1, pharmacyPincode: 1,
+    pharmacyLicenseNumber: 1, pharmacyType: 1, phone: 1,
+  } });
+  const isPharmacy = auth.user.role === 'pharmacy';
+  const profile = account as typeof account & Record<string, unknown>;
+  return Response.json({
+    onboardingCompleted: account?.onboardingCompleted === true,
+    profile: {
+      name: (isPharmacy ? profile?.pharmacyName : profile?.hospitalName) || '',
+      address: (isPharmacy ? profile?.pharmacyAddress : profile?.hospitalAddress) || '',
+      city: profile?.pharmacyCity || '', state: profile?.pharmacyState || '', pincode: profile?.pharmacyPincode || '',
+      phone: profile?.phone || '', details: profile?.hospitalSpecialties || '',
+    },
+  }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function POST(request: Request) {

@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   if (!account) return NextResponse.json({ error: 'Could not find your account to set its role.' }, { status: 404 });
   const profile = account as typeof account & { pharmacyName?: string; pharmacyLicenseNumber?: string; pharmacyAddress?: string; pharmacyId?: string; hospitalName?: string; hospitalAddress?: string; hospitalRegistrationNumber?: string; hospitalSpecialties?: string; phone?: string; email?: string };
   const pharmacyProfileComplete = Boolean(profile.pharmacyName?.trim() && profile.pharmacyAddress?.trim() && (profile.pharmacyLicenseNumber?.trim() || profile.pharmacyId));
-  if (account.role !== body.role && (account.role !== 'patient' || (account.onboardingCompleted && !(body.role === 'pharmacy' && pharmacyProfileComplete)))) {
+  if (account.role !== body.role && (account.role !== 'patient' || !(body.role === 'pharmacy' && pharmacyProfileComplete))) {
     return NextResponse.json({ error: 'This account already has a different role.' }, { status: 409 });
   }
   if (account.role !== body.role) {
