@@ -18,8 +18,33 @@ function safeHistory(value: unknown): TriageMessage[] {
     if (!item || typeof item !== 'object') return [];
     const entry = item as Record<string, unknown>;
     if (!['user', 'assistant'].includes(String(entry.role)) || typeof entry.content !== 'string') return [];
-    return [{ role: entry.role as 'user' | 'assistant', content: entry.content.slice(0, MAX_MESSAGE_CHARS), followUpQuestion: typeof entry.followUpQuestion === 'string' ? entry.followUpQuestion : null }];
+    const role = entry.role as 'user' | 'assistant';
+    const followUpQuestion = role === 'assistant' && typeof entry.followUpQuestion === 'string'
+      ? entry.followUpQuestion.slice(0, 240)
+      : null;
+    const content = entry.content.slice(0, MAX_MESSAGE_CHARS);
+    return [{
+      role,
+      content: followUpQuestion ? `${content}\nFollow-up question asked: ${followUpQuestion}` : content,
+      followUpQuestion,
+    }];
   });
+}
+
+function fallbackContext(history: TriageMessage[], message: string) {
+  let followUpIndex = -1;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    if (history[index].role === 'assistant' && history[index].followUpQuestion) {
+      followUpIndex = index;
+      break;
+    }
+  }
+  if (followUpIndex < 0) return message;
+
+  for (let index = followUpIndex - 1; index >= 0; index -= 1) {
+    if (history[index].role === 'user') return `${history[index].content} ${message}`;
+  }
+  return message;
 }
 
 function logResult(startedAt: number, intent: string, severity: string | null, fallback: boolean, errorCode?: string) {
@@ -28,7 +53,13 @@ function logResult(startedAt: number, intent: string, severity: string | null, f
 
 export async function POST(request: Request) {
   const startedAt = performance.now();
-  const auth = await requireRole('patient');
+  let auth: Awaited<ReturnType<typeof requireRole>>;
+  try {
+    auth = await requireRole('patient');
+  } catch {
+    console.error(JSON.stringify({ event: 'triage.auth_error', errorCode: 'AUTH_SESSION_UNAVAILABLE' }));
+    return Response.json({ error: 'We could not verify your sign-in right now. Check your connection and try again.' }, { status: 503 });
+  }
   if (!auth.authorized) return Response.json({ error: auth.reason }, { status: auth.reason === 'UNAUTHENTICATED' ? 401 : 403 });
 
   if (!consumeRateLimit(String(auth.user.id))) return Response.json({ error: 'You have sent several messages recently. Please wait a few minutes and try again.' }, { status: 429 });
@@ -40,9 +71,12 @@ export async function POST(request: Request) {
   if (isMessageTooLong(body.message, MAX_MESSAGE_CHARS)) return Response.json({ error: `Please keep your message under ${MAX_MESSAGE_CHARS} characters.` }, { status: 400 });
 
   const message = body.message.trim();
+  const history = safeHistory(body.history);
   const gate = classifyMessage(message);
-  let intent = gate.intent;
-  if (!gate.certain && !gate.redFlag) {
+  const hasPendingTriageFollowUp = history.some((item) => item.role === 'assistant' && item.followUpQuestion);
+  const continuingTriage = hasPendingTriageFollowUp && gate.intent !== 'greeting' && gate.intent !== 'off_topic';
+  let intent = continuingTriage ? 'symptoms' : gate.intent;
+  if (!continuingTriage && !gate.certain && !gate.redFlag) {
     try { intent = await classifyWithModel(message); }
     catch {
       logResult(startedAt, 'unclear', null, true, 'INTENT_CLASSIFICATION_FAILED');
@@ -56,7 +90,6 @@ export async function POST(request: Request) {
     return Response.json(response);
   }
 
-  const history = safeHistory(body.history);
   const askedCount = history.filter((item) => item.role === 'assistant' && item.followUpQuestion).length;
   let output: TriageResponse;
   let fallback = false;
@@ -69,7 +102,7 @@ export async function POST(request: Request) {
       { role: 'user', content: `User symptoms: ${message}\nFollow-up questions already asked: ${askedCount}.${askedCount >= MAX_FOLLOW_UPS ? ' Do not ask another follow-up; summarize safe next steps.' : ''}` },
     ]);
   } catch (error) {
-    output = fallbackReply(gate.redFlag, EMERGENCY_FALLBACK_TEXT);
+    output = fallbackReply(gate.redFlag, EMERGENCY_FALLBACK_TEXT, fallbackContext(history, message), askedCount > 0);
     fallback = true;
     const code = error instanceof Error ? error.message : '';
     errorCode = /^TRIAGE_[A-Z_]+$/.test(code) ? code : error instanceof Error && error.name === 'ZodError' ? 'TRIAGE_INVALID_RESPONSE' : error instanceof Error && error.name === 'TimeoutError' ? 'TRIAGE_TIMEOUT' : 'TRIAGE_MODEL_ERROR';

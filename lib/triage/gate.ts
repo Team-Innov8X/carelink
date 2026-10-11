@@ -9,6 +9,8 @@ const offTopic = /\b(?:capital of|write (?:a |an )?(?:code|program|poem|story|fu
 const healthTerms = /\b(?:pain|ache|fever|cough|cold|breath(?:e|ing)?|shortness of breath|headache|migraine|dizz(?:y|iness)|nausea|vomit(?:ing)?|diarrh(?:ea|oea)|rash|itch(?:ing)?|bleed(?:ing)?|injur(?:y|ed)|burn|swelling|swell|weakness|numb(?:ness)?|sore throat|chest|stomach|abdomen|back|head|face|arm|leg|eye|ear|throat|heart|skin|tooth|pregnan(?:t|cy)|symptom|unwell|sick|ill|blood pressure|faint(?:ed|ing)?|seizure)\b/i;
 const redFlags = [
   /\bchest pain\b/i,
+  /\b(?:sudden|severe|worst) (?:headache|head pain)\b/i,
+  /\bsevere (?:stomach|abdominal|abdomen) pain\b/i,
   /\b(?:can't|cannot|unable to|struggling to|difficulty|trouble) breathe\b/i,
   /\b(?:difficulty|trouble) breathing\b/i,
   /\bshortness of breath\b/i,
@@ -55,16 +57,66 @@ export const INTENT_REPLIES: Record<Exclude<TriageIntent, 'symptoms'>, string> =
   unclear: 'Please describe your symptoms in a sentence, including when they started.',
 };
 
-export function fallbackReply(redFlag: boolean, emergencyText: string): TriageResponse {
-  const severity = redFlag ? 'emergency' : 'see_doctor';
+export function fallbackReply(redFlag: boolean, emergencyText: string, message = '', alreadyAskedFollowUp = false): TriageResponse {
+  if (redFlag) {
+    return {
+      intent: 'symptoms', severity: 'emergency',
+      reply: `The symptoms you described may need urgent attention. ${emergencyText} This is guidance, not a medical diagnosis.`,
+      nextSteps: ['Seek emergency care now'],
+      followUpQuestion: null,
+      suggestedSpecialty: null,
+    };
+  }
+
+  const text = message.toLowerCase();
+  let guidance: Pick<TriageResponse, 'severity' | 'reply' | 'nextSteps' | 'followUpQuestion' | 'suggestedSpecialty'>;
+  if (/\b(?:headache|migraine|head pain)\b/.test(text)) {
+    guidance = {
+      severity: 'self_care',
+      reply: 'You reported a headache. If it is mild, rest somewhere quiet, drink water, and monitor how it changes. Seek medical advice if it gets worse, keeps returning, or does not improve.',
+      nextSteps: ['Rest in a quiet place', 'Drink water and monitor the pain', 'Seek care if it worsens or persists'],
+      followUpQuestion: 'When did it start, and has it been getting worse?',
+      suggestedSpecialty: null,
+    };
+  } else if (/\b(?:stomach|abdominal|abdomen) pain\b/.test(text)) {
+    guidance = {
+      severity: 'see_doctor',
+      reply: 'You reported stomach pain, which can have many causes and cannot be assessed reliably from this message alone. Contact a healthcare professional if it persists or worsens, and seek urgent care for severe pain.',
+      nextSteps: ['Note where the pain is and when it started', 'Contact a healthcare professional if it persists or worsens'],
+      followUpQuestion: 'Where is the pain, and when did it begin?',
+      suggestedSpecialty: 'General physician',
+    };
+  } else if (/\b(?:fever|cough|cold|sore throat)\b/.test(text)) {
+    guidance = {
+      severity: 'self_care',
+      reply: 'You reported fever or respiratory symptoms. Rest, drink fluids, and keep track of how long the symptoms last and whether they worsen. Contact a healthcare professional if they are severe, persistent, or getting worse.',
+      nextSteps: ['Rest and drink fluids', 'Monitor your temperature and symptoms', 'Contact a clinician if symptoms worsen or persist'],
+      followUpQuestion: 'How long have you had these symptoms?',
+      suggestedSpecialty: null,
+    };
+  } else if (/\b(?:rash|itch(?:y|ing)?)\b/.test(text)) {
+    guidance = {
+      severity: 'see_doctor',
+      reply: 'You reported a rash or itching. I cannot tell its cause from this message, so arrange medical advice if it spreads, persists, or becomes painful. Seek urgent help if you also have trouble breathing or sudden swelling.',
+      nextSteps: ['Note when it started and whether it is spreading', 'Contact a healthcare professional if it persists or worsens'],
+      followUpQuestion: 'When did the rash or itching start, and is it spreading?',
+      suggestedSpecialty: 'General physician',
+    };
+  } else {
+    guidance = {
+      severity: 'see_doctor',
+      reply: 'You reported symptoms that I cannot assess reliably from the details provided. Contact a healthcare professional for guidance, especially if the symptoms persist or worsen. Seek urgent help if they become severe.',
+      nextSteps: ['Contact a healthcare professional', 'Note when the symptoms started and whether they are changing'],
+      followUpQuestion: 'When did the symptoms start, and are they getting worse?',
+      suggestedSpecialty: 'General physician',
+    };
+  }
+
   return {
-    intent: 'symptoms', severity,
-    reply: redFlag
-      ? `Your symptoms may need urgent attention. ${emergencyText} This is guidance, not a medical diagnosis.`
-      : 'I could not assess this reliably. Please contact a healthcare professional for guidance. This is guidance, not a medical diagnosis.',
-    nextSteps: redFlag ? ['Seek emergency care now'] : ['Contact a healthcare professional', 'Seek urgent help if symptoms become severe'],
-    followUpQuestion: null,
-    suggestedSpecialty: null,
+    intent: 'symptoms',
+    ...guidance,
+    reply: `${alreadyAskedFollowUp ? 'Thanks for the additional detail. ' : ''}${guidance.reply} This is guidance, not a medical diagnosis.`,
+    followUpQuestion: alreadyAskedFollowUp ? null : guidance.followUpQuestion,
   };
 }
 

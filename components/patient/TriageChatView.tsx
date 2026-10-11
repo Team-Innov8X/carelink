@@ -15,6 +15,7 @@ type ChatMessage = {
   nextSteps?: string[];
   followUpQuestion?: string | null;
   suggestedSpecialty?: string | null;
+  fallback?: boolean;
 };
 
 type TriageApiResponse = {
@@ -25,6 +26,7 @@ type TriageApiResponse = {
   nextSteps?: string[];
   followUpQuestion?: string | null;
   suggestedSpecialty?: string | null;
+  fallback?: boolean;
 };
 
 const id = () => globalThis.crypto.randomUUID();
@@ -90,6 +92,7 @@ export const TriageChatView: React.FC = () => {
         severity: data.intent === 'symptoms' ? data.severity : null,
         nextSteps: data.nextSteps ?? [], followUpQuestion: data.followUpQuestion,
         suggestedSpecialty: data.suggestedSpecialty,
+        fallback: data.fallback,
       }]);
       setRetryText('');
     } catch (caught) {
@@ -133,6 +136,7 @@ export const TriageChatView: React.FC = () => {
                   <p className="whitespace-pre-wrap break-words">{message.content}</p>
                   {message.nextSteps && message.nextSteps.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-5">{message.nextSteps.map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}</ul>}
                   {message.followUpQuestion && <p className="mt-3 font-medium">{message.followUpQuestion}</p>}
+                  {message.fallback && <p className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-600">Basic guidance shown because the AI assessment service is unavailable.</p>}
                 </article>
               ))}
               {loading && <p className="mr-auto rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600" role="status">Thinking…</p>}

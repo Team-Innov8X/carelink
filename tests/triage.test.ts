@@ -47,6 +47,33 @@ describe('mocked triage model adapter and fallbacks', () => {
     expect(fallback.reply).not.toMatch(/no emergency|not currently indicate/i);
   });
 
+  it('gives symptom-specific guidance when the model is unavailable', () => {
+    const headache = fallbackReply(false, EMERGENCY_FALLBACK_TEXT, 'I have had a headache since this morning');
+    const stomachPain = fallbackReply(false, EMERGENCY_FALLBACK_TEXT, 'I have stomach pain');
+
+    expect(headache.severity).toBe('self_care');
+    expect(headache.reply).toMatch(/headache/i);
+    expect(headache.followUpQuestion).toMatch(/when did it start/i);
+    expect(stomachPain.severity).toBe('see_doctor');
+    expect(stomachPain.reply).toMatch(/stomach pain/i);
+    expect(stomachPain.followUpQuestion).toMatch(/where is the pain/i);
+    expect(headache.reply).not.toBe(stomachPain.reply);
+  });
+
+  it('escalates sudden severe headache even when the model is unavailable', () => {
+    const gate = classifyMessage('I have a sudden severe headache');
+    expect(gate.redFlag).toBe(true);
+    expect(fallbackReply(gate.redFlag, EMERGENCY_FALLBACK_TEXT, 'I have a sudden severe headache').severity).toBe('emergency');
+  });
+
+  it('uses the existing symptom context and stops repeating fallback questions', () => {
+    const followUp = fallbackReply(false, EMERGENCY_FALLBACK_TEXT, 'I have stomach pain and it gets worse after meals', true);
+
+    expect(followUp.reply).toMatch(/stomach pain/i);
+    expect(followUp.reply).toMatch(/additional detail/i);
+    expect(followUp.followUpQuestion).toBeNull();
+  });
+
   it('adds configured emergency advice to every emergency reply', () => {
     const output = triageResponseSchema.parse({ intent: 'symptoms', severity: 'emergency', reply: 'These symptoms are serious. Seek urgent support. This is guidance, not a medical diagnosis.', nextSteps: ['Get emergency help'], followUpQuestion: null, suggestedSpecialty: null });
     expect(applyEmergencyOverride(output, EMERGENCY_FALLBACK_TEXT).reply).toContain(EMERGENCY_FALLBACK_TEXT);
