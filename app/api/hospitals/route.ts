@@ -6,6 +6,7 @@ import { getHospitalsCollection, getResourcesCollection } from "@/lib/models";
 import { hospitalCreateSchema } from "@/lib/validation";
 import { expirePendingHolds } from "@/lib/services/hold-service";
 import { getServerSession, resolveHospitalId } from "@/lib/auth-utils";
+import clientPromise from "@/lib/mongodb";
 
 export async function GET(request: Request) {
   try {
@@ -31,8 +32,40 @@ export async function GET(request: Request) {
     const ids = hospitals.map((hospital) => String(hospital._id));
     const resourcesCollection = await getResourcesCollection();
     const now = new Date();
+
+    // Hospital admin bed edits live in the shared app state. Use those saved
+    // values to initialize bookable inventory when a hospital has no matching
+    // Mongo bed resource yet.
+    const appState = await (await clientPromise).db().collection<{
+      _id: string;
+      state?: { hospitals?: Array<{ name?: string; beds?: Record<string, { total?: number; available?: number }> }> };
+    }>("appState").findOne({ _id: "carelink" }, { projection: { "state.hospitals": 1 } });
+    const adminBedsByName = new Map((appState?.state?.hospitals ?? [])
+      .filter((item): item is { name: string; beds?: Record<string, { total?: number; available?: number }> } => typeof item.name === "string")
+      .map((item) => [item.name.trim().toLocaleLowerCase(), item.beds ?? {}]));
+
     for (const hospital of hospitals) {
       const hospitalId = String(hospital._id);
+      const adminBeds = adminBedsByName.get(hospital.name.trim().toLocaleLowerCase());
+      const bedTypes = [
+        { category: "general", name: "General beds" },
+        { category: "icu", name: "ICU beds" },
+        { category: "trauma", name: "Trauma beds" },
+      ];
+      for (const { category, name } of bedTypes) {
+        const saved = adminBeds?.[category];
+        if (!saved || !Number.isFinite(saved.total) || !Number.isFinite(saved.available) || !saved.total) continue;
+        const existing = await resourcesCollection.findOne({ hospitalId, type: "bed", category }, { projection: { _id: 1 } });
+        if (!existing) {
+          const total = Math.max(0, Math.floor(saved.total));
+          const available = Math.max(0, Math.min(total, Math.floor(saved.available)));
+          await resourcesCollection.updateOne({ _id: `${hospitalId}-admin-${category}` as never }, { $setOnInsert: {
+            hospitalId, type: "bed", category, name, totalQuantity: total,
+            availableQuantity: available, heldQuantity: 0, confirmedQuantity: total - available,
+            status: available ? "available" : "unavailable", createdAt: now, updatedAt: now,
+          } }, { upsert: true });
+        }
+      }
       const hasBeds = await resourcesCollection.findOne({ hospitalId, type: "bed" }, { projection: { _id: 1 } });
       const capacity = hospital.capacitySummary;
       if (!hasBeds && typeof capacity?.totalBeds === "number" && capacity.totalBeds > 0) {
@@ -40,7 +73,8 @@ export async function GET(request: Request) {
         const available = Math.max(0, Math.min(total, Math.floor(capacity.availableBeds ?? 0)));
         await resourcesCollection.updateOne({ _id: `${hospitalId}-capacity-general` as never }, { $setOnInsert: {
           hospitalId, type: "bed", category: "general", name: "General beds", totalQuantity: total,
-          availableQuantity: available, heldQuantity: 0, status: available ? "available" : "unavailable", createdAt: now, updatedAt: now,
+          availableQuantity: available, heldQuantity: 0, confirmedQuantity: total - available,
+          status: available ? "available" : "unavailable", createdAt: now, updatedAt: now,
         } }, { upsert: true });
       }
     }
@@ -69,14 +103,19 @@ export async function GET(request: Request) {
         const available = matching.reduce((sum, item) => sum + Math.max(0, item.availableQuantity - item.heldQuantity), 0);
         return { total, available };
       };
-      const general = forBed(["general", "emergency"]);
-      const icu = forBed(["icu"]);
-      const trauma = forBed(["trauma", "pediatric"]);
+      const adminBeds = adminBedsByName.get(hospital.name.trim().toLocaleLowerCase());
+      const capacityFor = (type: string[], inventoryCapacity: { total: number; available: number }) => {
+        const saved = type.map((key) => adminBeds?.[key]).find((bed) => Number.isFinite(bed?.total) && Number.isFinite(bed?.available));
+        return saved ? { total: saved.total!, available: saved.available! } : inventoryCapacity;
+      };
+      const general = capacityFor(["general"], forBed(["general", "emergency"]));
+      const icu = capacityFor(["icu"], forBed(["icu"]));
+      const trauma = capacityFor(["trauma"], forBed(["trauma", "pediatric"]));
       const ventilatorEquipment = inventory.filter((item) => item.type === "equipment" && item.category === "ventilator");
-      const ventilators = {
+      const ventilators = capacityFor(["ventilators"], {
         total: ventilatorEquipment.reduce((sum, item) => sum + item.totalQuantity, 0),
         available: ventilatorEquipment.reduce((sum, item) => sum + Math.max(0, item.availableQuantity - item.heldQuantity), 0),
-      };
+      });
       const capacity = hospital.capacitySummary;
       if (!general.total && capacity?.totalBeds) {
         general.total = capacity.totalBeds;
@@ -106,6 +145,16 @@ export async function GET(request: Request) {
         distanceKm: Number(distanceKm.toFixed(1)),
         etaMin: Math.max(1, Math.round(distanceKm * 2.5)),
         beds: { general, icu, trauma, ventilators },
+        bedResources: inventory.filter((item) => item.type === "bed").map((item) => ({
+          _id: String(item._id),
+          hospitalId: item.hospitalId,
+          type: item.type,
+          category: item.category,
+          totalQuantity: item.totalQuantity,
+          availableQuantity: item.availableQuantity,
+          heldQuantity: item.heldQuantity ?? 0,
+          status: item.status,
+        })),
         specialties,
         specialtyDoctors: raw.specialtyDoctors && typeof raw.specialtyDoctors === "object" ? raw.specialtyDoctors : {},
         status,

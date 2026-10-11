@@ -6,6 +6,7 @@ import { errorResponse } from "@/lib/api-response";
 import { getHoldsCollection } from "@/lib/models";
 import { writeHospitalAudit } from '@/lib/hospital-audit';
 import clientPromise from '@/lib/mongodb';
+import { workflowCollections } from '@/lib/sos';
 
 export async function PATCH(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(["hospital", "hospital_staff", "admin"]);
@@ -59,7 +60,35 @@ export async function PATCH(_request: Request, { params }: { params: Promise<{ i
       createdAt: new Date(),
     });
 
-    return NextResponse.json(result);
+    const recipientId = ownedHold.patientId || ownedHold.requestedByUserId;
+    let notificationSent = false;
+    if (recipientId) {
+      try {
+        const { notifications } = await workflowCollections();
+        const confirmedAt = new Date();
+        const notificationId = `bed-request-accepted-${ownedHold._id?.toString() ?? id}`;
+        await notifications.updateOne(
+          { _id: notificationId },
+          { $setOnInsert: {
+            _id: notificationId,
+            recipientId,
+            type: 'hospital_request_accepted',
+            title: 'Hospital accepted your bed request',
+            message: `${profile.hospitalName || 'The hospital'} accepted your request and reserved a bed.`,
+            relatedRequestId: ownedHold._id?.toString() ?? id,
+            createdAt: confirmedAt,
+          } },
+          { upsert: true },
+        );
+        notificationSent = true;
+      } catch (notificationError) {
+        // The bed confirmation is already committed. Keep it successful if
+        // notification storage is temporarily unavailable and log for repair.
+        console.error('Could not notify patient about confirmed bed request:', notificationError);
+      }
+    }
+
+    return NextResponse.json({ ...result, notificationSent });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to confirm hold";
     return errorResponse(message, 500);

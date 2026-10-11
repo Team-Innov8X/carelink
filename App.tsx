@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+  import React, { useEffect, useRef, useState } from 'react';
 import type { Role } from './types';
 import { CareLinkProvider, useCareLink } from './context/CareLinkContext';
 import { Navbar } from './components/common/Navbar';
@@ -106,7 +106,6 @@ const MainAppContent: React.FC = () => {
       setIsNewEmergencyOpen(true);
       return;
     }
-    if (!window.confirm('Send an emergency SOS now?\n\nYour name, contact number, incident, and pickup location will be shared with available emergency responders and the nearest hospital.')) return;
     if (sosSubmittingRef.current) return;
     sosSubmittingRef.current = true;
 
@@ -131,7 +130,7 @@ const MainAppContent: React.FC = () => {
       showSosToast(message);
       sosSubmittingRef.current = false;
       setSosSubmitting(false);
-    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 15000 });
   };
 
   const sendSosFromAddress = async () => {

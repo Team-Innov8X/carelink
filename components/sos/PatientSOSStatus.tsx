@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Ambulance, Clock, Siren, X } from '@/components/icons';
 import { useCareLink } from '../../context/CareLinkContext';
 import { fetchPatientSosRequests } from '@/lib/client-sos';
@@ -18,11 +18,19 @@ export function PatientSOSStatus({ transientNoticeVisible = false }: { transient
   const { setActiveTab } = useCareLink();
   const [request, setRequest] = useState<PatientSOS | null>(null);
   const [dismissedId, setDismissedId] = useState<string | null>(null);
+  const hasLoadedInitialStatus = useRef(false);
+  const initialFinishedRequestId = useRef<string | null>(null);
   const refresh = useCallback(async () => {
     try {
       const requests = await fetchPatientSosRequests();
       const latest = requests[0] as PatientSOS | undefined;
-      setRequest(latest ?? null);
+      const isInitialLoad = !hasLoadedInitialStatus.current;
+      hasLoadedInitialStatus.current = true;
+      const isFinished = latest?.status === 'completed' || latest?.status === 'cancelled';
+      if (isInitialLoad && isFinished) initialFinishedRequestId.current = latest?.id ?? null;
+      // Historical finished requests belong in request history, not in the
+      // floating live-status notice that appears when the dashboard opens.
+      setRequest(latest?.id === initialFinishedRequestId.current ? null : latest ?? null);
     } catch { /* Keep the most recent status visible if the network is temporarily unavailable. */ }
   }, []);
 

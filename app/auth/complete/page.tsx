@@ -13,7 +13,12 @@ function AuthCompleteForm() {
       if (signupRole) {
         const response = await fetch('/api/me/role', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: signupRole }) });
         if (!response.ok && response.status !== 409) throw new Error('Could not set your account role.');
-        window.location.replace(routeForRole(signupRole));
+        const destination = signupRole === 'hospital_staff'
+          ? '/onboarding/hospital'
+          : signupRole === 'pharmacy'
+            ? '/onboarding/pharmacy'
+            : routeForRole(signupRole);
+        window.location.replace(destination);
         return;
       }
       const response = await fetch('/api/me', { cache: 'no-store' });
