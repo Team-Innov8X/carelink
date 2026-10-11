@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCareLink } from '../../context/CareLinkContext';
 import { MapView } from '../common/MapView';
 import { PatientHomeRequestBox } from '../patient/PatientHomeRequestBox';
@@ -45,6 +45,7 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationMessage, setLocationMessage] = useState('');
   const [overview, setOverview] = useState<OverviewStats | null>(null);
+  const autoLocationRequested = useRef(false);
   useEffect(() => {
     if (role === 'patient') return;
     const load = async () => { try { const response = await fetch('/api/stats/overview', { cache: 'no-store' }); if (response.ok) setOverview(await response.json()); } catch { /* Keep the last good dashboard snapshot. */ } };
@@ -59,7 +60,7 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
     distanceKm: driver.distanceKm,
   })), [nearbyDrivers]);
 
-  const showCurrentAndNearbyLocations = () => {
+  const showCurrentAndNearbyLocations = useCallback(() => {
     const loadNearby = async (gpsLocation: [number, number]) => {
       setLocationLoading(true);
       setLocationMessage('Loading your profile and nearby drivers…');
@@ -103,7 +104,13 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
         : 'Could not get your GPS location. Please try again.');
       setLocationLoading(false);
     }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
-  };
+  }, []);
+
+  useEffect(() => {
+    if (role !== 'patient' || autoLocationRequested.current) return;
+    autoLocationRequested.current = true;
+    showCurrentAndNearbyLocations();
+  }, [role, showCurrentAndNearbyLocations]);
 
   const getPriorityBadge = (priority: string) => {
     switch (priority) {
@@ -243,7 +250,7 @@ export const DispatcherDashboard: React.FC<{ onRequestDriver?: () => void; reque
           </div>
 
           {role === 'patient' && locationMessage && <p role="status" className="mb-2 text-xs text-slate-600">{locationMessage}</p>}
-          <MapView height="380px" center={patientLocation} patientLocation={patientLocation} patientName={patientProfile?.name} driverLocations={driverMapLocations} />
+          <MapView height="380px" center={patientLocation} patientLocation={patientLocation} patientName={patientProfile?.name} driverLocations={driverMapLocations} fitBoundsKey={patientLocation?.join(',')} />
         </div>
 
         {/* Right: Recent Emergency Requests Table (Mockup Panel 2) */}

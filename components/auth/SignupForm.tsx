@@ -78,10 +78,10 @@ export default function SignupForm({ role }: { role: string }) {
 
   const handleGoogleSignup = async () => {
     setError('');
-    const missingDetails = roleDetailsValid();
-    if (missingDetails) { setError(missingDetails); return; }
     try {
       setSubmitting(true);
+      // Google supplies the account name and email. Organization accounts finish
+      // their facility profile after authentication on the onboarding screen.
       const result = await authClient.signIn.social({ provider: 'google', callbackURL: `/auth/complete?role=${encodeURIComponent(role)}` });
       if (result.error) throw new Error(result.error.message || 'Google sign-in is unavailable.');
       if (result.data?.url) window.location.assign(result.data.url);
@@ -102,7 +102,7 @@ export default function SignupForm({ role }: { role: string }) {
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-600 text-white shadow-md shadow-rose-200"><Heart className="h-6 w-6 fill-white" /></span>
             <span><span className="block text-xl font-black tracking-tight text-slate-900">Care<span className="text-rose-600">Link</span></span><span className="block text-xs text-slate-500">Faster Care, Healthier Tomorrow</span></span>
           </Link>
-          <header className="mb-6"><h2 className="text-2xl font-bold text-slate-900">Create your account</h2><p className="mt-1 text-sm text-slate-500">Join CareLink to coordinate better care</p></header>
+          <header className="mb-6"><h2 className="text-2xl font-bold text-slate-900">Create your account</h2><p className="mt-1 text-sm text-slate-500">Join CareLink to coordinate better care</p>{(role === 'hospital_staff' || role === 'pharmacy') && <p className="mt-3 rounded-xl bg-sky-50 px-3.5 py-2.5 text-xs leading-5 text-sky-800">Use Google to create your account now. You can add your personal contact details later in Settings and complete your organization profile after sign-in.</p>}</header>
           <form onSubmit={handleSignup} className="space-y-4">
             <div><label className={labelClass} htmlFor="signup-name">Full name</label><div className="relative"><User className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-name" className={inputClass} required autoComplete="name" value={name} onChange={event => setName(event.target.value)} placeholder="Your full name" /></div></div>
             <div><label className={labelClass} htmlFor="signup-email">Email</label><div className="relative"><Mail className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input id="signup-email" className={inputClass} type="email" required autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="name@example.com" /></div></div>

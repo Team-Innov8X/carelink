@@ -60,13 +60,13 @@ export default function SignInPage() {
 
   return (
     <main className="relative flex min-h-screen items-center justify-center bg-slate-100 px-4 pb-8 pt-24 sm:p-8">
-      <Link href="/" aria-label="CareLink home" className="absolute left-5 top-5 flex items-center gap-3 sm:left-8 sm:top-7">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-600 text-white shadow-md shadow-rose-200">
-          <Heart className="h-5 w-5 fill-white" />
-        </span>
-        <span className="text-xl font-black tracking-tight text-slate-900">Care<span className="text-rose-600">Link</span></span>
-      </Link>
       <section className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-7 shadow-lg sm:p-9">
+        <Link href="/" aria-label="CareLink home" className="mb-7 inline-flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-600 text-white shadow-md shadow-rose-200">
+            <Heart className="h-5 w-5 fill-white" />
+          </span>
+          <span className="text-xl font-black tracking-tight text-slate-900">Care<span className="text-rose-600">Link</span></span>
+        </Link>
         <div>
           <header className="mb-6"><h2 className="text-2xl font-bold text-slate-900">Sign in</h2><p className="mt-1 text-sm text-slate-500">Access your care workspace</p></header>
           <form onSubmit={handleSignIn} className="space-y-4">

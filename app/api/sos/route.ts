@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { requireRole } from "@/lib/auth-utils";
 import { advanceDispatch, createRequestId, ensureHospitalRequestForSos, getHospitalRequestsCollection, sosCollections, validCoordinates } from "@/lib/sos";
 import { getUsersCollection } from "@/lib/models/db";
@@ -108,14 +109,13 @@ export async function POST(request: Request) {
   );
   let existing = requestType === 'routine' ? null : await requests.findOne({ patientId: auth.user.id, status: { $in: ["searching", "accepted"] }, requestType: { $ne: 'routine' } });
   if (existing) {
-    await advanceDispatch(existing._id);
-    existing = await requests.findOne({ _id: existing._id, status: { $in: ["searching", "accepted"] } });
-  }
-  if (existing) {
-    const hospitalRequest = await ensureHospitalRequestForSos(existing).catch(() => null);
+    const activeRequest = existing;
+    after(async () => {
+      await Promise.allSettled([advanceDispatch(activeRequest._id), ensureHospitalRequestForSos(activeRequest)]);
+    });
     return Response.json({
-      request: { id: existing._id, status: existing.status, createdAt: existing.createdAt },
-      hospitalRequestId: hospitalRequest?._id ?? null,
+      request: { id: activeRequest._id, status: activeRequest.status, createdAt: activeRequest.createdAt },
+      hospitalRequestId: null,
       message: "You already have an active emergency request",
       undoWindowSeconds: SOS_UNDO_SECONDS,
       existing: true,
@@ -149,18 +149,16 @@ export async function POST(request: Request) {
     if (winner) return Response.json({ request: { id: winner._id, status: winner.status, createdAt: winner.createdAt }, message: "An active request already exists.", existing: true });
     throw error;
   }
-  const [, hospitalRequest] = await Promise.all([
-    advanceDispatch(sos._id),
-    requestType === 'routine' ? Promise.resolve(null) : ensureHospitalRequestForSos(sos).catch(() => null),
-  ]);
-  const hospitalRequestId = hospitalRequest?._id ?? null;
+  after(async () => {
+    await Promise.allSettled([
+      advanceDispatch(sos._id),
+      requestType === 'routine' ? Promise.resolve(null) : ensureHospitalRequestForSos(sos),
+    ]);
+  });
 
   return Response.json({
     request: { id: sos._id, status: sos.status, createdAt: sos.createdAt },
     undoWindowSeconds: SOS_UNDO_SECONDS,
-    hospitalRequestId,
-    message: hospitalRequestId
-      ? "SOS sent to ambulance drivers and the nearest hospital."
-      : "SOS sent to available ambulance drivers; no active hospital is registered yet.",
+    message: "SOS request received; notifying available responders.",
   }, { status: 201 });
 }
