@@ -54,7 +54,7 @@ export async function GET(request: Request) {
       ];
       for (const { category, name } of bedTypes) {
         const saved = adminBeds?.[category];
-        if (!saved || !Number.isFinite(saved.total) || !Number.isFinite(saved.available) || !saved.total) continue;
+        if (!saved || typeof saved.total !== "number" || !Number.isFinite(saved.total) || saved.total <= 0 || typeof saved.available !== "number" || !Number.isFinite(saved.available)) continue;
         const existing = await resourcesCollection.findOne({ hospitalId, type: "bed", category }, { projection: { _id: 1 } });
         if (!existing) {
           const total = Math.max(0, Math.floor(saved.total));
